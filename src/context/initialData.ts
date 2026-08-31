@@ -1,5 +1,13 @@
-import { Category, PrioritySettings, CapacitySettings, Task, KnowledgeItem, Reminder, SecuritySettings } from '../types';
+import { Category, PrioritySettings, CapacitySettings, Task, KnowledgeItem, Reminder, SecuritySettings, CloudSyncConfig } from '../types';
 import { toISODateString, getDayOfWeekFromDate } from '../utils/timeUtils';
+
+export const DEFAULT_CLOUD_SYNC: CloudSyncConfig = {
+  isEnabled: false,
+  supabaseUrl: '',
+  supabaseAnonKey: '',
+  tableName: 'optimustime_sync',
+  autoRealtimeSync: true
+};
 
 export const DEFAULT_SECURITY: SecuritySettings = {
   isPasswordProtected: true,

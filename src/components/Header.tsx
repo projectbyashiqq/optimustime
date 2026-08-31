@@ -12,7 +12,10 @@ import {
   Sparkles,
   Layers,
   ChevronDown,
-  Lock
+  Lock,
+  Cloud,
+  CloudOff,
+  RefreshCw
 } from 'lucide-react';
 import { ThemeName } from '../types';
 
@@ -31,7 +34,10 @@ export const Header: React.FC<HeaderProps> = ({ onOpenNewTaskModal }) => {
     searchQuery, 
     setSearchQuery,
     securitySettings,
-    logout
+    logout,
+    cloudSyncConfig,
+    cloudSyncStatus,
+    syncNow
   } = useApp();
 
   const [currentTime, setCurrentTime] = useState<Date>(new Date());
@@ -104,6 +110,47 @@ export const Header: React.FC<HeaderProps> = ({ onOpenNewTaskModal }) => {
                 {formattedTimeStr}
               </span>
             </div>
+
+            {/* Cloud Sync Status Pill */}
+            <button
+              onClick={() => syncNow()}
+              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-xs font-bold transition-all ${
+                cloudSyncStatus === 'synced'
+                  ? 'bg-emerald-50 dark:bg-emerald-950/60 border-emerald-300 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100'
+                  : cloudSyncStatus === 'syncing' || cloudSyncStatus === 'connecting'
+                  ? 'bg-blue-50 dark:bg-blue-950/60 border-blue-300 dark:border-blue-800 text-blue-700 dark:text-blue-300 animate-pulse'
+                  : cloudSyncStatus === 'error'
+                  ? 'bg-red-50 dark:bg-red-950/60 border-red-300 dark:border-red-800 text-red-700 dark:text-red-300'
+                  : 'bg-theme-card-hover border-theme-border text-theme-muted hover:text-theme-text'
+              }`}
+              title={
+                cloudSyncConfig.isEnabled
+                  ? `Cloud Sync: ${cloudSyncStatus.toUpperCase()} (Click to Sync Now)`
+                  : 'Cloud Sync Disabled (Setup in Admin Settings → Cloud Sync)'
+              }
+            >
+              {cloudSyncStatus === 'synced' ? (
+                <>
+                  <Cloud className="w-3.5 h-3.5 text-emerald-500" />
+                  <span className="hidden sm:inline">Synced</span>
+                </>
+              ) : cloudSyncStatus === 'syncing' || cloudSyncStatus === 'connecting' ? (
+                <>
+                  <RefreshCw className="w-3.5 h-3.5 text-blue-500 animate-spin" />
+                  <span className="hidden sm:inline">Syncing...</span>
+                </>
+              ) : cloudSyncStatus === 'error' ? (
+                <>
+                  <CloudOff className="w-3.5 h-3.5 text-red-500" />
+                  <span className="hidden sm:inline">Sync Error</span>
+                </>
+              ) : (
+                <>
+                  <CloudOff className="w-3.5 h-3.5 text-theme-muted" />
+                  <span className="hidden sm:inline">Local Only</span>
+                </>
+              )}
+            </button>
           </div>
 
           {/* Daily Capacity & Red-Line Indicator */}

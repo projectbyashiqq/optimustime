@@ -11,12 +11,15 @@ import {
   TaskStatus,
   PriorityLevel,
   SubTask,
-  SecuritySettings
+  SecuritySettings,
+  CloudSyncConfig,
+  CloudSyncStatus
 } from '../types';
 import { 
   DEFAULT_CAPACITY, 
   DEFAULT_PRIORITIES, 
   DEFAULT_SECURITY,
+  DEFAULT_CLOUD_SYNC,
   INITIAL_CATEGORIES, 
   INITIAL_TASKS, 
   INITIAL_KNOWLEDGE, 
@@ -34,6 +37,12 @@ import {
   playNotificationChime,
   isTaskScheduledForDate
 } from '../utils/timeUtils';
+import { 
+  pushStateToCloud, 
+  pullStateFromCloud, 
+  subscribeToRealtimeCloud,
+  testSupabaseConnection 
+} from '../services/supabase';
 import confetti from 'canvas-confetti';
 
 interface AppContextType {
@@ -102,6 +111,15 @@ interface AppContextType {
   isAuthenticated: boolean;
   login: (password: string, rememberDevice?: boolean) => boolean;
   logout: () => void;
+  
+  // Real-Time Cloud Database Sync (Supabase)
+  cloudSyncConfig: CloudSyncConfig;
+  cloudSyncStatus: CloudSyncStatus;
+  updateCloudSyncConfig: (config: CloudSyncConfig) => void;
+  syncNow: () => Promise<boolean>;
+  pushToCloud: () => Promise<boolean>;
+  pullFromCloud: () => Promise<boolean>;
+  testCloudConnection: () => Promise<{ success: boolean; message: string }>;
   
   // Backup / Restore
   exportStateJson: () => string;
@@ -182,6 +200,22 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   });
 
+  // Apply Theme attribute to document body/root
+  const setTheme = useCallback((newTheme: ThemeName) => {
+    setThemeState(newTheme);
+    if (newTheme === 'light') {
+      document.documentElement.removeAttribute('data-theme');
+      document.documentElement.classList.remove('dark');
+    } else {
+      document.documentElement.setAttribute('data-theme', newTheme);
+      document.documentElement.classList.add('dark');
+    }
+  }, []);
+
+  useEffect(() => {
+    setTheme(theme);
+  }, [theme, setTheme]);
+
   // Security Settings & Authentication State
   const [securitySettings, setSecuritySettings] = useState<SecuritySettings>(() => {
     try {
@@ -206,6 +240,20 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   });
 
+  // Cloud Sync Config & Status
+  const [cloudSyncConfig, setCloudSyncConfig] = useState<CloudSyncConfig>(() => {
+    try {
+      const saved = localStorage.getItem(`${STORAGE_KEY}_cloud_sync`);
+      return saved ? JSON.parse(saved) : DEFAULT_CLOUD_SYNC;
+    } catch {
+      return DEFAULT_CLOUD_SYNC;
+    }
+  });
+
+  const [cloudSyncStatus, setCloudSyncStatus] = useState<CloudSyncStatus>(() => {
+    return cloudSyncConfig.isEnabled ? 'connecting' : 'offline';
+  });
+
   const [activeTab, setActiveTab] = useState<ActiveTab>('dashboard');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategoryFilter, setSelectedCategoryFilter] = useState<string | null>(null);
@@ -225,10 +273,127 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       localStorage.setItem(`${STORAGE_KEY}_knowledge`, JSON.stringify(knowledge));
       localStorage.setItem(`${STORAGE_KEY}_theme`, theme);
       localStorage.setItem(`${STORAGE_KEY}_security`, JSON.stringify(securitySettings));
+      localStorage.setItem(`${STORAGE_KEY}_cloud_sync`, JSON.stringify(cloudSyncConfig));
     } catch (e) {
       console.error('Failed to sync to LocalStorage', e);
     }
+  }, [tasks, categories, capacitySettings, prioritySettings, reminders, knowledge, theme, securitySettings, cloudSyncConfig]);
+
+  const updateCloudSyncConfig = useCallback((config: CloudSyncConfig) => {
+    setCloudSyncConfig(config);
+    try {
+      localStorage.setItem(`${STORAGE_KEY}_cloud_sync`, JSON.stringify(config));
+    } catch (e) {
+      console.error('Failed to save cloud sync config', e);
+    }
+    if (!config.isEnabled) {
+      setCloudSyncStatus('offline');
+    } else {
+      setCloudSyncStatus('connecting');
+    }
+  }, []);
+
+  const getFullBundle = useCallback(() => {
+    return {
+      version: '1.0.0',
+      syncedAt: new Date().toISOString(),
+      tasks,
+      categories,
+      capacitySettings,
+      prioritySettings,
+      reminders,
+      knowledge,
+      theme,
+      securitySettings
+    };
   }, [tasks, categories, capacitySettings, prioritySettings, reminders, knowledge, theme, securitySettings]);
+
+  const applyBundle = useCallback((data: Record<string, unknown>) => {
+    if (!data) return false;
+    if (data.tasks) setTasks(data.tasks as Task[]);
+    if (data.categories) setCategories(data.categories as Category[]);
+    if (data.capacitySettings) setCapacitySettings(data.capacitySettings as CapacitySettings);
+    if (data.prioritySettings) setPrioritySettings(data.prioritySettings as PrioritySettings);
+    if (data.reminders) setReminders(data.reminders as Reminder[]);
+    if (data.knowledge) setKnowledge(data.knowledge as KnowledgeItem[]);
+    if (data.theme) setTheme(data.theme as ThemeName);
+    if (data.securitySettings) setSecuritySettings(data.securitySettings as SecuritySettings);
+    return true;
+  }, [setTheme]);
+
+  const pushToCloud = useCallback(async (): Promise<boolean> => {
+    if (!cloudSyncConfig.isEnabled) return false;
+    setCloudSyncStatus('syncing');
+    const bundle = getFullBundle();
+    const ok = await pushStateToCloud(cloudSyncConfig, bundle);
+    if (ok) {
+      setCloudSyncStatus('synced');
+      setCloudSyncConfig(prev => {
+        const updated = { ...prev, lastSyncedAt: new Date().toISOString() };
+        localStorage.setItem(`${STORAGE_KEY}_cloud_sync`, JSON.stringify(updated));
+        return updated;
+      });
+    } else {
+      setCloudSyncStatus('error');
+    }
+    return ok;
+  }, [cloudSyncConfig, getFullBundle]);
+
+  const pullFromCloud = useCallback(async (): Promise<boolean> => {
+    if (!cloudSyncConfig.isEnabled) return false;
+    setCloudSyncStatus('syncing');
+    const cloudData = await pullStateFromCloud(cloudSyncConfig);
+    if (cloudData) {
+      applyBundle(cloudData);
+      setCloudSyncStatus('synced');
+      setCloudSyncConfig(prev => {
+        const updated = { ...prev, lastSyncedAt: new Date().toISOString() };
+        localStorage.setItem(`${STORAGE_KEY}_cloud_sync`, JSON.stringify(updated));
+        return updated;
+      });
+      return true;
+    } else {
+      setCloudSyncStatus('synced');
+      return false;
+    }
+  }, [cloudSyncConfig, applyBundle]);
+
+  const syncNow = useCallback(async (): Promise<boolean> => {
+    return await pushToCloud();
+  }, [pushToCloud]);
+
+  const testCloudConnection = useCallback(async () => {
+    return await testSupabaseConnection(cloudSyncConfig);
+  }, [cloudSyncConfig]);
+
+  // Real-time Cloud Subscription & Initial Cloud Pull
+  useEffect(() => {
+    if (!cloudSyncConfig.isEnabled || !cloudSyncConfig.supabaseUrl || !cloudSyncConfig.supabaseAnonKey) {
+      setCloudSyncStatus('offline');
+      return;
+    }
+
+    setCloudSyncStatus('connecting');
+
+    // Initial pull on connect
+    pullFromCloud().then(success => {
+      if (success) {
+        setCloudSyncStatus('synced');
+      }
+    });
+
+    // Subscribe to realtime database changes from other devices/browsers
+    const unsubscribe = subscribeToRealtimeCloud(cloudSyncConfig, (remotePayload) => {
+      console.log('⚡ Received real-time update from cloud database!');
+      applyBundle(remotePayload);
+      setCloudSyncStatus('synced');
+      playNotificationChime('success');
+    });
+
+    return () => {
+      unsubscribe();
+    };
+  }, [cloudSyncConfig.isEnabled, cloudSyncConfig.supabaseUrl, cloudSyncConfig.supabaseAnonKey, cloudSyncConfig.autoRealtimeSync, pullFromCloud, applyBundle]);
 
   // Security & Authentication Methods
   const updateSecuritySettings = useCallback((settings: SecuritySettings) => {
@@ -292,22 +457,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       events.forEach(e => window.removeEventListener(e, resetInactivityTimer));
     };
   }, [securitySettings.isPasswordProtected, securitySettings.autoLockMinutes, isAuthenticated, logout]);
-
-  // Apply Theme attribute to document body/root
-  const setTheme = useCallback((newTheme: ThemeName) => {
-    setThemeState(newTheme);
-    if (newTheme === 'light') {
-      document.documentElement.removeAttribute('data-theme');
-      document.documentElement.classList.remove('dark');
-    } else {
-      document.documentElement.setAttribute('data-theme', newTheme);
-      document.documentElement.classList.add('dark');
-    }
-  }, []);
-
-  useEffect(() => {
-    setTheme(theme);
-  }, [theme, setTheme]);
 
   // Automated 2-Hour Inactivity Auto-Incomplete Engine
   // Automatically marks any task as 'Incomplete' if not started or not closed after 2 hours (120 mins)
@@ -853,6 +1002,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         isAuthenticated,
         login,
         logout,
+        cloudSyncConfig,
+        cloudSyncStatus,
+        updateCloudSyncConfig,
+        syncNow,
+        pushToCloud,
+        pullFromCloud,
+        testCloudConnection,
         exportStateJson,
         importStateJson,
         resetToDefaultData,

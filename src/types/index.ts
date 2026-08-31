@@ -154,3 +154,15 @@ export interface SecuritySettings {
   username: string; // e.g. "Master Admin"
 }
 
+export type CloudSyncStatus = 'offline' | 'connecting' | 'synced' | 'syncing' | 'error';
+
+export interface CloudSyncConfig {
+  isEnabled: boolean;
+  supabaseUrl: string;
+  supabaseAnonKey: string;
+  tableName: string; // Default: 'optimustime_data'
+  lastSyncedAt?: string;
+  autoRealtimeSync: boolean;
+}
+
+
