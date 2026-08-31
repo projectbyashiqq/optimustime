@@ -2,17 +2,17 @@ import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
 import { PriorityLevel, Category } from '../types';
 import { TimePicker } from '../components/TimePicker';
-import { 
-  Settings2, 
-  Layers, 
-  FolderKanban, 
-  Flame, 
-  Clock, 
-  Download, 
-  Upload, 
-  RotateCcw, 
-  Plus, 
-  Trash2, 
+import {
+  Settings2,
+  Layers,
+  FolderKanban,
+  Flame,
+  Clock,
+  Download,
+  Upload,
+  RotateCcw,
+  Plus,
+  Trash2,
   CheckCircle2,
   Tag,
   Palette,
@@ -38,10 +38,10 @@ import {
 import { DEFAULT_SQL_SCHEMA } from '../services/supabase';
 
 export const AdminSettingsView: React.FC = () => {
-  const { 
-    capacitySettings, 
-    updateCapacitySettings, 
-    prioritySettings, 
+  const {
+    capacitySettings,
+    updateCapacitySettings,
+    prioritySettings,
     updatePrioritySettings,
     categories,
     addCategory,
@@ -67,7 +67,7 @@ export const AdminSettingsView: React.FC = () => {
   const [bufferHours, setBufferHours] = useState(capacitySettings.bufferHours);
   const [dayStartTime, setDayStartTime] = useState(capacitySettings.dayStartTime || '06:00 AM');
   const [dayEndTime, setDayEndTime] = useState(capacitySettings.dayEndTime || '11:00 PM');
-  
+
   // Security Editing State
   const [isPasswordProtected, setIsPasswordProtected] = useState(securitySettings.isPasswordProtected);
   const [masterPassword, setMasterPassword] = useState(securitySettings.masterPassword);
@@ -206,7 +206,7 @@ export const AdminSettingsView: React.FC = () => {
 
   return (
     <div className="space-y-6 animate-fade-in">
-      
+
       {/* Top Banner */}
       <div className="glass-panel p-6 rounded-2xl border border-theme-border flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
         <div className="flex items-center gap-4">
@@ -237,7 +237,7 @@ export const AdminSettingsView: React.FC = () => {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        
+
         {/* Capacity & Red-Line Protocol Settings */}
         <div className="glass-panel p-6 rounded-2xl border border-theme-border space-y-4">
           <div className="flex items-center justify-between border-b border-theme-border pb-3">
@@ -321,18 +321,18 @@ export const AdminSettingsView: React.FC = () => {
                 <span>{maxWorkHours}h Work • {bufferHours}h Buffer • {sleepHours}h Sleep</span>
               </div>
               <div className="w-full h-2.5 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden flex">
-                <div 
-                  className="bg-blue-600 h-full" 
+                <div
+                  className="bg-blue-600 h-full"
                   style={{ width: `${(maxWorkHours / 24) * 100}%` }}
                   title={`Work: ${maxWorkHours}h`}
                 />
-                <div 
-                  className="bg-amber-500 h-full" 
+                <div
+                  className="bg-amber-500 h-full"
                   style={{ width: `${(bufferHours / 24) * 100}%` }}
                   title={`Buffer: ${bufferHours}h`}
                 />
-                <div 
-                  className="bg-indigo-500 h-full" 
+                <div
+                  className="bg-indigo-500 h-full"
                   style={{ width: `${(sleepHours / 24) * 100}%` }}
                   title={`Sleep: ${sleepHours}h`}
                 />
@@ -363,7 +363,7 @@ export const AdminSettingsView: React.FC = () => {
               return (
                 <div key={p} className="flex items-center justify-between gap-3 p-2 rounded-xl bg-theme-card-hover border border-theme-border">
                   <div className="flex items-center gap-2">
-                    <span 
+                    <span
                       className="px-2 py-0.5 rounded font-black text-xs"
                       style={{ backgroundColor: meta.bgColor, color: meta.color }}
                     >
@@ -460,9 +460,8 @@ export const AdminSettingsView: React.FC = () => {
               <ShieldCheck className="w-4 h-4 text-blue-500" />
               Security & Master Access Gate
             </h3>
-            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-              isPasswordProtected ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300' : 'bg-amber-100 text-amber-800'
-            }`}>
+            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${isPasswordProtected ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300' : 'bg-amber-100 text-amber-800'
+              }`}>
               {isPasswordProtected ? 'Gate Armed' : 'Gate Disabled'}
             </span>
           </div>
@@ -562,7 +561,6 @@ export const AdminSettingsView: React.FC = () => {
             </button>
           </div>
         </div>
-
         {/* Real-Time Cloud Database Sync (Supabase) */}
         <div className="glass-panel p-6 rounded-2xl border border-theme-border space-y-4">
           <div className="flex items-center justify-between border-b border-theme-border pb-3">
@@ -592,7 +590,7 @@ export const AdminSettingsView: React.FC = () => {
             <div className="flex items-center justify-between p-3 rounded-xl bg-theme-card-hover border border-theme-border">
               <div>
                 <strong className="text-theme-text block text-sm">Enable Cloud Database Sync</strong>
-                <span className="text-theme-muted text-[11px]">Sync across all devices and browsers</span>
+                <span className="text-theme-muted text-[11px]">Turn on to sync across phone, laptop, and web</span>
               </div>
               <label className="relative inline-flex items-center cursor-pointer">
                 <input
@@ -605,136 +603,148 @@ export const AdminSettingsView: React.FC = () => {
               </label>
             </div>
 
-            {isCloudSyncEnabled && (
-              <div className="space-y-3 animate-fade-in">
-                {/* Supabase URL */}
-                <div className="space-y-1">
-                  <label className="text-xs font-bold text-theme-text flex items-center justify-between">
-                    <span>Supabase Project URL:</span>
-                    <a
-                      href="https://supabase.com/dashboard"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-blue-500 hover:underline flex items-center gap-1 font-normal text-[11px]"
-                    >
-                      <span>Get from Supabase Dashboard</span>
-                      <ExternalLink className="w-3 h-3" />
-                    </a>
-                  </label>
+            {/* Step 1: SQL Setup Script Box */}
+            <div className="p-3.5 rounded-xl bg-theme-card-hover border border-theme-border space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="font-bold text-theme-text text-xs flex items-center gap-1.5">
+                  <span className="w-5 h-5 rounded-full bg-sky-600 text-white flex items-center justify-center text-[10px] font-black">1</span>
+                  <span>Run SQL Script in Supabase (SQL Editor):</span>
+                </span>
+                <button
+                  type="button"
+                  onClick={handleCopySql}
+                  className="px-2.5 py-1 rounded-lg bg-sky-600 hover:bg-sky-700 text-white font-bold text-[11px] flex items-center gap-1 transition-colors shadow-sm cursor-pointer"
+                >
+                  {hasCopiedSql ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                  <span>{hasCopiedSql ? 'Copied to Clipboard!' : 'Copy SQL Script'}</span>
+                </button>
+              </div>
+              <p className="text-[11px] text-theme-muted">
+                Open <a href="https://supabase.com/dashboard" target="_blank" rel="noopener noreferrer" className="text-blue-500 underline font-semibold inline-flex items-center gap-0.5">Supabase Dashboard <ExternalLink className="w-2.5 h-2.5" /></a> → click <strong>SQL Editor</strong> → click <strong>New Query</strong> → paste this SQL → click <strong>Run</strong>:
+              </p>
+              <pre className="p-3 rounded-xl bg-theme-bg border border-theme-border font-mono text-[10px] text-theme-text overflow-x-auto select-all leading-relaxed">
+                {DEFAULT_SQL_SCHEMA}
+              </pre>
+            </div>
+
+            {/* Step 2: Supabase Credentials */}
+            <div className="space-y-3 p-3.5 rounded-xl bg-theme-card-hover border border-theme-border">
+              <span className="font-bold text-theme-text text-xs flex items-center gap-1.5">
+                <span className="w-5 h-5 rounded-full bg-sky-600 text-white flex items-center justify-center text-[10px] font-black">2</span>
+                <span>Enter Supabase API Credentials (from Project Settings → API):</span>
+              </span>
+
+              {/* Supabase URL */}
+              <div className="space-y-1">
+                <label className="text-xs font-bold text-theme-text flex items-center justify-between">
+                  <span>Supabase Project URL:</span>
+                  <a
+                    href="https://supabase.com/dashboard"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-blue-500 hover:underline flex items-center gap-1 font-normal text-[11px]"
+                  >
+                    <span>Supabase Dashboard</span>
+                    <ExternalLink className="w-3 h-3" />
+                  </a>
+                </label>
+                <input
+                  type="text"
+                  value={supabaseUrl}
+                  onChange={(e) => setSupabaseUrl(e.target.value)}
+                  placeholder="https://xyzabcdefg.supabase.co"
+                  className="w-full px-3 py-2 rounded-xl bg-theme-bg border border-theme-border text-theme-text font-mono text-xs"
+                />
+              </div>
+
+              {/* Supabase Anon Key */}
+              <div className="space-y-1">
+                <label className="text-xs font-bold text-theme-text flex items-center justify-between">
+                  <span>Supabase Anon (Public) Key:</span>
+                </label>
+                <div className="relative">
                   <input
-                    type="text"
-                    value={supabaseUrl}
-                    onChange={(e) => setSupabaseUrl(e.target.value)}
-                    placeholder="https://xyzabcdefg.supabase.co"
-                    className="w-full px-3 py-2 rounded-xl bg-theme-card-hover border border-theme-border text-theme-text font-mono text-xs"
+                    type={showAnonKey ? 'text' : 'password'}
+                    value={supabaseAnonKey}
+                    onChange={(e) => setSupabaseAnonKey(e.target.value)}
+                    placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+                    className="w-full pl-3 pr-10 py-2 rounded-xl bg-theme-bg border border-theme-border text-theme-text font-mono text-xs"
                   />
-                </div>
-
-                {/* Supabase Anon Key */}
-                <div className="space-y-1">
-                  <label className="text-xs font-bold text-theme-text flex items-center justify-between">
-                    <span>Supabase Anon (Public) Key:</span>
-                  </label>
-                  <div className="relative">
-                    <input
-                      type={showAnonKey ? 'text' : 'password'}
-                      value={supabaseAnonKey}
-                      onChange={(e) => setSupabaseAnonKey(e.target.value)}
-                      placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
-                      className="w-full pl-3 pr-10 py-2 rounded-xl bg-theme-card-hover border border-theme-border text-theme-text font-mono text-xs"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowAnonKey(!showAnonKey)}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-theme-muted hover:text-theme-text"
-                    >
-                      {showAnonKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                    </button>
-                  </div>
-                </div>
-
-                {/* Real-time Broadcast Toggle */}
-                <div className="flex items-center justify-between p-2.5 rounded-xl bg-theme-card-hover/70 border border-theme-border">
-                  <div>
-                    <span className="font-bold text-theme-text block text-xs">Live Real-Time Subscriptions</span>
-                    <span className="text-[10px] text-theme-muted">Broadcast updates immediately to other active tabs/devices</span>
-                  </div>
-                  <input
-                    type="checkbox"
-                    checked={autoRealtimeSync}
-                    onChange={(e) => setAutoRealtimeSync(e.target.checked)}
-                    className="w-4 h-4 rounded text-sky-600 cursor-pointer"
-                  />
-                </div>
-
-                {/* Action Buttons: Test, Push, Pull */}
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-1">
                   <button
-                    onClick={handleTestConnection}
-                    disabled={isTestingConn || !supabaseUrl || !supabaseAnonKey}
-                    className="py-2 px-3 rounded-xl bg-theme-card-hover hover:bg-theme-border border border-theme-border text-theme-text font-bold text-xs flex items-center justify-center gap-1.5 disabled:opacity-50 transition-colors"
+                    type="button"
+                    onClick={() => setShowAnonKey(!showAnonKey)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-theme-muted hover:text-theme-text"
                   >
-                    {isTestingConn ? (
-                      <RefreshCw className="w-3.5 h-3.5 animate-spin text-sky-500" />
-                    ) : (
-                      <Cloud className="w-3.5 h-3.5 text-sky-500" />
-                    )}
-                    <span>Test Connection</span>
+                    {showAnonKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                   </button>
-
-                  <button
-                    onClick={async () => {
-                      const ok = await pushToCloud();
-                      setCloudStatusMsg({
-                        text: ok ? 'Local data successfully pushed to Cloud! 🚀' : 'Failed to push to Cloud.',
-                        isError: !ok
-                      });
-                      setTimeout(() => setCloudStatusMsg(null), 4000);
-                    }}
-                    disabled={!supabaseUrl || !supabaseAnonKey}
-                    className="py-2 px-3 rounded-xl bg-sky-600 hover:bg-sky-700 text-white font-bold text-xs flex items-center justify-center gap-1.5 disabled:opacity-50 transition-colors shadow-sm"
-                  >
-                    <Upload className="w-3.5 h-3.5" />
-                    <span>Push Local to Cloud</span>
-                  </button>
-
-                  <button
-                    onClick={async () => {
-                      const ok = await pullFromCloud();
-                      setCloudStatusMsg({
-                        text: ok ? 'Cloud data pulled & applied locally! 📥' : 'No cloud data found or fetch failed.',
-                        isError: !ok
-                      });
-                      setTimeout(() => setCloudStatusMsg(null), 4000);
-                    }}
-                    disabled={!supabaseUrl || !supabaseAnonKey}
-                    className="py-2 px-3 rounded-xl bg-theme-card-hover hover:bg-theme-border border border-theme-border text-theme-text font-bold text-xs flex items-center justify-center gap-1.5 disabled:opacity-50 transition-colors"
-                  >
-                    <Download className="w-3.5 h-3.5" />
-                    <span>Pull Cloud to Local</span>
-                  </button>
-                </div>
-
-                {/* 1-Click SQL Script Box */}
-                <div className="pt-2 border-t border-theme-border space-y-2">
-                  <div className="flex items-center justify-between">
-                    <span className="font-bold text-theme-text text-xs flex items-center gap-1.5">
-                      <span>1-Time Supabase SQL Setup (Copy & Run in SQL Editor):</span>
-                    </span>
-                    <button
-                      onClick={handleCopySql}
-                      className="px-2 py-1 rounded-lg bg-theme-card border border-theme-border text-theme-text hover:bg-theme-border font-bold text-[11px] flex items-center gap-1 transition-colors"
-                    >
-                      {hasCopiedSql ? <Check className="w-3 h-3 text-emerald-500" /> : <Copy className="w-3 h-3" />}
-                      <span>{hasCopiedSql ? 'Copied!' : 'Copy SQL'}</span>
-                    </button>
-                  </div>
-                  <pre className="p-2.5 rounded-xl bg-theme-bg border border-theme-border font-mono text-[10px] text-theme-muted overflow-x-auto select-all">
-                    {DEFAULT_SQL_SCHEMA}
-                  </pre>
                 </div>
               </div>
-            )}
+
+              {/* Real-time Broadcast Toggle */}
+              <div className="flex items-center justify-between p-2.5 rounded-xl bg-theme-bg border border-theme-border">
+                <div>
+                  <span className="font-bold text-theme-text block text-xs">Live Real-Time Subscriptions</span>
+                  <span className="text-[10px] text-theme-muted">Broadcast updates immediately to all connected browsers/phones</span>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={autoRealtimeSync}
+                  onChange={(e) => setAutoRealtimeSync(e.target.checked)}
+                  className="w-4 h-4 rounded text-sky-600 cursor-pointer"
+                />
+              </div>
+
+              {/* Action Buttons: Test, Push, Pull */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={handleTestConnection}
+                  disabled={isTestingConn || !supabaseUrl || !supabaseAnonKey}
+                  className="py-2 px-3 rounded-xl bg-theme-bg hover:bg-theme-border border border-theme-border text-theme-text font-bold text-xs flex items-center justify-center gap-1.5 disabled:opacity-50 transition-colors cursor-pointer"
+                >
+                  {isTestingConn ? (
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin text-sky-500" />
+                  ) : (
+                    <Cloud className="w-3.5 h-3.5 text-sky-500" />
+                  )}
+                  <span>Test Connection</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={async () => {
+                    const ok = await pushToCloud();
+                    setCloudStatusMsg({
+                      text: ok ? 'Local data successfully pushed to Cloud! 🚀' : 'Failed to push to Cloud.',
+                      isError: !ok
+                    });
+                    setTimeout(() => setCloudStatusMsg(null), 4000);
+                  }}
+                  disabled={!supabaseUrl || !supabaseAnonKey}
+                  className="py-2 px-3 rounded-xl bg-sky-600 hover:bg-sky-700 text-white font-bold text-xs flex items-center justify-center gap-1.5 disabled:opacity-50 transition-colors shadow-sm cursor-pointer"
+                >
+                  <Upload className="w-3.5 h-3.5" />
+                  <span>Push Local to Cloud</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={async () => {
+                    const ok = await pullFromCloud();
+                    setCloudStatusMsg({
+                      text: ok ? 'Cloud data pulled & applied locally! 📥' : 'No cloud data found or fetch failed.',
+                      isError: !ok
+                    });
+                    setTimeout(() => setCloudStatusMsg(null), 4000);
+                  }}
+                  disabled={!supabaseUrl || !supabaseAnonKey}
+                  className="py-2 px-3 rounded-xl bg-theme-bg hover:bg-theme-border border border-theme-border text-theme-text font-bold text-xs flex items-center justify-center gap-1.5 disabled:opacity-50 transition-colors cursor-pointer"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span>Pull Cloud to Local</span>
+                </button>
+              </div>
+            </div>
 
             {cloudStatusMsg && (
               <p className={`text-xs font-bold text-center ${cloudStatusMsg.isError ? 'text-red-500' : 'text-emerald-500'}`}>
@@ -743,8 +753,9 @@ export const AdminSettingsView: React.FC = () => {
             )}
 
             <button
+              type="button"
               onClick={handleSaveCloudSync}
-              className="w-full py-2.5 bg-sky-600 hover:bg-sky-700 text-white rounded-xl font-bold shadow-md transition-colors flex items-center justify-center gap-2"
+              className="w-full py-2.5 bg-sky-600 hover:bg-sky-700 text-white rounded-xl font-bold shadow-md transition-colors flex items-center justify-center gap-2 cursor-pointer"
             >
               <Database className="w-4 h-4" />
               <span>Save Cloud Sync Configuration</span>
