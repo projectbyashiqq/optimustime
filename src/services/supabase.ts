@@ -5,22 +5,38 @@ let cachedClient: SupabaseClient | null = null;
 let currentConfigKey = '';
 let activeRealtimeChannel: RealtimeChannel | null = null;
 
-export const DEFAULT_SQL_SCHEMA = `-- Run this in your Supabase SQL Editor (Takes 5 seconds):
+export const DEFAULT_SQL_SCHEMA = `-- 1. Create main sync table
 CREATE TABLE IF NOT EXISTS optimustime_sync (
   id TEXT PRIMARY KEY,
   payload JSONB NOT NULL,
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- Enable Row Level Security (Allow Read/Write for Anon Key)
+-- 2. Enable Row Level Security
 ALTER TABLE optimustime_sync ENABLE ROW LEVEL SECURITY;
 
+-- 3. Idempotent Policies (Allow Read/Write for Anon Key)
+DROP POLICY IF EXISTS "Allow anon read" ON optimustime_sync;
 CREATE POLICY "Allow anon read" ON optimustime_sync FOR SELECT USING (true);
+
+DROP POLICY IF EXISTS "Allow anon insert" ON optimustime_sync;
 CREATE POLICY "Allow anon insert" ON optimustime_sync FOR INSERT WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Allow anon update" ON optimustime_sync;
 CREATE POLICY "Allow anon update" ON optimustime_sync FOR UPDATE USING (true);
 
--- Enable Real-Time Broadcast
-ALTER PUBLICATION supabase_realtime ADD TABLE optimustime_sync;
+-- 4. Enable Real-Time Broadcast
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_publication_tables 
+    WHERE pubname = 'supabase_realtime' 
+    AND schemaname = 'public' 
+    AND tablename = 'optimustime_sync'
+  ) THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE optimustime_sync;
+  END IF;
+END $$;
 `;
 
 export function getSupabaseClient(config: CloudSyncConfig): SupabaseClient | null {

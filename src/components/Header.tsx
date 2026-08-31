@@ -37,7 +37,8 @@ export const Header: React.FC<HeaderProps> = ({ onOpenNewTaskModal }) => {
     logout,
     cloudSyncConfig,
     cloudSyncStatus,
-    syncNow
+    syncNow,
+    setActiveTab
   } = useApp();
 
   const [currentTime, setCurrentTime] = useState<Date>(new Date());
@@ -259,6 +260,60 @@ export const Header: React.FC<HeaderProps> = ({ onOpenNewTaskModal }) => {
                 </div>
               )}
             </div>
+
+            {/* Cloud Sync Status Indicator */}
+            <button
+              onClick={() => {
+                if (!cloudSyncConfig.isEnabled) {
+                  setActiveTab('settings');
+                } else {
+                  syncNow();
+                }
+              }}
+              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-xs font-semibold transition-all cursor-pointer ${
+                cloudSyncStatus === 'synced'
+                  ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/20'
+                  : cloudSyncStatus === 'syncing'
+                  ? 'bg-blue-500/10 border-blue-500/30 text-blue-600 dark:text-blue-400 hover:bg-blue-500/20'
+                  : cloudSyncStatus === 'connecting'
+                  ? 'bg-amber-500/10 border-amber-500/30 text-amber-600 dark:text-amber-400 hover:bg-amber-500/20'
+                  : cloudSyncStatus === 'error'
+                  ? 'bg-red-500/10 border-red-500/30 text-red-600 dark:text-red-400 hover:bg-red-500/20'
+                  : 'bg-theme-card-hover border-theme-border text-theme-muted hover:text-theme-text'
+              }`}
+              title={
+                !cloudSyncConfig.isEnabled
+                  ? 'Cloud Sync Offline (Click to configure Supabase in Admin Settings)'
+                  : cloudSyncStatus === 'synced'
+                  ? 'Cloud Synced - Real-time across all devices (Click to sync now)'
+                  : cloudSyncStatus === 'syncing'
+                  ? 'Syncing with Supabase...'
+                  : cloudSyncStatus === 'connecting'
+                  ? 'Connecting to Supabase...'
+                  : 'Sync Error (Click to retry)'
+              }
+            >
+              {cloudSyncStatus === 'syncing' ? (
+                <RefreshCw className="w-3.5 h-3.5 animate-spin text-blue-500" />
+              ) : cloudSyncStatus === 'synced' ? (
+                <Cloud className="w-3.5 h-3.5 text-emerald-500" />
+              ) : cloudSyncStatus === 'error' ? (
+                <CloudOff className="w-3.5 h-3.5 text-red-500" />
+              ) : (
+                <Cloud className="w-3.5 h-3.5 text-theme-muted" />
+              )}
+              <span className="hidden lg:inline text-[11px]">
+                {cloudSyncStatus === 'synced'
+                  ? 'Cloud Synced'
+                  : cloudSyncStatus === 'syncing'
+                  ? 'Syncing...'
+                  : cloudSyncStatus === 'connecting'
+                  ? 'Connecting...'
+                  : cloudSyncStatus === 'error'
+                  ? 'Sync Error'
+                  : 'Local Only'}
+              </span>
+            </button>
 
             {/* Primary New Task CTA */}
             <button

@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import { 
   Task, 
   Category, 
@@ -244,7 +244,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [cloudSyncConfig, setCloudSyncConfig] = useState<CloudSyncConfig>(() => {
     try {
       const saved = localStorage.getItem(`${STORAGE_KEY}_cloud_sync`);
-      return saved ? JSON.parse(saved) : DEFAULT_CLOUD_SYNC;
+      const parsed: CloudSyncConfig | null = saved ? JSON.parse(saved) : null;
+      // If DEFAULT_CLOUD_SYNC has env vars configured and saved config has no URL, prefer DEFAULT_CLOUD_SYNC
+      if (DEFAULT_CLOUD_SYNC.supabaseUrl && (!parsed || !parsed.supabaseUrl)) {
+        return DEFAULT_CLOUD_SYNC;
+      }
+      return parsed || DEFAULT_CLOUD_SYNC;
     } catch {
       return DEFAULT_CLOUD_SYNC;
     }
@@ -253,6 +258,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [cloudSyncStatus, setCloudSyncStatus] = useState<CloudSyncStatus>(() => {
     return cloudSyncConfig.isEnabled ? 'connecting' : 'offline';
   });
+
+  // Tracking flags to avoid infinite ping-pong sync loops
+  const isRemoteUpdateRef = useRef(false);
+  const isInitialPullDoneRef = useRef(false);
 
   const [activeTab, setActiveTab] = useState<ActiveTab>('dashboard');
   const [searchQuery, setSearchQuery] = useState('');
@@ -293,10 +302,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   }, []);
 
-  const getFullBundle = useCallback(() => {
-    return {
-      version: '1.0.0',
-      syncedAt: new Date().toISOString(),
+  const stateRef = useRef({
+    tasks,
+    categories,
+    capacitySettings,
+    prioritySettings,
+    reminders,
+    knowledge,
+    theme,
+    securitySettings
+  });
+  useEffect(() => {
+    stateRef.current = {
       tasks,
       categories,
       capacitySettings,
@@ -308,67 +325,96 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
   }, [tasks, categories, capacitySettings, prioritySettings, reminders, knowledge, theme, securitySettings]);
 
+  const cloudSyncConfigRef = useRef(cloudSyncConfig);
+  useEffect(() => {
+    cloudSyncConfigRef.current = cloudSyncConfig;
+  }, [cloudSyncConfig]);
+
+  const getFullBundle = useCallback(() => {
+    const s = stateRef.current;
+    return {
+      version: '1.0.0',
+      syncedAt: new Date().toISOString(),
+      tasks: s.tasks,
+      categories: s.categories,
+      capacitySettings: s.capacitySettings,
+      prioritySettings: s.prioritySettings,
+      reminders: s.reminders,
+      knowledge: s.knowledge,
+      theme: s.theme,
+      securitySettings: s.securitySettings
+    };
+  }, []);
+
   const applyBundle = useCallback((data: Record<string, unknown>) => {
     if (!data) return false;
-    if (data.tasks) setTasks(data.tasks as Task[]);
-    if (data.categories) setCategories(data.categories as Category[]);
+    isRemoteUpdateRef.current = true;
+    if (Array.isArray(data.tasks)) setTasks(data.tasks as Task[]);
+    if (Array.isArray(data.categories)) setCategories(data.categories as Category[]);
     if (data.capacitySettings) setCapacitySettings(data.capacitySettings as CapacitySettings);
     if (data.prioritySettings) setPrioritySettings(data.prioritySettings as PrioritySettings);
-    if (data.reminders) setReminders(data.reminders as Reminder[]);
-    if (data.knowledge) setKnowledge(data.knowledge as KnowledgeItem[]);
-    if (data.theme) setTheme(data.theme as ThemeName);
+    if (Array.isArray(data.reminders)) setReminders(data.reminders as Reminder[]);
+    if (Array.isArray(data.knowledge)) setKnowledge(data.knowledge as KnowledgeItem[]);
+    if (typeof data.theme === 'string') setTheme(data.theme as ThemeName);
     if (data.securitySettings) setSecuritySettings(data.securitySettings as SecuritySettings);
+    setTimeout(() => {
+      isRemoteUpdateRef.current = false;
+    }, 1000);
     return true;
   }, [setTheme]);
 
   const pushToCloud = useCallback(async (): Promise<boolean> => {
-    if (!cloudSyncConfig.isEnabled) return false;
+    const cfg = cloudSyncConfigRef.current;
+    if (!cfg.isEnabled || !cfg.supabaseUrl || !cfg.supabaseAnonKey) return false;
     setCloudSyncStatus('syncing');
     const bundle = getFullBundle();
-    const ok = await pushStateToCloud(cloudSyncConfig, bundle);
+    const ok = await pushStateToCloud(cfg, bundle);
     if (ok) {
       setCloudSyncStatus('synced');
-      setCloudSyncConfig(prev => {
-        const updated = { ...prev, lastSyncedAt: new Date().toISOString() };
-        localStorage.setItem(`${STORAGE_KEY}_cloud_sync`, JSON.stringify(updated));
-        return updated;
-      });
     } else {
       setCloudSyncStatus('error');
     }
     return ok;
-  }, [cloudSyncConfig, getFullBundle]);
+  }, [getFullBundle]);
 
   const pullFromCloud = useCallback(async (): Promise<boolean> => {
-    if (!cloudSyncConfig.isEnabled) return false;
+    const cfg = cloudSyncConfigRef.current;
+    if (!cfg.isEnabled || !cfg.supabaseUrl || !cfg.supabaseAnonKey) return false;
     setCloudSyncStatus('syncing');
-    const cloudData = await pullStateFromCloud(cloudSyncConfig);
+    const cloudData = await pullStateFromCloud(cfg);
     if (cloudData) {
       applyBundle(cloudData);
       setCloudSyncStatus('synced');
-      setCloudSyncConfig(prev => {
-        const updated = { ...prev, lastSyncedAt: new Date().toISOString() };
-        localStorage.setItem(`${STORAGE_KEY}_cloud_sync`, JSON.stringify(updated));
-        return updated;
-      });
       return true;
     } else {
       setCloudSyncStatus('synced');
       return false;
     }
-  }, [cloudSyncConfig, applyBundle]);
+  }, [applyBundle]);
 
   const syncNow = useCallback(async (): Promise<boolean> => {
     return await pushToCloud();
   }, [pushToCloud]);
 
   const testCloudConnection = useCallback(async () => {
-    return await testSupabaseConnection(cloudSyncConfig);
-  }, [cloudSyncConfig]);
+    return await testSupabaseConnection(cloudSyncConfigRef.current);
+  }, []);
+
+  const pullFromCloudRef = useRef(pullFromCloud);
+  pullFromCloudRef.current = pullFromCloud;
+  const pushToCloudRef = useRef(pushToCloud);
+  pushToCloudRef.current = pushToCloud;
+  const applyBundleRef = useRef(applyBundle);
+  applyBundleRef.current = applyBundle;
 
   // Real-time Cloud Subscription & Initial Cloud Pull
   useEffect(() => {
-    if (!cloudSyncConfig.isEnabled || !cloudSyncConfig.supabaseUrl || !cloudSyncConfig.supabaseAnonKey) {
+    const isEnabled = cloudSyncConfig.isEnabled;
+    const url = cloudSyncConfig.supabaseUrl?.trim();
+    const key = cloudSyncConfig.supabaseAnonKey?.trim();
+    const realtime = cloudSyncConfig.autoRealtimeSync;
+
+    if (!isEnabled || !url || !key) {
       setCloudSyncStatus('offline');
       return;
     }
@@ -376,16 +422,28 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setCloudSyncStatus('connecting');
 
     // Initial pull on connect
-    pullFromCloud().then(success => {
+    pullFromCloudRef.current().then(success => {
+      isInitialPullDoneRef.current = true;
       if (success) {
         setCloudSyncStatus('synced');
+      } else {
+        // Seed initial data to cloud if table row is empty
+        pushToCloudRef.current().then(() => {
+          setCloudSyncStatus('synced');
+        });
       }
     });
 
-    // Subscribe to realtime database changes from other devices/browsers
-    const unsubscribe = subscribeToRealtimeCloud(cloudSyncConfig, (remotePayload) => {
-      console.log('⚡ Received real-time update from cloud database!');
-      applyBundle(remotePayload);
+    const activeConfig: CloudSyncConfig = {
+      isEnabled,
+      supabaseUrl: url,
+      supabaseAnonKey: key,
+      tableName: 'optimustime_sync',
+      autoRealtimeSync: realtime
+    };
+
+    const unsubscribe = subscribeToRealtimeCloud(activeConfig, (remotePayload) => {
+      applyBundleRef.current(remotePayload);
       setCloudSyncStatus('synced');
       playNotificationChime('success');
     });
@@ -393,7 +451,39 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return () => {
       unsubscribe();
     };
-  }, [cloudSyncConfig.isEnabled, cloudSyncConfig.supabaseUrl, cloudSyncConfig.supabaseAnonKey, cloudSyncConfig.autoRealtimeSync, pullFromCloud, applyBundle]);
+  }, [
+    cloudSyncConfig.isEnabled,
+    cloudSyncConfig.supabaseUrl,
+    cloudSyncConfig.supabaseAnonKey,
+    cloudSyncConfig.autoRealtimeSync
+  ]);
+
+  // Auto-sync local state changes to Supabase Cloud (Debounced auto-push)
+  useEffect(() => {
+    const cfg = cloudSyncConfigRef.current;
+    if (!cfg.isEnabled || !cfg.supabaseUrl || !cfg.supabaseAnonKey) {
+      return;
+    }
+    // Skip if update originated from cloud or before initial pull finishes
+    if (isRemoteUpdateRef.current || !isInitialPullDoneRef.current) {
+      return;
+    }
+
+    const timer = setTimeout(() => {
+      pushToCloudRef.current();
+    }, 1500);
+
+    return () => clearTimeout(timer);
+  }, [
+    tasks,
+    categories,
+    capacitySettings,
+    prioritySettings,
+    reminders,
+    knowledge,
+    theme,
+    securitySettings
+  ]);
 
   // Security & Authentication Methods
   const updateSecuritySettings = useCallback((settings: SecuritySettings) => {

@@ -35,7 +35,7 @@ import {
   Copy,
   ExternalLink
 } from 'lucide-react';
-import { DEFAULT_SQL_SCHEMA } from '../services/supabase';
+import { DEFAULT_SQL_SCHEMA, testSupabaseConnection } from '../services/supabase';
 
 export const AdminSettingsView: React.FC = () => {
   const {
@@ -104,24 +104,104 @@ export const AdminSettingsView: React.FC = () => {
   const [importJsonText, setImportJsonText] = useState('');
   const [importStatus, setImportStatus] = useState<string | null>(null);
 
-  const handleSaveCloudSync = () => {
-    updateCloudSyncConfig({
-      isEnabled: isCloudSyncEnabled,
+  // Keep form inputs synced when cloudSyncConfig updates (e.g. from environment or context)
+  React.useEffect(() => {
+    setIsCloudSyncEnabled(cloudSyncConfig.isEnabled);
+    if (cloudSyncConfig.supabaseUrl) setSupabaseUrl(cloudSyncConfig.supabaseUrl);
+    if (cloudSyncConfig.supabaseAnonKey) setSupabaseAnonKey(cloudSyncConfig.supabaseAnonKey);
+    setAutoRealtimeSync(cloudSyncConfig.autoRealtimeSync);
+  }, [
+    cloudSyncConfig.isEnabled,
+    cloudSyncConfig.supabaseUrl,
+    cloudSyncConfig.supabaseAnonKey,
+    cloudSyncConfig.autoRealtimeSync
+  ]);
+
+  const handleSaveCloudSync = async () => {
+    const isConfigured = Boolean(supabaseUrl.trim() && supabaseAnonKey.trim());
+    const newConfig = {
+      isEnabled: isCloudSyncEnabled && isConfigured,
+      supabaseUrl: supabaseUrl.trim(),
+      supabaseAnonKey: supabaseAnonKey.trim(),
+      tableName: 'optimustime_sync',
+      autoRealtimeSync
+    };
+    updateCloudSyncConfig(newConfig);
+
+    if (newConfig.isEnabled) {
+      setIsTestingConn(true);
+      const testRes = await testSupabaseConnection(newConfig);
+      setIsTestingConn(false);
+      if (testRes.success) {
+        setCloudStatusMsg({ text: 'Cloud sync connected and saved successfully! ☁️', isError: false });
+        await pushToCloud();
+      } else {
+        setCloudStatusMsg({ text: `Config saved, but connection error: ${testRes.message}`, isError: true });
+      }
+    } else {
+      setCloudStatusMsg({ text: 'Cloud sync configuration updated.', isError: false });
+    }
+    setTimeout(() => setCloudStatusMsg(null), 5000);
+  };
+
+  const handleTestConnection = async () => {
+    if (!supabaseUrl.trim() || !supabaseAnonKey.trim()) {
+      setCloudStatusMsg({ text: 'Please enter both Supabase Project URL and Anon Key.', isError: true });
+      return;
+    }
+    setIsTestingConn(true);
+    setCloudStatusMsg(null);
+    const result = await testSupabaseConnection({
+      isEnabled: true,
       supabaseUrl: supabaseUrl.trim(),
       supabaseAnonKey: supabaseAnonKey.trim(),
       tableName: 'optimustime_sync',
       autoRealtimeSync
     });
-    setCloudStatusMsg({ text: 'Cloud sync configuration saved successfully! ☁️', isError: false });
+    setIsTestingConn(false);
+    setCloudStatusMsg({ text: result.message, isError: !result.success });
+  };
+
+  const handlePushLocalToCloud = async () => {
+    if (!supabaseUrl.trim() || !supabaseAnonKey.trim()) {
+      setCloudStatusMsg({ text: 'Please enter Supabase URL and Anon Key first.', isError: true });
+      return;
+    }
+    const config = {
+      isEnabled: true,
+      supabaseUrl: supabaseUrl.trim(),
+      supabaseAnonKey: supabaseAnonKey.trim(),
+      tableName: 'optimustime_sync',
+      autoRealtimeSync
+    };
+    updateCloudSyncConfig(config);
+    const ok = await pushToCloud();
+    setCloudStatusMsg({
+      text: ok ? 'Local data successfully pushed to Cloud! 🚀' : 'Failed to push to Cloud. Check Supabase URL, Key & SQL table.',
+      isError: !ok
+    });
     setTimeout(() => setCloudStatusMsg(null), 4000);
   };
 
-  const handleTestConnection = async () => {
-    setIsTestingConn(true);
-    setCloudStatusMsg(null);
-    const result = await testCloudConnection();
-    setIsTestingConn(false);
-    setCloudStatusMsg({ text: result.message, isError: !result.success });
+  const handlePullCloudToLocal = async () => {
+    if (!supabaseUrl.trim() || !supabaseAnonKey.trim()) {
+      setCloudStatusMsg({ text: 'Please enter Supabase URL and Anon Key first.', isError: true });
+      return;
+    }
+    const config = {
+      isEnabled: true,
+      supabaseUrl: supabaseUrl.trim(),
+      supabaseAnonKey: supabaseAnonKey.trim(),
+      tableName: 'optimustime_sync',
+      autoRealtimeSync
+    };
+    updateCloudSyncConfig(config);
+    const ok = await pullFromCloud();
+    setCloudStatusMsg({
+      text: ok ? 'Cloud data pulled & applied locally! 📥' : 'No cloud data found or fetch failed. (If database is new, use "Push Local to Cloud" first).',
+      isError: !ok
+    });
+    setTimeout(() => setCloudStatusMsg(null), 5000);
   };
 
   const handleCopySql = () => {
@@ -582,9 +662,29 @@ export const AdminSettingsView: React.FC = () => {
           </div>
 
           <div className="space-y-4 text-xs">
-            <p className="text-theme-muted">
-              Connect a free <strong>Supabase</strong> project to automatically synchronize all tasks, categories, knowledge notes, and settings across your phone, laptop, and live Vercel deployments in real time.
-            </p>
+            {/* Vercel Multi-Device One-Time Setup Callout */}
+            <div className="p-3.5 rounded-xl bg-blue-500/10 border border-blue-500/30 space-y-2">
+              <div className="flex items-center gap-2 text-blue-600 dark:text-blue-400 font-bold">
+                <Cloud className="w-4 h-4" />
+                <span>সব ডিভাইসে অটোমেটিক সিঙ্ক করার সহজ উপায় (Vercel Environment Variables)</span>
+              </div>
+              <p className="text-[11px] text-theme-muted leading-relaxed">
+                আপনি যদি Vercel-এ একবার Environment Variables অ্যাড করে দেন, তবে <strong>যেকোনো ফোন, ট্যাব বা ল্যাপটপ</strong> থেকে এই অ্যাপ ওপেন করলে ম্যানুয়ালি কিছু সেটআপ করা লাগবে না — সব ডিভাইস সরাসরি একই ডাটাবেজের সাথে লাইভ সিঙ্ক থাকবে।
+              </p>
+              <div className="p-2 rounded-lg bg-theme-bg/80 border border-theme-border font-mono text-[11px] space-y-1">
+                <div className="flex items-center justify-between text-theme-text">
+                  <span className="text-blue-500 font-bold">VITE_SUPABASE_URL</span>
+                  <span className="text-theme-muted text-[10px]">Supabase Project URL</span>
+                </div>
+                <div className="flex items-center justify-between text-theme-text">
+                  <span className="text-emerald-500 font-bold">VITE_SUPABASE_ANON_KEY</span>
+                  <span className="text-theme-muted text-[10px]">Supabase anon/public key</span>
+                </div>
+              </div>
+              <p className="text-[10px] text-theme-muted">
+                👉 <strong>Vercel Dashboard</strong> → <strong>Project</strong> → <strong>Settings</strong> → <strong>Environment Variables</strong> এ গিয়ে এই দুটি ভ্যারিয়েবল যোগ করে <strong>Redeploy</strong> করুন।
+              </p>
+            </div>
 
             {/* Cloud Sync Toggle */}
             <div className="flex items-center justify-between p-3 rounded-xl bg-theme-card-hover border border-theme-border">
@@ -712,14 +812,7 @@ export const AdminSettingsView: React.FC = () => {
 
                 <button
                   type="button"
-                  onClick={async () => {
-                    const ok = await pushToCloud();
-                    setCloudStatusMsg({
-                      text: ok ? 'Local data successfully pushed to Cloud! 🚀' : 'Failed to push to Cloud.',
-                      isError: !ok
-                    });
-                    setTimeout(() => setCloudStatusMsg(null), 4000);
-                  }}
+                  onClick={handlePushLocalToCloud}
                   disabled={!supabaseUrl || !supabaseAnonKey}
                   className="py-2 px-3 rounded-xl bg-sky-600 hover:bg-sky-700 text-white font-bold text-xs flex items-center justify-center gap-1.5 disabled:opacity-50 transition-colors shadow-sm cursor-pointer"
                 >
@@ -729,14 +822,7 @@ export const AdminSettingsView: React.FC = () => {
 
                 <button
                   type="button"
-                  onClick={async () => {
-                    const ok = await pullFromCloud();
-                    setCloudStatusMsg({
-                      text: ok ? 'Cloud data pulled & applied locally! 📥' : 'No cloud data found or fetch failed.',
-                      isError: !ok
-                    });
-                    setTimeout(() => setCloudStatusMsg(null), 4000);
-                  }}
+                  onClick={handlePullCloudToLocal}
                   disabled={!supabaseUrl || !supabaseAnonKey}
                   className="py-2 px-3 rounded-xl bg-theme-bg hover:bg-theme-border border border-theme-border text-theme-text font-bold text-xs flex items-center justify-center gap-1.5 disabled:opacity-50 transition-colors cursor-pointer"
                 >

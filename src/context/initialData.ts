@@ -1,10 +1,13 @@
 import { Category, PrioritySettings, CapacitySettings, Task, KnowledgeItem, Reminder, SecuritySettings, CloudSyncConfig } from '../types';
 import { toISODateString, getDayOfWeekFromDate } from '../utils/timeUtils';
 
+const envSupabaseUrl = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_SUPABASE_URL) || '';
+const envSupabaseAnonKey = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_SUPABASE_ANON_KEY) || '';
+
 export const DEFAULT_CLOUD_SYNC: CloudSyncConfig = {
-  isEnabled: false,
-  supabaseUrl: '',
-  supabaseAnonKey: '',
+  isEnabled: Boolean(envSupabaseUrl && envSupabaseAnonKey),
+  supabaseUrl: envSupabaseUrl,
+  supabaseAnonKey: envSupabaseAnonKey,
   tableName: 'optimustime_sync',
   autoRealtimeSync: true
 };
