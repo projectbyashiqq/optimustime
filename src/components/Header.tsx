@@ -80,113 +80,70 @@ export const Header: React.FC<HeaderProps> = ({ onOpenNewTaskModal }) => {
 
   return (
     <header className="sticky top-0 z-30 glass-header shadow-sm transition-colors duration-200">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3">
-        <div className="flex flex-col md:flex-row items-center justify-between gap-3">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-2.5">
+        <div className="flex items-center justify-between gap-3">
           
           {/* Logo & Live Time Section */}
-          <div className="flex items-center gap-4 w-full md:w-auto justify-between md:justify-start">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-blue-600 to-sky-400 flex items-center justify-center shadow-md shadow-blue-500/20 text-white font-bold text-lg tracking-wider">
-                OT
+          <div className="flex items-center gap-3 shrink-0">
+            <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-blue-600 to-sky-400 flex items-center justify-center shadow-md shadow-blue-500/20 text-white font-bold text-base tracking-wider">
+              OT
+            </div>
+            <div>
+              <div className="flex items-center gap-1.5">
+                <h1 className="text-base font-black tracking-tight font-display text-theme-text flex items-center gap-1">
+                  OPTIMUS<span className="text-blue-600 dark:text-blue-400">TIME</span>
+                </h1>
+                <span className="text-[9px] uppercase font-bold tracking-widest px-1.5 py-0.5 rounded bg-blue-100 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300">
+                  Unified
+                </span>
               </div>
-              <div>
-                <div className="flex items-center gap-1.5">
-                  <h1 className="text-lg font-black tracking-tight font-display text-theme-text flex items-center gap-1">
-                    OPTIMUS<span className="text-blue-600 dark:text-blue-400">TIME</span>
-                  </h1>
-                  <span className="text-[10px] uppercase font-bold tracking-widest px-1.5 py-0.5 rounded bg-blue-100 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300">
-                    Unified
-                  </span>
-                </div>
-                <div className="text-xs text-theme-muted font-medium flex items-center gap-1.5">
-                  <span>{formatHeaderDate(currentTime)}</span>
-                </div>
+              <div className="text-[11px] text-theme-muted font-medium flex items-center gap-1.5">
+                <span>{formatHeaderDate(currentTime)}</span>
               </div>
             </div>
 
             {/* Live Clock Badge */}
-            <div className="flex items-center gap-2 bg-theme-card-hover px-3 py-1.5 rounded-lg border border-theme-border shadow-inner">
-              <Clock className="w-4 h-4 text-blue-600 dark:text-blue-400 animate-pulse" />
-              <span className="font-mono text-sm font-bold tracking-wide text-theme-text">
+            <div className="hidden sm:flex items-center gap-1.5 bg-theme-card-hover px-2.5 py-1 rounded-lg border border-theme-border shadow-inner ml-1">
+              <Clock className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400 animate-pulse" />
+              <span className="font-mono text-xs font-bold tracking-wide text-theme-text">
                 {formattedTimeStr}
               </span>
             </div>
-
-            {/* Cloud Sync Status Pill */}
-            <button
-              onClick={() => syncNow()}
-              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-xs font-bold transition-all ${
-                cloudSyncStatus === 'synced'
-                  ? 'bg-emerald-50 dark:bg-emerald-950/60 border-emerald-300 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100'
-                  : cloudSyncStatus === 'syncing' || cloudSyncStatus === 'connecting'
-                  ? 'bg-blue-50 dark:bg-blue-950/60 border-blue-300 dark:border-blue-800 text-blue-700 dark:text-blue-300 animate-pulse'
-                  : cloudSyncStatus === 'error'
-                  ? 'bg-red-50 dark:bg-red-950/60 border-red-300 dark:border-red-800 text-red-700 dark:text-red-300'
-                  : 'bg-theme-card-hover border-theme-border text-theme-muted hover:text-theme-text'
-              }`}
-              title={
-                cloudSyncConfig.isEnabled
-                  ? `Cloud Sync: ${cloudSyncStatus.toUpperCase()} (Click to Sync Now)`
-                  : 'Cloud Sync Disabled (Setup in Admin Settings → Cloud Sync)'
-              }
-            >
-              {cloudSyncStatus === 'synced' ? (
-                <>
-                  <Cloud className="w-3.5 h-3.5 text-emerald-500" />
-                  <span className="hidden sm:inline">Synced</span>
-                </>
-              ) : cloudSyncStatus === 'syncing' || cloudSyncStatus === 'connecting' ? (
-                <>
-                  <RefreshCw className="w-3.5 h-3.5 text-blue-500 animate-spin" />
-                  <span className="hidden sm:inline">Syncing...</span>
-                </>
-              ) : cloudSyncStatus === 'error' ? (
-                <>
-                  <CloudOff className="w-3.5 h-3.5 text-red-500" />
-                  <span className="hidden sm:inline">Sync Error</span>
-                </>
-              ) : (
-                <>
-                  <CloudOff className="w-3.5 h-3.5 text-theme-muted" />
-                  <span className="hidden sm:inline">Local Only</span>
-                </>
-              )}
-            </button>
           </div>
 
           {/* Daily Capacity & Red-Line Indicator */}
-          <div className="w-full md:w-auto flex-1 max-w-md">
-            <div className={`p-2.5 rounded-xl border transition-all duration-300 ${
+          <div className="hidden md:block flex-1 max-w-xs lg:max-w-sm px-2">
+            <div className={`p-2 rounded-xl border transition-all duration-300 ${
               isRedLine 
                 ? 'bg-red-50 dark:bg-red-950/40 border-red-300 dark:border-red-800 animate-glow-danger' 
-                : 'bg-theme-card border-theme-border'
+                : 'bg-theme-card/70 border-theme-border'
             }`}>
-              <div className="flex items-center justify-between text-xs mb-1.5">
-                <div className="flex items-center gap-1.5 font-semibold">
+              <div className="flex items-center justify-between text-[11px] mb-1">
+                <div className="flex items-center gap-1 font-semibold">
                   {isRedLine ? (
                     <>
-                      <AlertTriangle className="w-3.5 h-3.5 text-red-600 dark:text-red-400 animate-bounce" />
-                      <span className="text-red-700 dark:text-red-400 font-bold uppercase tracking-wider">
-                        Red-Line Alert Exceeded!
+                      <AlertTriangle className="w-3 h-3 text-red-600 dark:text-red-400 animate-bounce" />
+                      <span className="text-red-700 dark:text-red-400 font-bold uppercase tracking-wider text-[10px]">
+                        Red-Line Exceeded!
                       </span>
                     </>
                   ) : (
                     <>
-                      <Flame className="w-3.5 h-3.5 text-amber-500" />
-                      <span className="text-theme-text font-medium">Daily Capacity Budget</span>
+                      <Flame className="w-3 h-3 text-amber-500" />
+                      <span className="text-theme-text font-medium">Capacity</span>
                     </>
                   )}
                 </div>
-                <div className="font-mono text-[11px] font-bold text-theme-muted">
+                <div className="font-mono text-[10px] font-bold text-theme-muted">
                   <span className={isRedLine ? 'text-red-600 font-black' : 'text-blue-600 dark:text-blue-400'}>
                     {formattedHours}h {formattedRemainingMinutes}m
                   </span>
-                  {' '}/ {capacitySettings.maxWorkHours}h Max
+                  {' '}/ {capacitySettings.maxWorkHours}h
                 </div>
               </div>
 
               {/* Progress Bar */}
-              <div className="w-full bg-slate-200 dark:bg-slate-700 h-2 rounded-full overflow-hidden">
+              <div className="w-full bg-slate-200 dark:bg-slate-700 h-1.5 rounded-full overflow-hidden">
                 <div 
                   className={`h-full transition-all duration-500 rounded-full ${
                     isRedLine 
@@ -202,63 +159,18 @@ export const Header: React.FC<HeaderProps> = ({ onOpenNewTaskModal }) => {
           </div>
 
           {/* Quick Search & Actions */}
-          <div className="flex items-center gap-2.5 w-full md:w-auto justify-end">
+          <div className="flex items-center gap-2 shrink-0">
             
             {/* Search Input */}
-            <div className="relative flex-1 md:w-48">
-              <Search className="w-3.5 h-3.5 text-theme-muted absolute left-3 top-1/2 -translate-y-1/2" />
+            <div className="relative w-28 sm:w-36 md:w-44">
+              <Search className="w-3.5 h-3.5 text-theme-muted absolute left-2.5 top-1/2 -translate-y-1/2" />
               <input
                 type="text"
-                placeholder="Search tasks, codes..."
+                placeholder="Search tasks..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full text-xs pl-8 pr-3 py-2 rounded-lg bg-theme-card-hover border border-theme-border text-theme-text placeholder-theme-muted focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full text-xs pl-7 pr-2.5 py-1.5 rounded-lg bg-theme-card-hover border border-theme-border text-theme-text placeholder-theme-muted focus:outline-none focus:ring-1 focus:ring-blue-500"
               />
-            </div>
-
-            {/* Theme Selector Dropdown */}
-            <div className="relative">
-              <button
-                onClick={() => setShowThemeMenu(!showThemeMenu)}
-                className="flex items-center gap-1.5 p-2 rounded-lg bg-theme-card-hover border border-theme-border text-theme-text hover:bg-theme-border transition-colors text-xs font-medium"
-                title="Change Theme"
-              >
-                <Palette className="w-4 h-4 text-blue-600 dark:text-blue-400" />
-                <ChevronDown className="w-3 h-3 text-theme-muted" />
-              </button>
-
-              {showThemeMenu && (
-                <div className="absolute right-0 mt-2 w-56 glass-panel rounded-xl shadow-xl z-50 p-2 border border-theme-border animate-fade-in">
-                  <div className="text-[11px] font-bold text-theme-muted px-2 py-1 uppercase tracking-wider">
-                    Select Aesthetic Theme
-                  </div>
-                  <div className="space-y-1 mt-1">
-                    {themesList.map((t) => (
-                      <button
-                        key={t.id}
-                        onClick={() => {
-                          setTheme(t.id);
-                          setShowThemeMenu(false);
-                        }}
-                        className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs transition-colors ${
-                          theme === t.id 
-                            ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 font-bold' 
-                            : 'hover:bg-theme-card-hover text-theme-text'
-                        }`}
-                      >
-                        <div className="flex items-center gap-2">
-                          <span 
-                            className="w-3 h-3 rounded-full shadow-sm" 
-                            style={{ backgroundColor: t.color }}
-                          />
-                          <span>{t.name}</span>
-                        </div>
-                        {theme === t.id && <CheckCircle2 className="w-3.5 h-3.5 text-blue-600" />}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
             </div>
 
             {/* Cloud Sync Status Indicator */}
@@ -283,9 +195,9 @@ export const Header: React.FC<HeaderProps> = ({ onOpenNewTaskModal }) => {
               }`}
               title={
                 !cloudSyncConfig.isEnabled
-                  ? 'Cloud Sync Offline (Click to configure Supabase in Admin Settings)'
+                  ? 'Cloud Sync Offline (Click to configure in Settings)'
                   : cloudSyncStatus === 'synced'
-                  ? 'Cloud Synced - Real-time across all devices (Click to sync now)'
+                  ? 'Cloud Synced - Real-time active (Click to Sync Now)'
                   : cloudSyncStatus === 'syncing'
                   ? 'Syncing with Supabase...'
                   : cloudSyncStatus === 'connecting'
@@ -302,25 +214,70 @@ export const Header: React.FC<HeaderProps> = ({ onOpenNewTaskModal }) => {
               ) : (
                 <Cloud className="w-3.5 h-3.5 text-theme-muted" />
               )}
-              <span className="hidden lg:inline text-[11px]">
+              <span className="hidden xl:inline text-[11px]">
                 {cloudSyncStatus === 'synced'
-                  ? 'Cloud Synced'
+                  ? 'Synced'
                   : cloudSyncStatus === 'syncing'
                   ? 'Syncing...'
                   : cloudSyncStatus === 'connecting'
                   ? 'Connecting...'
                   : cloudSyncStatus === 'error'
-                  ? 'Sync Error'
-                  : 'Local Only'}
+                  ? 'Error'
+                  : 'Local'}
               </span>
             </button>
+
+            {/* Theme Selector Dropdown */}
+            <div className="relative">
+              <button
+                onClick={() => setShowThemeMenu(!showThemeMenu)}
+                className="flex items-center gap-1 p-1.5 rounded-lg bg-theme-card-hover border border-theme-border text-theme-text hover:bg-theme-border transition-colors text-xs font-medium cursor-pointer"
+                title="Change Theme"
+              >
+                <Palette className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+                <ChevronDown className="w-3 h-3 text-theme-muted" />
+              </button>
+
+              {showThemeMenu && (
+                <div className="absolute right-0 mt-2 w-52 glass-panel rounded-xl shadow-xl z-50 p-2 border border-theme-border animate-fade-in">
+                  <div className="text-[10px] font-bold text-theme-muted px-2 py-1 uppercase tracking-wider">
+                    Select Aesthetic Theme
+                  </div>
+                  <div className="space-y-1 mt-1">
+                    {themesList.map((t) => (
+                      <button
+                        key={t.id}
+                        onClick={() => {
+                          setTheme(t.id);
+                          setShowThemeMenu(false);
+                        }}
+                        className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs transition-colors cursor-pointer ${
+                          theme === t.id 
+                            ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 font-bold' 
+                            : 'hover:bg-theme-card-hover text-theme-text'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2">
+                          <span 
+                            className="w-2.5 h-2.5 rounded-full shadow-sm" 
+                            style={{ backgroundColor: t.color }}
+                          />
+                          <span>{t.name}</span>
+                        </div>
+                        {theme === t.id && <CheckCircle2 className="w-3.5 h-3.5 text-blue-600" />}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
 
             {/* Primary New Task CTA */}
             <button
               onClick={onOpenNewTaskModal}
-              className="flex items-center gap-1.5 px-3.5 py-2 bg-gradient-to-r from-blue-600 to-sky-500 hover:from-blue-700 hover:to-sky-600 text-white text-xs font-bold rounded-lg shadow-md shadow-blue-500/25 transition-all transform active:scale-95"
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-gradient-to-r from-blue-600 to-sky-500 hover:from-blue-700 hover:to-sky-600 text-white text-xs font-bold rounded-lg shadow-md shadow-blue-500/25 transition-all transform active:scale-95 cursor-pointer shrink-0"
             >
-              <Plus className="w-4 h-4" />
+              <Plus className="w-3.5 h-3.5" />
               <span className="hidden sm:inline">New Task</span>
             </button>
 
@@ -328,11 +285,10 @@ export const Header: React.FC<HeaderProps> = ({ onOpenNewTaskModal }) => {
             {securitySettings.isPasswordProtected && (
               <button
                 onClick={logout}
-                className="p-2 rounded-lg bg-theme-card-hover border border-theme-border text-theme-muted hover:text-red-600 hover:border-red-300 dark:hover:border-red-800 transition-colors text-xs flex items-center gap-1.5"
+                className="p-1.5 rounded-lg bg-theme-card-hover border border-theme-border text-theme-muted hover:text-red-600 hover:border-red-300 dark:hover:border-red-800 transition-colors text-xs flex items-center gap-1 cursor-pointer"
                 title="Lock System / Sign Out"
               >
                 <Lock className="w-4 h-4" />
-                <span className="hidden xl:inline text-[11px] font-bold">Lock</span>
               </button>
             )}
 
