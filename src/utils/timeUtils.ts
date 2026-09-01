@@ -1087,15 +1087,25 @@ export function calculateEmergencyReschedule(
 
   // Active tasks on this date (excluding done, terminated, or existing emergency buffer)
   const activeTasks = allDayTasks.filter(t => 
-    t.status !== 'Done' && t.status !== 'Terminated' && !t.isEmergencyBuffer
+    t.taskDate === dateStr &&
+    t.status !== 'Done' && 
+    t.status !== 'Terminated' && 
+    !t.isEmergencyBuffer
   ).sort((a, b) => parse12HourToMinutes(a.startTime) - parse12HourToMinutes(b.startTime));
+
+  // Existing active tasks on tomorrow's date to guarantee ZERO overlaps if anything overflows
+  const simulatedTomorrowTasks: any[] = allDayTasks.filter(t =>
+    t.taskDate === tomorrowDateStr &&
+    t.status !== 'Done' &&
+    t.status !== 'Terminated' &&
+    !t.isEmergencyBuffer
+  );
 
   // Get all mandatory locked tasks that CANNOT move
   const mandatoryTasks = activeTasks.filter(t => t.isMandatorySchedule);
 
   const proposals: import('../types').TaskRescheduleProposal[] = [];
   let currentCascadeCursor = emergencyEndMin;
-  let tomorrowSlotCursor = parse12HourToMinutes(capacitySettings.dayStartTime);
 
   for (const task of activeTasks) {
     const origStartMin = parse12HourToMinutes(task.startTime);
@@ -1190,9 +1200,15 @@ export function calculateEmergencyReschedule(
 
       currentCascadeCursor = candidateEndMin + buffer;
     } else {
-      // Overflows past dayEndMin -> defer to tomorrow morning
-      const tomStartMin = tomorrowSlotCursor;
-      const tomEndMin = tomStartMin + taskDuration;
+      // Overflows past dayEndMin or Full Day emergency -> intelligently find non-overlapping free slot on tomorrow
+      const tomSlot = getSmartNextFreeSlot(
+        tomorrowDateStr,
+        taskDuration,
+        simulatedTomorrowTasks,
+        [],
+        task.id,
+        buffer
+      );
 
       proposals.push({
         taskId: task.id,
@@ -1203,12 +1219,21 @@ export function calculateEmergencyReschedule(
         currentStartTime: task.startTime,
         currentEndTime: task.endTime,
         proposedDate: tomorrowDateStr,
-        proposedStartTime: formatMinutesTo12Hour(tomStartMin),
-        proposedEndTime: formatMinutesTo12Hour(tomEndMin),
+        proposedStartTime: tomSlot.startTime,
+        proposedEndTime: tomSlot.endTime,
         action: 'defer_tomorrow'
       });
 
-      tomorrowSlotCursor = tomEndMin + buffer;
+      // Register into simulated pool so subsequent deferred tasks won't overlap with this one!
+      simulatedTomorrowTasks.push({
+        id: task.id,
+        taskDate: tomorrowDateStr,
+        startTime: tomSlot.startTime,
+        endTime: tomSlot.endTime,
+        appointedMinutes: taskDuration,
+        bufferMinutes: buffer,
+        status: 'Pending'
+      });
     }
   }
 

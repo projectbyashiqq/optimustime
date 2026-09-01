@@ -6,6 +6,7 @@ import {
   formatMinutesTo12Hour, 
   parse12HourToMinutes, 
   calculateEmergencyReschedule,
+  getSmartNextFreeSlot,
   getDayOfWeekFromDate,
   addMinutesToTime
 } from '../utils/timeUtils';
@@ -36,7 +37,7 @@ import {
   Lock
 } from 'lucide-react';
 
-const DURATION_PRESETS = [30, 45, 60, 90, 120, 180, 240];
+const DURATION_PRESETS = [30, 60, 120, 180, 240, 360, 1440];
 
 const EMOJI_PALETTE = [
   '⚡', '🩺', '🚨', '🌐', '🚗', '⚠️', '🔥', '💧', '💊', '🏥',
@@ -99,10 +100,10 @@ export const EmergencyBufferModal: React.FC = () => {
     return tasks.filter(t => t.taskDate === date && t.status !== 'Done' && t.status !== 'Terminated' && !t.isEmergencyBuffer);
   }, [tasks, date]);
 
-  // Generate initial auto proposals
+  // Generate initial auto proposals with intelligent non-overlapping cascade
   const autoProposals = useMemo(() => {
-    return calculateEmergencyReschedule(startTime, durationMinutes, date, dayTasks, capacitySettings);
-  }, [startTime, durationMinutes, date, dayTasks, capacitySettings]);
+    return calculateEmergencyReschedule(startTime, durationMinutes, date, tasks, capacitySettings);
+  }, [startTime, durationMinutes, date, tasks, capacitySettings]);
 
   // Local state for editable proposals
   const [proposals, setProposals] = useState<TaskRescheduleProposal[]>([]);
@@ -168,14 +169,15 @@ export const EmergencyBufferModal: React.FC = () => {
     }));
   };
 
-  // Batch Action 2: Move Flexible Remaining Tasks to Next Day (Tomorrow)
+  // Batch Action 2: Move Flexible Remaining Tasks to Next Day (Tomorrow) with ZERO overlaps
   const handleBatchMoveAllToNextDay = () => {
     const [y, m, d] = date.split('-').map(Number);
     const tomDate = new Date(y, m - 1, d);
     tomDate.setDate(tomDate.getDate() + 1);
     const tomorrowStr = toISODateString(tomDate);
 
-    let tomorrowCursor = parse12HourToMinutes(capacitySettings.dayStartTime);
+    const tomorrowTasks = tasks.filter(t => t.taskDate === tomorrowStr && t.status !== 'Done' && t.status !== 'Terminated' && !t.isEmergencyBuffer);
+    const simulatedPool: any[] = [...tomorrowTasks];
 
     setProposals(prev => prev.map(p => {
       const origTask = tasks.find(t => t.id === p.taskId);
@@ -187,16 +189,32 @@ export const EmergencyBufferModal: React.FC = () => {
       const origStartMin = parse12HourToMinutes(p.currentStartTime);
       const origEndMin = parse12HourToMinutes(p.currentEndTime);
       const dur = origEndMin - origStartMin;
+      const buffer = origTask?.bufferMinutes || 5;
 
-      const start = tomorrowCursor;
-      const end = start + dur;
-      tomorrowCursor = end + 5;
+      const tomSlot = getSmartNextFreeSlot(
+        tomorrowStr,
+        dur,
+        simulatedPool,
+        [],
+        p.taskId,
+        buffer
+      );
+
+      simulatedPool.push({
+        id: p.taskId,
+        taskDate: tomorrowStr,
+        startTime: tomSlot.startTime,
+        endTime: tomSlot.endTime,
+        appointedMinutes: dur,
+        bufferMinutes: buffer,
+        status: 'Pending'
+      });
 
       return {
         ...p,
         proposedDate: tomorrowStr,
-        proposedStartTime: formatMinutesTo12Hour(start),
-        proposedEndTime: formatMinutesTo12Hour(end),
+        proposedStartTime: tomSlot.startTime,
+        proposedEndTime: tomSlot.endTime,
         action: 'defer_tomorrow'
       };
     }));
@@ -236,12 +254,20 @@ export const EmergencyBufferModal: React.FC = () => {
       const dur = origEndMin - origStartMin;
 
       if (actionType === 'defer_tomorrow') {
-        const start = parse12HourToMinutes(capacitySettings.dayStartTime);
+        const tomorrowTasks = tasks.filter(t => t.taskDate === tomorrowStr && t.status !== 'Done' && t.status !== 'Terminated' && !t.isEmergencyBuffer && t.id !== taskId);
+        const tomSlot = getSmartNextFreeSlot(
+          tomorrowStr,
+          dur,
+          tomorrowTasks,
+          [],
+          taskId,
+          origTask?.bufferMinutes || 5
+        );
         return {
           ...p,
           proposedDate: tomorrowStr,
-          proposedStartTime: formatMinutesTo12Hour(start),
-          proposedEndTime: formatMinutesTo12Hour(start + dur),
+          proposedStartTime: tomSlot.startTime,
+          proposedEndTime: tomSlot.endTime,
           action: 'defer_tomorrow'
         };
       } else if (actionType === 'hold') {
@@ -599,22 +625,45 @@ export const EmergencyBufferModal: React.FC = () => {
 
             </div>
 
-            {/* Quick Duration Pills */}
-            <div className="space-y-1.5 pt-1 border-t border-theme-border/60">
-              <label className="text-[11px] font-bold text-theme-muted">Emergency Duration</label>
+            {/* Quick Duration Pills & Custom Input */}
+            <div className="space-y-2 pt-1 border-t border-theme-border/60">
+              <div className="flex items-center justify-between">
+                <label className="text-[11px] font-bold text-theme-muted">
+                  Emergency Duration (Change Time: 60m / 120m / 1440m Full Day)
+                </label>
+                <div className="flex items-center gap-1">
+                  <span className="text-[10px] text-theme-muted">Custom mins:</span>
+                  <input
+                    type="number"
+                    min="5"
+                    max="1440"
+                    step="5"
+                    value={durationMinutes}
+                    onChange={(e) => setDurationMinutes(Math.max(5, parseInt(e.target.value) || 60))}
+                    className="w-16 px-2 py-0.5 rounded-md bg-theme-card border border-theme-border text-xs font-mono font-bold text-theme-text text-center focus:outline-none"
+                  />
+                </div>
+              </div>
+
               <div className="flex items-center gap-1.5 flex-wrap">
                 {DURATION_PRESETS.map((mins) => (
                   <button
                     key={mins}
                     type="button"
                     onClick={() => setDurationMinutes(mins)}
-                    className={`px-3 py-1 rounded-xl text-xs font-bold transition-all ${
+                    className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1 ${
                       durationMinutes === mins
-                        ? 'bg-red-600 text-white shadow-sm shadow-red-500/30'
+                        ? 'bg-red-600 text-white shadow-sm shadow-red-500/30 ring-2 ring-red-500/50'
                         : 'bg-theme-card hover:bg-theme-border text-theme-muted hover:text-theme-text border border-theme-border'
                     }`}
                   >
-                    {mins >= 60 ? `${mins / 60}h (${mins}m)` : `${mins}m`}
+                    {mins === 1440 ? (
+                      <span>🚨 24h (Full Day)</span>
+                    ) : mins >= 60 ? (
+                      <span>{mins / 60}h ({mins}m)</span>
+                    ) : (
+                      <span>{mins}m</span>
+                    )}
                   </button>
                 ))}
               </div>
