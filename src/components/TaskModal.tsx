@@ -14,6 +14,7 @@ import {
   diffTimeInMinutes, 
   toISODateString, 
   getDayOfWeekFromDate,
+  getCurrentRoundedTime12Hour,
   SHORT_DAYS
 } from '../utils/timeUtils';
 import { ConflictModal } from './ConflictModal';
@@ -69,12 +70,17 @@ export const TaskModal: React.FC<TaskModalProps> = ({
   const [category, setCategory] = useState(taskToEdit?.category || categories[0]?.name || 'VRTX');
   const [subCategory, setSubCategory] = useState(taskToEdit?.subCategory || '');
   
+  // Mandatory Manual Confirmation tracking for new tasks
+  const [hasConfirmedPriority, setHasConfirmedPriority] = useState<boolean>(isEditing);
+  const [hasConfirmedCategory, setHasConfirmedCategory] = useState<boolean>(isEditing);
+  
   const defaultMin = prioritySettings[taskToEdit?.priority || 'P1']?.defaultMinutes ?? 90;
   const [appointedMinutes, setAppointedMinutes] = useState<number>(taskToEdit?.appointedMinutes ?? defaultMin);
   
-  const [startTime, setStartTime] = useState<string>(taskToEdit?.startTime || initialStartTime || '09:00 AM');
+  const defaultStartTime = initialStartTime || getCurrentRoundedTime12Hour(15);
+  const [startTime, setStartTime] = useState<string>(taskToEdit?.startTime || defaultStartTime);
   const [endTime, setEndTime] = useState<string>(
-    taskToEdit?.endTime || addMinutesToTime(taskToEdit?.startTime || initialStartTime || '09:00 AM', taskToEdit?.appointedMinutes ?? defaultMin)
+    taskToEdit?.endTime || addMinutesToTime(taskToEdit?.startTime || defaultStartTime, taskToEdit?.appointedMinutes ?? defaultMin)
   );
   
   const [status, setStatus] = useState<TaskStatus>(taskToEdit?.status || 'Pending');
@@ -91,6 +97,9 @@ export const TaskModal: React.FC<TaskModalProps> = ({
   // Subtask Input fields
   const [newSubtaskTitle, setNewSubtaskTitle] = useState('');
   
+  // Validation state
+  const [validationError, setValidationError] = useState<string | null>(null);
+
   // Conflict state
   const [conflictingTasks, setConflictingTasks] = useState<Task[]>([]);
   const [showConflictModal, setShowConflictModal] = useState(false);
@@ -106,23 +115,39 @@ export const TaskModal: React.FC<TaskModalProps> = ({
     }
   }, [category, currentCategoryObj, subCategory]);
 
-  // When priority changes, update appointed time if user hasn't explicitly customized
+  // When priority changes via manual click
   const handlePriorityChange = (newPriority: PriorityLevel) => {
     setPriority(newPriority);
+    setHasConfirmedPriority(true);
+    setValidationError(null);
     const newMinutes = prioritySettings[newPriority]?.defaultMinutes ?? 60;
     setAppointedMinutes(newMinutes);
     setEndTime(addMinutesToTime(startTime, newMinutes));
   };
 
+  // Quick-fill all auto presets
+  const handleQuickFillAutoPresets = () => {
+    setPriority('P1');
+    setHasConfirmedPriority(true);
+    const cat = categories[0]?.name || 'VRTX';
+    setCategory(cat);
+    setHasConfirmedCategory(true);
+    const catObj = categories.find(c => c.name === cat);
+    setSubCategory(catObj?.subCategories[0] || '');
+    setValidationError(null);
+  };
+
   // When start time changes, recompute end time
   const handleStartTimeChange = (newStart: string) => {
     setStartTime(newStart);
+    setValidationError(null);
     setEndTime(addMinutesToTime(newStart, appointedMinutes));
   };
 
   // When appointed minutes changes, recompute end time
   const handleMinutesChange = (newMins: number) => {
     setAppointedMinutes(newMins);
+    setValidationError(null);
     setEndTime(addMinutesToTime(startTime, newMins));
   };
 
@@ -168,9 +193,29 @@ export const TaskModal: React.FC<TaskModalProps> = ({
     }
   };
 
-  // Submission with conflict detection check
+  // Submission with mandatory parameters validation & conflict detection
   const handleSave = (forceNoConflictCheck = false) => {
-    if (!title.trim()) return;
+    if (!title.trim()) {
+      setValidationError('Task Title is mandatory. Please enter a title.');
+      return;
+    }
+    if (!hasConfirmedPriority) {
+      setValidationError('Please manually click your Priority level (P1-P5) to confirm urgency & duration.');
+      return;
+    }
+    if (!hasConfirmedCategory) {
+      setValidationError('Please manually click your Category to confirm domain alignment.');
+      return;
+    }
+    if (!taskDate) {
+      setValidationError('Task Date is mandatory. Please select a date.');
+      return;
+    }
+    if (!startTime) {
+      setValidationError('Task Time is mandatory. Please select a start time.');
+      return;
+    }
+    setValidationError(null);
 
     if (!forceNoConflictCheck) {
       const conflicts = detectConflicts(taskDate, startTime, endTime, taskToEdit?.id);
@@ -308,17 +353,105 @@ export const TaskModal: React.FC<TaskModalProps> = ({
           {/* Form Fields */}
           <div className="space-y-4 max-h-[65vh] overflow-y-auto pr-1">
             
+            {/* Validation Error Banner */}
+            {validationError && (
+              <div className="p-3 rounded-xl bg-red-100/80 dark:bg-red-950/60 border border-red-300 dark:border-red-800 text-red-700 dark:text-red-300 text-xs font-bold flex items-center gap-2 animate-shake shadow-sm">
+                <AlertTriangle className="w-4 h-4 text-red-500 shrink-0" />
+                <span>{validationError}</span>
+              </div>
+            )}
+
+            {/* Mandatory Setup Checklist Summary Banner */}
+            <div className="p-3.5 rounded-xl bg-gradient-to-r from-blue-50/90 via-sky-50/50 to-theme-card dark:from-blue-950/50 dark:via-sky-950/30 dark:to-theme-card border border-blue-200 dark:border-blue-800/80 shadow-inner">
+              <div className="text-[11px] font-bold text-theme-muted uppercase tracking-wider mb-2 flex items-center justify-between flex-wrap gap-2">
+                <span className="flex items-center gap-1.5 text-theme-text font-black">
+                  <Sparkles className="w-3.5 h-3.5 text-blue-500" />
+                  Mandatory Task Pillars Checklist:
+                </span>
+                
+                <button
+                  type="button"
+                  onClick={handleQuickFillAutoPresets}
+                  className="text-[10px] font-black px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded-lg shadow-sm transition-all flex items-center gap-1 active:scale-95"
+                  title="Auto-fill with P1, Today & default Category"
+                >
+                  <Sparkles className="w-3 h-3" />
+                  Auto-Fill All Presets
+                </button>
+              </div>
+              
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[11px]">
+                {/* 1. Priority */}
+                <div className={`p-2 rounded-lg border transition-all ${
+                  hasConfirmedPriority
+                    ? 'bg-theme-card border-emerald-500/50 dark:border-emerald-500/40 shadow-sm'
+                    : 'bg-amber-50 dark:bg-amber-950/30 border-amber-400 dark:border-amber-700 animate-pulse'
+                }`}>
+                  <div className="flex items-center gap-1.5">
+                    <span className={`w-2 h-2 rounded-full shrink-0 ${hasConfirmedPriority ? 'bg-emerald-500' : 'bg-amber-500'}`} />
+                    <div className="truncate">
+                      <div className="text-[9px] text-theme-muted font-bold">1. Priority</div>
+                      <div className={`font-black truncate ${hasConfirmedPriority ? 'text-theme-text' : 'text-amber-600 dark:text-amber-400'}`}>
+                        {hasConfirmedPriority ? `${priority} (${priorityMeta?.defaultMinutes}m)` : '👉 Click Priority'}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* 2. Category */}
+                <div className={`p-2 rounded-lg border transition-all ${
+                  hasConfirmedCategory
+                    ? 'bg-theme-card border-emerald-500/50 dark:border-emerald-500/40 shadow-sm'
+                    : 'bg-amber-50 dark:bg-amber-950/30 border-amber-400 dark:border-amber-700 animate-pulse'
+                }`}>
+                  <div className="flex items-center gap-1.5">
+                    <span className={`w-2 h-2 rounded-full shrink-0 ${hasConfirmedCategory ? 'bg-emerald-500' : 'bg-amber-500'}`} />
+                    <div className="truncate">
+                      <div className="text-[9px] text-theme-muted font-bold">2. Category</div>
+                      <div className={`font-black truncate ${hasConfirmedCategory ? 'text-theme-text' : 'text-amber-600 dark:text-amber-400'}`}>
+                        {hasConfirmedCategory ? category : '👉 Click Category'}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* 3. Date */}
+                <div className="p-2 rounded-lg bg-theme-card border border-theme-border flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0" />
+                  <div className="truncate">
+                    <div className="text-[9px] text-theme-muted font-bold">3. Date</div>
+                    <div className="font-mono font-bold text-theme-text truncate">{taskDate}</div>
+                  </div>
+                </div>
+
+                {/* 4. Time */}
+                <div className="p-2 rounded-lg bg-theme-card border border-theme-border flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0" />
+                  <div className="truncate">
+                    <div className="text-[9px] text-theme-muted font-bold">4. Start Time</div>
+                    <div className="font-mono font-bold text-theme-text truncate">{startTime} ({appointedMinutes}m)</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
             {/* Title & Description */}
             <div className="space-y-2">
-              <label className="text-xs font-bold text-theme-text uppercase tracking-wider">
-                Task Title <span className="text-red-500">*</span>
+              <label className="text-xs font-bold text-theme-text uppercase tracking-wider flex items-center justify-between">
+                <span>Task Title <span className="text-red-500">* (Mandatory)</span></span>
+                <span className="text-[10px] text-theme-muted">Keep actionable & concise</span>
               </label>
               <input
                 type="text"
                 placeholder="e.g. OptimusLAB Unified Architecture Audit..."
                 value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                className="w-full text-sm px-3.5 py-2.5 rounded-xl bg-theme-card-hover border border-theme-border text-theme-text placeholder-theme-muted focus:outline-none focus:ring-2 focus:ring-blue-500 font-medium"
+                onChange={(e) => {
+                  setTitle(e.target.value);
+                  if (validationError) setValidationError(null);
+                }}
+                className={`w-full text-sm px-3.5 py-2.5 rounded-xl bg-theme-card-hover border text-theme-text placeholder-theme-muted focus:outline-none focus:ring-2 focus:ring-blue-500 font-medium ${
+                  validationError && !title.trim() ? 'border-red-500 ring-1 ring-red-500' : 'border-theme-border'
+                }`}
                 autoFocus
               />
             </div>
@@ -339,26 +472,36 @@ export const TaskModal: React.FC<TaskModalProps> = ({
             {/* Priority Level Matrix (P1-P5) */}
             <div className="space-y-2">
               <div className="flex items-center justify-between">
-                <label className="text-xs font-bold text-theme-text uppercase tracking-wider">
-                  Priority Level Protocol (P1-P5)
+                <label className="text-xs font-bold text-theme-text uppercase tracking-wider flex items-center gap-1.5">
+                  <span>Priority Level Protocol (P1-P5)</span>
+                  <span className={`text-[10px] px-2 py-0.5 rounded font-black ${
+                    hasConfirmedPriority
+                      ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300'
+                      : 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300'
+                  }`}>
+                    {hasConfirmedPriority ? '✓ Confirmed' : '* Click to Confirm'}
+                  </span>
                 </label>
                 <span className="text-[11px] text-blue-600 dark:text-blue-400 font-semibold">
                   Auto-Duration: {priorityMeta?.defaultMinutes ?? 0}m
                 </span>
               </div>
+
               <div className="grid grid-cols-5 gap-2">
                 {(['P1', 'P2', 'P3', 'P4', 'P5'] as PriorityLevel[]).map((p) => {
                   const meta = prioritySettings[p];
-                  const isSelected = priority === p;
+                  const isSelected = priority === p && hasConfirmedPriority;
                   return (
                     <button
                       key={p}
                       type="button"
                       onClick={() => handlePriorityChange(p)}
-                      className={`p-2 rounded-xl border text-center transition-all flex flex-col items-center justify-center gap-0.5 ${
+                      className={`p-2.5 rounded-xl border text-center transition-all flex flex-col items-center justify-center gap-0.5 transform active:scale-95 ${
                         isSelected
-                          ? 'border-blue-500 shadow-md ring-2 ring-blue-500/20'
-                          : 'border-theme-border hover:bg-theme-card-hover'
+                          ? 'border-blue-500 shadow-md ring-2 ring-blue-500/30 font-black scale-[1.02]'
+                          : !hasConfirmedPriority
+                            ? 'border-dashed border-theme-border hover:border-blue-400 hover:bg-theme-card-hover'
+                            : 'border-theme-border hover:bg-theme-card-hover opacity-80 hover:opacity-100'
                       }`}
                       style={{
                         backgroundColor: isSelected ? meta.bgColor : undefined,
@@ -380,86 +523,152 @@ export const TaskModal: React.FC<TaskModalProps> = ({
               </div>
             </div>
 
-            {/* Date & Time Settings */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 p-3.5 rounded-xl bg-theme-card-hover border border-theme-border">
-              <div>
-                <label className="text-[11px] font-bold text-theme-text flex items-center gap-1 mb-1">
-                  <Calendar className="w-3.5 h-3.5 text-blue-500" />
-                  Task Date
+            {/* Category & SubCategory (Fast-Click Pills + Selector) */}
+            <div className="space-y-2 p-3 rounded-xl bg-theme-card-hover border border-theme-border">
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-bold text-theme-text flex items-center gap-1.5">
+                  <Folder className="w-3.5 h-3.5 text-blue-500" />
+                  <span>Category Selection</span>
+                  <span className={`text-[10px] px-2 py-0.5 rounded font-black ${
+                    hasConfirmedCategory
+                      ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300'
+                      : 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300'
+                  }`}>
+                    {hasConfirmedCategory ? '✓ Confirmed' : '* Click to Confirm'}
+                  </span>
                 </label>
-                <input
-                  type="date"
-                  value={taskDate}
-                  onChange={(e) => setTaskDate(e.target.value)}
-                  className="w-full text-xs px-2.5 py-1.5 rounded-lg bg-theme-card border border-theme-border text-theme-text focus:outline-none focus:ring-1 focus:ring-blue-500 font-mono"
-                />
               </div>
 
-              <div>
-                <TimePicker
-                  label="Start Time (12h Clock)"
-                  value={startTime}
-                  onChange={handleStartTimeChange}
-                />
+              {/* Fast-Click Category Pills */}
+              <div className="flex flex-wrap gap-1.5 pt-0.5">
+                {categories.map((c) => {
+                  const isCatSelected = category === c.name && hasConfirmedCategory;
+                  return (
+                    <button
+                      key={c.id}
+                      type="button"
+                      onClick={() => {
+                        setCategory(c.name);
+                        setHasConfirmedCategory(true);
+                        if (validationError) setValidationError(null);
+                        const catObj = categories.find(cat => cat.name === c.name);
+                        setSubCategory(catObj?.subCategories[0] || '');
+                      }}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all border flex items-center gap-1.5 transform active:scale-95 ${
+                        isCatSelected
+                          ? 'bg-blue-600 text-white border-blue-600 shadow-sm ring-2 ring-blue-500/20'
+                          : 'bg-theme-card text-theme-muted hover:text-theme-text border-theme-border hover:border-blue-400'
+                      }`}
+                    >
+                      <Tag className="w-3 h-3" />
+                      <span>{c.name}</span>
+                    </button>
+                  );
+                })}
               </div>
 
-              <div>
-                <label className="text-[11px] font-bold text-theme-text flex items-center justify-between mb-1">
-                  <span>Appointed (Min)</span>
-                  <span className="text-[10px] text-theme-muted">End: {endTime}</span>
-                </label>
-                <input
-                  type="number"
-                  min="5"
-                  step="5"
-                  value={appointedMinutes}
-                  onChange={(e) => handleMinutesChange(parseInt(e.target.value, 10) || 0)}
-                  className="w-full text-xs px-2.5 py-1.5 rounded-lg bg-theme-card border border-theme-border text-theme-text focus:outline-none focus:ring-1 focus:ring-blue-500 font-mono font-bold"
-                />
-              </div>
+              {/* SubCategory Selection */}
+              {currentCategoryObj && currentCategoryObj.subCategories.length > 0 && (
+                <div className="pt-2 border-t border-theme-border/60">
+                  <label className="text-[11px] font-bold text-theme-muted mb-1 block">
+                    SubCategory (Optional):
+                  </label>
+                  <div className="flex flex-wrap gap-1.5">
+                    {currentCategoryObj.subCategories.map((sub, idx) => {
+                      const isSubSelected = subCategory === sub;
+                      return (
+                        <button
+                          key={idx}
+                          type="button"
+                          onClick={() => setSubCategory(sub)}
+                          className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold transition-all border ${
+                            isSubSelected
+                              ? 'bg-theme-card-hover border-blue-500 text-blue-600 dark:text-blue-400 font-bold'
+                              : 'bg-theme-card text-theme-muted border-theme-border hover:text-theme-text'
+                          }`}
+                        >
+                          {sub}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
             </div>
 
-            {/* Category & SubCategory */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div>
-                <label className="text-xs font-bold text-theme-text flex items-center gap-1 mb-1.5">
-                  <Folder className="w-3.5 h-3.5 text-blue-500" />
-                  Category
+            {/* Date & Time Settings */}
+            <div className="space-y-2 p-3.5 rounded-xl bg-theme-card-hover border border-theme-border">
+              {/* Quick Date Click Buttons */}
+              <div className="flex items-center justify-between">
+                <label className="text-[11px] font-bold text-theme-text flex items-center gap-1">
+                  <Calendar className="w-3.5 h-3.5 text-blue-500" />
+                  <span>Scheduled Date & Time *</span>
                 </label>
-                <select
-                  value={category}
-                  onChange={(e) => {
-                    setCategory(e.target.value);
-                    const catObj = categories.find(c => c.name === e.target.value);
-                    setSubCategory(catObj?.subCategories[0] || '');
-                  }}
-                  className="w-full text-xs px-3 py-2 rounded-xl bg-theme-card-hover border border-theme-border text-theme-text focus:outline-none focus:ring-2 focus:ring-blue-500"
-                >
-                  {categories.map((c) => (
-                    <option key={c.id} value={c.name}>
-                      {c.name}
-                    </option>
-                  ))}
-                </select>
+                <div className="flex items-center gap-1 text-[10px]">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setTaskDate(toISODateString(new Date()));
+                      if (validationError) setValidationError(null);
+                    }}
+                    className={`px-2 py-0.5 rounded font-bold border transition-colors ${
+                      taskDate === toISODateString(new Date())
+                        ? 'bg-blue-600 text-white border-blue-600'
+                        : 'bg-theme-card text-theme-muted border-theme-border'
+                    }`}
+                  >
+                    Today
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const tomorrow = new Date();
+                      tomorrow.setDate(tomorrow.getDate() + 1);
+                      setTaskDate(toISODateString(tomorrow));
+                      if (validationError) setValidationError(null);
+                    }}
+                    className="px-2 py-0.5 rounded font-bold bg-theme-card text-theme-muted border border-theme-border hover:text-theme-text transition-colors"
+                  >
+                    Tomorrow
+                  </button>
+                </div>
               </div>
 
-              <div>
-                <label className="text-xs font-bold text-theme-text flex items-center gap-1 mb-1.5">
-                  <Tag className="w-3.5 h-3.5 text-blue-500" />
-                  SubCategory
-                </label>
-                <select
-                  value={subCategory}
-                  onChange={(e) => setSubCategory(e.target.value)}
-                  className="w-full text-xs px-3 py-2 rounded-xl bg-theme-card-hover border border-theme-border text-theme-text focus:outline-none focus:ring-2 focus:ring-blue-500"
-                >
-                  {currentCategoryObj?.subCategories.map((sub, idx) => (
-                    <option key={idx} value={sub}>
-                      {sub}
-                    </option>
-                  ))}
-                  <option value="">(None)</option>
-                </select>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1">
+                <div>
+                  <input
+                    type="date"
+                    value={taskDate}
+                    onChange={(e) => {
+                      setTaskDate(e.target.value);
+                      if (validationError) setValidationError(null);
+                    }}
+                    className="w-full text-xs px-2.5 py-2 rounded-lg bg-theme-card border border-theme-border text-theme-text focus:outline-none focus:ring-1 focus:ring-blue-500 font-mono"
+                  />
+                </div>
+
+                <div>
+                  <TimePicker
+                    label="Start Time (12h Clock)"
+                    value={startTime}
+                    onChange={handleStartTimeChange}
+                  />
+                </div>
+
+                <div>
+                  <label className="text-[11px] font-bold text-theme-text flex items-center justify-between mb-1">
+                    <span>Duration (Min)</span>
+                    <span className="text-[10px] text-theme-muted font-mono">End: {endTime}</span>
+                  </label>
+                  <input
+                    type="number"
+                    min="5"
+                    step="5"
+                    value={appointedMinutes}
+                    onChange={(e) => handleMinutesChange(parseInt(e.target.value, 10) || 0)}
+                    className="w-full text-xs px-2.5 py-1.5 rounded-lg bg-theme-card border border-theme-border text-theme-text focus:outline-none focus:ring-1 focus:ring-blue-500 font-mono font-bold"
+                  />
+                </div>
               </div>
             </div>
 

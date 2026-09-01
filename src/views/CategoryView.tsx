@@ -174,12 +174,19 @@ export const CategoryView: React.FC<CategoryViewProps> = ({ onOpenTaskModal }) =
           categoryTasks.map((task) => {
             const priorityMeta = prioritySettings[task.priority];
             const isDone = task.status === 'Done';
+            const isTerminated = task.status === 'Terminated';
             const isWorking = task.status === 'Working';
 
             return (
               <div
                 key={task.id}
-                className="p-4 rounded-2xl bg-theme-card border border-theme-border hover:shadow-md transition-all space-y-3"
+                className={`p-4 rounded-2xl border hover:shadow-md transition-all space-y-3 ${
+                  isDone 
+                    ? 'bg-emerald-50/40 dark:bg-emerald-950/20 border-emerald-300 dark:border-emerald-800/80' 
+                    : isTerminated
+                      ? 'bg-red-50/40 dark:bg-red-950/20 border-red-300 dark:border-red-800/80'
+                      : 'bg-theme-card border-theme-border'
+                }`}
               >
                 <div className="flex items-start justify-between gap-2">
                   <div className="flex items-center gap-2">
@@ -194,9 +201,10 @@ export const CategoryView: React.FC<CategoryViewProps> = ({ onOpenTaskModal }) =
                     </span>
                   </div>
 
-                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                    isDone ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300' :
-                    isWorking ? 'bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300 animate-pulse' :
+                  <span className={`text-[10px] font-black px-2.5 py-0.5 rounded-full flex items-center gap-1 shadow-sm ${
+                    isDone ? 'bg-emerald-600 text-white' :
+                    isTerminated ? 'bg-red-600 text-white' :
+                    isWorking ? 'bg-blue-600 text-white animate-pulse' :
                     'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300'
                   }`}>
                     {task.status}
@@ -204,7 +212,7 @@ export const CategoryView: React.FC<CategoryViewProps> = ({ onOpenTaskModal }) =
                 </div>
 
                 <div>
-                  <h4 className={`text-base font-bold text-theme-text font-openSans leading-snug ${isDone ? 'line-through text-theme-muted opacity-75' : ''}`}>
+                  <h4 className={`text-base font-bold text-theme-text font-openSans leading-snug ${isDone || isTerminated ? 'line-through text-theme-muted opacity-75' : ''}`}>
                     {task.title}
                   </h4>
                   {task.description && (

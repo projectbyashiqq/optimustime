@@ -33,7 +33,11 @@ import {
   Database,
   RefreshCw,
   Copy,
-  ExternalLink
+  ExternalLink,
+  Sparkles,
+  Coffee,
+  Zap,
+  AlertTriangle
 } from 'lucide-react';
 import { DEFAULT_SQL_SCHEMA, testSupabaseConnection } from '../services/supabase';
 
@@ -318,38 +322,106 @@ export const AdminSettingsView: React.FC = () => {
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
 
-        {/* Capacity & Red-Line Protocol Settings */}
-        <div className="glass-panel p-6 rounded-2xl border border-theme-border space-y-4">
-          <div className="flex items-center justify-between border-b border-theme-border pb-3">
+        {/* Capacity & Red-Line Protocol Settings (Mandatory 24h Calculation + Presets) */}
+        <div className="glass-panel p-6 rounded-2xl border border-theme-border space-y-5">
+          <div className="flex items-center justify-between border-b border-theme-border pb-3 flex-wrap gap-2">
             <h3 className="text-sm font-bold text-theme-text uppercase tracking-wider flex items-center gap-2">
               <ShieldCheck className="w-4 h-4 text-blue-500" />
               Daily Capacity & Red-Line Protocol
             </h3>
+            
+            {/* Mandatory 24h Calculation Badge */}
+            <div className={`px-2.5 py-1 rounded-full text-[11px] font-black flex items-center gap-1.5 shadow-sm ${
+              (maxWorkHours + bufferHours + sleepHours) === 24
+                ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800'
+                : (maxWorkHours + bufferHours + sleepHours) > 24
+                  ? 'bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-300 border border-red-300 dark:border-red-800 animate-pulse'
+                  : 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300 border border-amber-300 dark:border-amber-800'
+            }`}>
+              {(maxWorkHours + bufferHours + sleepHours) === 24 ? (
+                <>
+                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
+                  <span>24.0h Balanced (Exact)</span>
+                </>
+              ) : (maxWorkHours + bufferHours + sleepHours) > 24 ? (
+                <>
+                  <AlertTriangle className="w-3.5 h-3.5 text-red-500" />
+                  <span>{(maxWorkHours + bufferHours + sleepHours)}h / 24h (+{((maxWorkHours + bufferHours + sleepHours) - 24)}h Over)</span>
+                </>
+              ) : (
+                <>
+                  <Clock className="w-3.5 h-3.5 text-amber-500" />
+                  <span>{(maxWorkHours + bufferHours + sleepHours)}h / 24h ({(24 - (maxWorkHours + bufferHours + sleepHours))}h Free)</span>
+                </>
+              )}
+            </div>
           </div>
 
-          <div className="space-y-3 text-xs">
-            <div>
-              <label className="font-bold text-theme-text block mb-1">
-                Max Daily Work Budget (Hours)
-              </label>
-              <input
-                type="number"
-                min="4"
-                max="24"
-                value={maxWorkHours}
-                onChange={(e) => setMaxWorkHours(Number(e.target.value))}
-                className="w-full px-3.5 py-2 rounded-xl bg-theme-card-hover border border-theme-border text-theme-text font-mono font-bold"
-              />
-              <p className="text-[11px] text-theme-muted mt-1">
-                Trigger Red Alert indicator when scheduled work exceeds this threshold. Default: 14h.
-              </p>
+          <div className="space-y-4 text-xs">
+            
+            {/* 1. Sleep Cycle Presets */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <label className="font-bold text-theme-text flex items-center gap-1.5">
+                  <Moon className="w-3.5 h-3.5 text-indigo-500" />
+                  <span>Sleep Cycle Times Presets (90m Ultradian Cycles)</span>
+                </label>
+                <span className="text-[10px] text-theme-muted font-mono font-bold">
+                  Active: {sleepHours}h ({dayEndTime} → {dayStartTime})
+                </span>
+              </div>
+              
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                {[
+                  { name: 'Sprint', hours: 6, cycles: '4 Cycles', start: '06:00 AM', end: '12:00 AM', badge: '6h' },
+                  { name: 'Optimal', hours: 7, cycles: '4.6 Cycles', start: '06:00 AM', end: '11:00 PM', badge: '7h' },
+                  { name: 'Standard', hours: 8, cycles: '5.3 Cycles', start: '07:00 AM', end: '11:00 PM', badge: '8h' },
+                  { name: 'Recovery', hours: 9, cycles: '6 Cycles', start: '07:00 AM', end: '10:00 PM', badge: '9h' },
+                ].map((preset) => {
+                  const isSelected = sleepHours === preset.hours && dayStartTime === preset.start && dayEndTime === preset.end;
+                  return (
+                    <button
+                      key={preset.name}
+                      type="button"
+                      onClick={() => {
+                        setSleepHours(preset.hours);
+                        setDayStartTime(preset.start);
+                        setDayEndTime(preset.end);
+                        // Mandatory 24h auto-balance: work = 24 - sleep - buffer
+                        const remainingWork = Math.max(1, 24 - preset.hours - bufferHours);
+                        setMaxWorkHours(remainingWork);
+                      }}
+                      className={`p-2.5 rounded-xl border text-left transition-all ${
+                        isSelected
+                          ? 'bg-indigo-50 dark:bg-indigo-950/50 border-indigo-500 ring-1 ring-indigo-500 shadow-sm'
+                          : 'bg-theme-card-hover border-theme-border hover:border-indigo-300 dark:hover:border-indigo-700'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="font-bold text-theme-text text-[11px]">{preset.name}</span>
+                        <span className={`text-[10px] font-black px-1.5 py-0.2 rounded ${
+                          isSelected ? 'bg-indigo-600 text-white' : 'bg-theme-card text-theme-muted border border-theme-border'
+                        }`}>
+                          {preset.badge}
+                        </span>
+                      </div>
+                      <div className="text-[10px] text-theme-muted mt-1 font-mono">
+                        {preset.cycles}
+                      </div>
+                      <div className="text-[9px] text-indigo-600 dark:text-indigo-400 font-semibold mt-0.5">
+                        {preset.end.slice(0, 5)} - {preset.start.slice(0, 5)}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
             </div>
 
-            {/* Sleep & Wake-up Time Anchors */}
+            {/* Sleep & Wake-Up Time Anchors Customization */}
             <div className="grid grid-cols-2 gap-3 p-3 rounded-xl bg-theme-card-hover border border-theme-border">
               <div>
                 <TimePicker
-                  label="Wake-Up Time"
+                  label="Wake-Up Time Anchor"
                   value={dayStartTime}
                   onChange={setDayStartTime}
                 />
@@ -357,73 +429,179 @@ export const AdminSettingsView: React.FC = () => {
 
               <div>
                 <TimePicker
-                  label="Bedtime / Sleep"
+                  label="Bedtime / Sleep Anchor"
                   value={dayEndTime}
                   onChange={setDayEndTime}
                 />
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="font-bold text-theme-text block mb-1">
-                  Guaranteed Sleep (Hours)
+            {/* 2. Buffer Work Times Presets */}
+            <div className="space-y-2 pt-1">
+              <div className="flex items-center justify-between">
+                <label className="font-bold text-theme-text flex items-center gap-1.5">
+                  <Coffee className="w-3.5 h-3.5 text-amber-500" />
+                  <span>Buffer & Leisure Times Presets</span>
                 </label>
-                <input
-                  type="number"
-                  min="4"
-                  max="12"
-                  value={sleepHours}
-                  onChange={(e) => setSleepHours(Number(e.target.value))}
-                  className="w-full px-3.5 py-2 rounded-xl bg-theme-card-hover border border-theme-border text-theme-text font-mono font-bold"
-                />
+                <span className="text-[10px] text-theme-muted font-mono font-bold">
+                  Active: {bufferHours}h ({bufferHours * 60}m)
+                </span>
               </div>
 
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                {[
+                  { name: 'Intense', hours: 1, badge: '1h (60m)', desc: 'Sprint focus' },
+                  { name: 'Balanced', hours: 2, badge: '2h (120m)', desc: '15m transitions' },
+                  { name: 'Flexible', hours: 3, badge: '3h (180m)', desc: 'Gym & meals' },
+                  { name: 'Relaxed', hours: 4, badge: '4h (240m)', desc: 'Whitespace' },
+                ].map((preset) => {
+                  const isSelected = bufferHours === preset.hours;
+                  return (
+                    <button
+                      key={preset.name}
+                      type="button"
+                      onClick={() => {
+                        setBufferHours(preset.hours);
+                        // Mandatory 24h auto-balance: work = 24 - sleep - buffer
+                        const remainingWork = Math.max(1, 24 - sleepHours - preset.hours);
+                        setMaxWorkHours(remainingWork);
+                      }}
+                      className={`p-2.5 rounded-xl border text-left transition-all ${
+                        isSelected
+                          ? 'bg-amber-50 dark:bg-amber-950/50 border-amber-500 ring-1 ring-amber-500 shadow-sm'
+                          : 'bg-theme-card-hover border-theme-border hover:border-amber-300 dark:hover:border-amber-700'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="font-bold text-theme-text text-[11px]">{preset.name}</span>
+                        <span className={`text-[10px] font-black px-1.5 py-0.2 rounded ${
+                          isSelected ? 'bg-amber-500 text-white' : 'bg-theme-card text-theme-muted border border-theme-border'
+                        }`}>
+                          {preset.hours}h
+                        </span>
+                      </div>
+                      <div className="text-[9px] text-theme-muted mt-1 line-clamp-1">
+                        {preset.desc}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* 3. Mandatory 24-Hours Budget Inputs */}
+            <div className="grid grid-cols-3 gap-3 pt-1">
               <div>
                 <label className="font-bold text-theme-text block mb-1">
-                  Buffer / Leisure (Hours)
+                  Work Budget (h)
                 </label>
                 <input
                   type="number"
                   min="1"
-                  max="10"
+                  max="24"
+                  value={maxWorkHours}
+                  onChange={(e) => setMaxWorkHours(Number(e.target.value))}
+                  className="w-full px-3 py-2 rounded-xl bg-theme-card-hover border border-blue-300 dark:border-blue-800 text-blue-600 dark:text-blue-400 font-mono font-bold text-center"
+                />
+              </div>
+
+              <div>
+                <label className="font-bold text-theme-text block mb-1">
+                  Buffer Hours (h)
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  max="12"
                   value={bufferHours}
-                  onChange={(e) => setBufferHours(Number(e.target.value))}
-                  className="w-full px-3.5 py-2 rounded-xl bg-theme-card-hover border border-theme-border text-theme-text font-mono font-bold"
+                  onChange={(e) => {
+                    const b = Number(e.target.value);
+                    setBufferHours(b);
+                    setMaxWorkHours(Math.max(1, 24 - sleepHours - b));
+                  }}
+                  className="w-full px-3 py-2 rounded-xl bg-theme-card-hover border border-amber-300 dark:border-amber-800 text-amber-600 dark:text-amber-400 font-mono font-bold text-center"
+                />
+              </div>
+
+              <div>
+                <label className="font-bold text-theme-text block mb-1">
+                  Sleep Hours (h)
+                </label>
+                <input
+                  type="number"
+                  min="4"
+                  max="14"
+                  value={sleepHours}
+                  onChange={(e) => {
+                    const s = Number(e.target.value);
+                    setSleepHours(s);
+                    setMaxWorkHours(Math.max(1, 24 - s - bufferHours));
+                  }}
+                  className="w-full px-3 py-2 rounded-xl bg-theme-card-hover border border-indigo-300 dark:border-indigo-800 text-indigo-600 dark:text-indigo-400 font-mono font-bold text-center"
                 />
               </div>
             </div>
 
-            {/* 24-Hour Circadian Budget Bar */}
-            <div className="space-y-1.5 pt-1">
-              <div className="flex justify-between text-[11px] font-semibold text-theme-muted">
-                <span>24-Hour Circadian Budget:</span>
-                <span>{maxWorkHours}h Work • {bufferHours}h Buffer • {sleepHours}h Sleep</span>
+            {/* 4. Mandatory 24-Hour Circadian Visual Bar & Auto-Balance */}
+            <div className="space-y-1.5 p-3 rounded-xl bg-theme-card-hover border border-theme-border">
+              <div className="flex justify-between items-center text-[11px] font-semibold text-theme-muted">
+                <span>Mandatory 24h Circadian Budget:</span>
+                <span className="font-mono font-bold text-theme-text">
+                  {maxWorkHours}h Work • {bufferHours}h Buffer • {sleepHours}h Sleep = <strong className={(maxWorkHours + bufferHours + sleepHours) === 24 ? 'text-emerald-600' : 'text-red-500'}>{(maxWorkHours + bufferHours + sleepHours)}h</strong> / 24h
+                </span>
               </div>
-              <div className="w-full h-2.5 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden flex">
+              
+              <div className="w-full h-3 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden flex shadow-inner">
                 <div
-                  className="bg-blue-600 h-full"
-                  style={{ width: `${(maxWorkHours / 24) * 100}%` }}
-                  title={`Work: ${maxWorkHours}h`}
-                />
+                  className="bg-blue-600 h-full transition-all duration-300 flex items-center justify-center text-[9px] text-white font-bold"
+                  style={{ width: `${Math.min(100, (maxWorkHours / 24) * 100)}%` }}
+                  title={`Work Budget: ${maxWorkHours}h`}
+                >
+                  {maxWorkHours >= 3 ? `${maxWorkHours}h` : ''}
+                </div>
                 <div
-                  className="bg-amber-500 h-full"
-                  style={{ width: `${(bufferHours / 24) * 100}%` }}
-                  title={`Buffer: ${bufferHours}h`}
-                />
+                  className="bg-amber-500 h-full transition-all duration-300 flex items-center justify-center text-[9px] text-white font-bold"
+                  style={{ width: `${Math.min(100, (bufferHours / 24) * 100)}%` }}
+                  title={`Buffer / Leisure: ${bufferHours}h`}
+                >
+                  {bufferHours >= 2 ? `${bufferHours}h` : ''}
+                </div>
                 <div
-                  className="bg-indigo-500 h-full"
-                  style={{ width: `${(sleepHours / 24) * 100}%` }}
+                  className="bg-indigo-600 h-full transition-all duration-300 flex items-center justify-center text-[9px] text-white font-bold"
+                  style={{ width: `${Math.min(100, (sleepHours / 24) * 100)}%` }}
                   title={`Sleep: ${sleepHours}h`}
-                />
+                >
+                  {sleepHours >= 3 ? `${sleepHours}h` : ''}
+                </div>
               </div>
+
+              {(maxWorkHours + bufferHours + sleepHours) !== 24 && (
+                <div className="flex items-center justify-between pt-1">
+                  <span className="text-[11px] text-red-500 font-semibold flex items-center gap-1">
+                    <AlertTriangle className="w-3 h-3" />
+                    Budget must equal exactly 24.0 hours.
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const balancedWork = Math.max(1, 24 - sleepHours - bufferHours);
+                      setMaxWorkHours(balancedWork);
+                    }}
+                    className="text-[10px] font-black px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded-lg shadow-sm transition-colors flex items-center gap-1"
+                  >
+                    <Zap className="w-3 h-3" />
+                    Auto-Balance to 24h
+                  </button>
+                </div>
+              )}
             </div>
 
             <button
               onClick={handleSaveCapacity}
-              className="w-full py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold shadow-md transition-colors mt-2"
+              className="w-full py-2.5 bg-gradient-to-r from-blue-600 to-sky-500 hover:from-blue-700 hover:to-sky-600 text-white rounded-xl font-bold shadow-md transition-all flex items-center justify-center gap-1.5"
             >
-              Update Capacity & Sleep Budget
+              <Check className="w-4 h-4" />
+              <span>Save 24-Hour Capacity & Circadian Protocol</span>
             </button>
           </div>
         </div>

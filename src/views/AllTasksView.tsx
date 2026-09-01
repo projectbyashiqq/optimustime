@@ -1,7 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
 import { Task, PriorityLevel, TaskStatus } from '../types';
-import { toISODateString, parse12HourToMinutes, isTaskScheduledForDate } from '../utils/timeUtils';
+import { 
+  toISODateString, 
+  parse12HourToMinutes, 
+  isTaskScheduledForDate,
+  isTaskInRunningSlot,
+  isTaskPastDue
+} from '../utils/timeUtils';
 import { 
   Calendar, 
   Filter, 
@@ -23,7 +29,8 @@ import {
   Check,
   ChevronUp,
   ChevronDown,
-  RotateCcw
+  RotateCcw,
+  X
 } from 'lucide-react';
 import { RescheduleModal } from '../components/RescheduleModal';
 import { getDayOfWeekFromDate } from '../utils/timeUtils';
@@ -146,6 +153,25 @@ export const AllTasksView: React.FC<AllTasksViewProps> = ({ onOpenTaskModal }) =
     return true;
   }).sort((a, b) => {
     if (a.taskDate !== b.taskDate) return a.taskDate.localeCompare(b.taskDate);
+    
+    const aIncomplete = a.status === 'Incomplete';
+    const bIncomplete = b.status === 'Incomplete';
+
+    // 1. Incompleted tasks sink down to bottom
+    if (aIncomplete !== bIncomplete) {
+      return aIncomplete ? 1 : -1;
+    }
+
+    // 2. Priority based sorting for incompleted tasks (P1 -> P2 -> P3 -> P4 -> P5)
+    if (aIncomplete && bIncomplete) {
+      const pWeight: Record<PriorityLevel, number> = { P1: 1, P2: 2, P3: 3, P4: 4, P5: 5 };
+      if (pWeight[a.priority] !== pWeight[b.priority]) {
+        return pWeight[a.priority] - pWeight[b.priority];
+      }
+      return parse12HourToMinutes(a.startTime) - parse12HourToMinutes(b.startTime);
+    }
+
+    // 3. Naturally time-wise by startTime
     return parse12HourToMinutes(a.startTime) - parse12HourToMinutes(b.startTime);
   });
 
@@ -308,15 +334,24 @@ export const AllTasksView: React.FC<AllTasksViewProps> = ({ onOpenTaskModal }) =
                     const priorityMeta = prioritySettings[task.priority];
                     const isWorking = task.status === 'Working';
                     const isIncomplete = task.status === 'Incomplete';
+                    
+                    const now = new Date();
+                    
+                    const isCurrentRunningSlot = isTaskInRunningSlot(task.taskDate, task.startTime, task.endTime, now);
+                    const isRunning = isWorking || (task.status === 'Pending' && isCurrentRunningSlot);
+
+                    const isDue = isIncomplete || 
+                      (task.status === 'Pending' && isTaskPastDue(task.taskDate, task.startTime, task.endTime, now)) ||
+                      (task.status === 'Working' && isTaskPastDue(task.taskDate, task.startTime, task.endTime, now));
 
                     return (
                       <div
                         key={task.id}
                         className={`p-4 rounded-2xl border transition-all duration-200 ${
-                          isIncomplete
-                            ? 'bg-red-50/70 dark:bg-red-950/30 border-red-400 dark:border-red-800 ring-1 ring-red-400/40'
-                            : isWorking
-                              ? 'bg-blue-50/80 dark:bg-blue-950/40 border-blue-400 dark:border-blue-700 shadow-md ring-1 ring-blue-500/30'
+                          isDue
+                            ? 'bg-red-50/30 dark:bg-red-950/20 border-red-300 dark:border-red-900/60 shadow-sm'
+                            : isRunning
+                              ? 'bg-gradient-to-r from-blue-50/90 via-sky-50/50 to-theme-card dark:from-blue-950/60 dark:via-sky-950/30 dark:to-theme-card border-blue-500 shadow-xl shadow-blue-500/20 ring-2 ring-blue-500/60'
                               : 'bg-theme-card border-theme-border hover:shadow-md'
                         }`}
                       >
@@ -356,13 +391,26 @@ export const AllTasksView: React.FC<AllTasksViewProps> = ({ onOpenTaskModal }) =
                                   </span>
                                 )}
 
-                                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                                  task.status === 'Working' ? 'bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300 animate-pulse' :
-                                  task.status === 'Incomplete' ? 'bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-300' :
-                                  'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300'
-                                }`}>
-                                  {task.status}
-                                </span>
+                                {/* Running Time Blue Lighting Badge */}
+                                {isRunning && !isDue && (
+                                  <span className="text-[10px] font-black px-2 py-0.5 bg-blue-600 text-white rounded-full flex items-center gap-1.5 shadow-md shadow-blue-500/40">
+                                    <span className="relative flex h-2 w-2">
+                                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-sky-200 opacity-90"></span>
+                                      <span className="relative inline-flex rounded-full h-2 w-2 bg-white"></span>
+                                    </span>
+                                    <span>{isWorking ? '⚡ RUNNING NOW' : '⚡ RUNNING TIME'}</span>
+                                  </span>
+                                )}
+
+                                {isDue && (
+                                  <span className="text-[10px] font-black px-2 py-0.5 bg-red-600 text-white rounded-full flex items-center gap-1.5 shadow-sm animate-pulse">
+                                    <span className="relative flex h-2 w-2">
+                                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-80"></span>
+                                      <span className="relative inline-flex rounded-full h-2 w-2 bg-white"></span>
+                                    </span>
+                                    <span>{isIncomplete ? '⚠️ INCOMPLETE' : isWorking ? '⚡ OVERTIME DUE' : '🚨 DUE NOW'}</span>
+                                  </span>
+                                )}
                               </div>
 
                               {/* Task Title (Google Open Sans Bold) */}
@@ -376,10 +424,11 @@ export const AllTasksView: React.FC<AllTasksViewProps> = ({ onOpenTaskModal }) =
                                   value={task.status}
                                   onChange={(e) => handleStatusChange(task, e.target.value as TaskStatus)}
                                   className={`text-[10px] font-bold px-2 py-0.5 rounded-full border cursor-pointer focus:outline-none transition-colors ${
-                                    task.status === 'Done' ? 'bg-emerald-100 text-emerald-800 border-emerald-300 dark:bg-emerald-950 dark:text-emerald-300' :
+                                    task.status === 'Done' ? 'bg-emerald-600 text-white border-emerald-600 shadow-sm' :
+                                    task.status === 'Terminated' ? 'bg-red-600 text-white border-red-600 shadow-sm' :
                                     task.status === 'Working' ? 'bg-blue-600 text-white border-blue-600 shadow-sm animate-pulse' :
                                     task.status === 'Hold' ? 'bg-amber-100 text-amber-800 border-amber-300 dark:bg-amber-950' :
-                                    task.status === 'Incomplete' ? 'bg-red-600 text-white border-red-600' :
+                                    task.status === 'Incomplete' ? 'bg-red-600 text-white border-red-600 shadow-sm' :
                                     task.status === 'Reschedule' ? 'bg-purple-100 text-purple-800 border-purple-300' :
                                     'bg-slate-100 text-slate-700 border-slate-300 dark:bg-slate-800 dark:text-slate-300'
                                   }`}
@@ -534,16 +583,21 @@ export const AllTasksView: React.FC<AllTasksViewProps> = ({ onOpenTaskModal }) =
                       .map((task) => {
                         const priorityMeta = prioritySettings[task.priority];
                         const isDone = task.status === 'Done';
+                        const isTerminated = task.status === 'Terminated';
 
                         return (
                           <div
                             key={task.id}
-                            className="p-4 rounded-2xl border bg-theme-card/60 border-theme-border transition-all"
+                            className={`p-4 rounded-2xl border transition-all ${
+                              isDone 
+                                ? 'bg-emerald-50/50 dark:bg-emerald-950/25 border-emerald-300 dark:border-emerald-800/80 shadow-sm'
+                                : 'bg-red-50/50 dark:bg-red-950/25 border-red-300 dark:border-red-800/80 shadow-sm'
+                            }`}
                           >
                             <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
                               <div className="flex items-start gap-3 flex-1">
                                 <div
-                                  className="px-2 py-1 rounded-lg text-center font-black text-xs min-w-[42px] shrink-0 opacity-70"
+                                  className="px-2 py-1 rounded-lg text-center font-black text-xs min-w-[42px] shrink-0"
                                   style={{ backgroundColor: priorityMeta?.bgColor, color: priorityMeta?.color }}
                                 >
                                   {task.priority}
@@ -564,10 +618,13 @@ export const AllTasksView: React.FC<AllTasksViewProps> = ({ onOpenTaskModal }) =
                                     <span className="text-theme-muted font-semibold">
                                       {task.category}
                                     </span>
-                                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                                      isDone ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300' : 'bg-slate-200 text-slate-800 dark:bg-slate-800 dark:text-slate-300'
+                                    <span className={`text-[10px] font-black px-2.5 py-0.5 rounded-full flex items-center gap-1 shadow-sm ${
+                                      isDone 
+                                        ? 'bg-emerald-600 text-white' 
+                                        : 'bg-red-600 text-white'
                                     }`}>
-                                      {task.status}
+                                      {isDone ? <Check className="w-3 h-3 stroke-[3]" /> : <X className="w-3 h-3 stroke-[3]" />}
+                                      <span>{isDone ? 'Done' : 'Terminated'}</span>
                                     </span>
                                   </div>
 
@@ -575,10 +632,17 @@ export const AllTasksView: React.FC<AllTasksViewProps> = ({ onOpenTaskModal }) =
                                     {task.title}
                                   </h4>
 
-                                  <div className="text-[11px] font-mono text-emerald-600 dark:text-emerald-400 font-semibold flex items-center gap-1">
-                                    <Check className="w-3 h-3 text-emerald-500" />
-                                    <span>Completed • {task.totalActualMinutes || task.appointedMinutes}m</span>
-                                  </div>
+                                  {isDone ? (
+                                    <div className="text-[11px] font-mono text-emerald-600 dark:text-emerald-400 font-semibold flex items-center gap-1">
+                                      <Check className="w-3.5 h-3.5 text-emerald-500" />
+                                      <span>Execution Completed & Done • {task.totalActualMinutes || task.appointedMinutes}m (+{task.bufferMinutes}m buffer applied)</span>
+                                    </div>
+                                  ) : (
+                                    <div className="text-[11px] font-mono text-red-600 dark:text-red-400 font-semibold flex items-center gap-1">
+                                      <X className="w-3.5 h-3.5 text-red-500" />
+                                      <span>Terminated & Closed • {task.totalActualMinutes || task.appointedMinutes}m</span>
+                                    </div>
+                                  )}
                                 </div>
                               </div>
 

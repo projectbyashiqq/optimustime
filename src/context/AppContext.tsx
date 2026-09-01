@@ -35,7 +35,10 @@ import {
   getDayOfWeekFromDate, 
   checkOverlap,
   playNotificationChime,
-  isTaskScheduledForDate
+  isTaskScheduledForDate,
+  getCurrentRoundedTime12Hour,
+  getNextRecurrenceDate,
+  isTaskAutoIncompleteExpired
 } from '../utils/timeUtils';
 import { 
   pushStateToCloud, 
@@ -548,8 +551,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
   }, [securitySettings.isPasswordProtected, securitySettings.autoLockMinutes, isAuthenticated, logout]);
 
-  // Automated 2-Hour Inactivity Auto-Incomplete Engine
-  // Automatically marks any task as 'Incomplete' if not started or not closed after 2 hours (120 mins)
+  // Automated 6-Hour Inactivity Auto-Incomplete Engine
+  // Automatically marks any task as 'Incomplete' if not started or not closed after 6 hours (360 mins)
   useEffect(() => {
     const evaluateIncompleteTasks = () => {
       const now = new Date();
@@ -558,37 +561,69 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
       setTasks(prevTasks => {
         let hasChanges = false;
+        const newSnapshots: Task[] = [];
+
         const updated = prevTasks.map(task => {
           if (task.status === 'Done' || task.status === 'Terminated' || task.status === 'Incomplete') {
             return task;
           }
 
-          // Rule 1: Pending task not started after 2 hours from scheduled startTime
-          if (task.status === 'Pending') {
-            const isPastDay = task.taskDate < todayStr;
-            const isTodayExpired = task.taskDate === todayStr && nowMinutes >= (parse12HourToMinutes(task.startTime) + 120);
+          let isExpired = false;
 
-            if (isPastDay || isTodayExpired) {
-              hasChanges = true;
-              return { ...task, status: 'Incomplete' as TaskStatus };
-            }
+          // Accurately evaluate 6-hour expiration respecting overnight / cross-midnight spans (e.g. 11:00 PM to 01:00 AM next day)
+          if (task.status === 'Pending' || task.status === 'Working') {
+            isExpired = isTaskAutoIncompleteExpired(
+              task.taskDate,
+              task.startTime,
+              task.endTime,
+              task.status,
+              now,
+              360 // 6 hours threshold
+            );
           }
 
-          // Rule 2: Working task not closed/completed after 2 hours from scheduled endTime
-          if (task.status === 'Working') {
-            const isPastDay = task.taskDate < todayStr;
-            const isTodayExpired = task.taskDate === todayStr && nowMinutes >= (parse12HourToMinutes(task.endTime) + 120);
+          if (isExpired) {
+            hasChanges = true;
+            const isRecurring = task.recurrence && task.recurrence !== 'None';
 
-            if (isPastDay || isTodayExpired) {
-              hasChanges = true;
-              return { ...task, status: 'Incomplete' as TaskStatus };
+            if (isRecurring) {
+              // 1. Snapshot missed occurrence as an immutable Incomplete history record
+              const missedDate = task.taskDate <= todayStr ? task.taskDate : todayStr;
+              const snapshot: Task = {
+                ...task,
+                id: `snap-${task.id}-${missedDate}-${Date.now()}`,
+                taskDate: missedDate,
+                dayOfWeek: getDayOfWeekFromDate(missedDate),
+                status: 'Incomplete',
+                recurrence: 'None',
+                selectedDays: [],
+                dateAdded: new Date().toISOString()
+              };
+              newSnapshots.push(snapshot);
+
+              // 2. Rollover master recurring task to next occurrence date with fresh 'Pending' state
+              const nextDate = getNextRecurrenceDate(task, missedDate);
+              return {
+                ...task,
+                taskDate: nextDate,
+                dayOfWeek: getDayOfWeekFromDate(nextDate),
+                status: 'Pending' as TaskStatus,
+                executionLogs: []
+              };
             }
+
+            return { ...task, status: 'Incomplete' as TaskStatus };
           }
 
           return task;
         });
 
-        return hasChanges ? updated : prevTasks;
+        if (hasChanges) {
+          playNotificationChime('alert'); // Bip bip warning audio
+          return [...newSnapshots, ...updated];
+        }
+
+        return prevTasks;
       });
     };
 
@@ -666,7 +701,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const addTask = useCallback((taskData: Omit<Task, 'id' | 'projectCode' | 'dateAdded' | 'executionLogs' | 'totalActualMinutes'> & { id?: string; projectCode?: string }): Task => {
     const defaultMins = prioritySettings[taskData.priority]?.defaultMinutes ?? 60;
     const appointedMinutes = taskData.appointedMinutes || defaultMins;
-    const startTime = taskData.startTime || '09:00 AM';
+    const startTime = taskData.startTime || getCurrentRoundedTime12Hour(15);
     const endTime = taskData.endTime || addMinutesToTime(startTime, appointedMinutes);
     const date = taskData.taskDate || toISODateString(new Date());
     const day = taskData.dayOfWeek || getDayOfWeekFromDate(date);
@@ -704,7 +739,44 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, [prioritySettings]);
 
   const updateTask = useCallback((updated: Task) => {
-    setTasks(prev => prev.map(t => t.id === updated.id ? updated : t));
+    setTasks(prev => {
+      const existing = prev.find(t => t.id === updated.id);
+      
+      // If user changed a recurring task's status to a closed state (Incomplete, Done, Terminated)
+      if (existing && existing.recurrence && existing.recurrence !== 'None' && (updated.status === 'Incomplete' || updated.status === 'Done' || updated.status === 'Terminated')) {
+        const now = new Date();
+        const todayStr = toISODateString(now);
+        const actionDate = updated.taskDate <= todayStr ? updated.taskDate : todayStr;
+
+        // 1. Snapshot for the specific date
+        const snapshot: Task = {
+          ...updated,
+          id: `snap-${updated.id}-${actionDate}-${Date.now()}`,
+          taskDate: actionDate,
+          dayOfWeek: getDayOfWeekFromDate(actionDate),
+          recurrence: 'None',
+          selectedDays: [],
+          dateAdded: new Date().toISOString()
+        };
+
+        // 2. Rollover master recurring task to next occurrence date with fresh 'Pending' state
+        const nextDate = getNextRecurrenceDate(existing, actionDate);
+        const rolledOverMaster: Task = {
+          ...existing,
+          taskDate: nextDate,
+          dayOfWeek: getDayOfWeekFromDate(nextDate),
+          status: 'Pending' as TaskStatus,
+          executionLogs: []
+        };
+
+        return [
+          snapshot,
+          ...prev.map(t => t.id === updated.id ? rolledOverMaster : t)
+        ];
+      }
+
+      return prev.map(t => t.id === updated.id ? updated : t);
+    });
   }, []);
 
   const deleteTask = useCallback((taskId: string) => {
@@ -749,13 +821,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }));
   }, []);
 
-  // Complete Task + Auto Buffer Engine (15m normal, 5m late) + Cascading Shift
+  // Complete Task + Auto Buffer Engine (15m normal, 5m late) + Recurring Rollover
   const completeTask = useCallback((taskId: string) => {
     setTasks(prev => {
       const target = prev.find(t => t.id === taskId);
       if (!target) return prev;
 
       const now = new Date();
+      const todayStr = toISODateString(now);
       let actualDuration = target.appointedMinutes;
       let isLate = false;
 
@@ -774,6 +847,44 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       // Buffer Duration Logic:
       // Normal completion adds 15m Buffer Time; Late start/finish reduces buffer to 5m.
       const bufferMinutes = isLate ? 5 : 15;
+      const isRecurring = target.recurrence && target.recurrence !== 'None';
+
+      if (isRecurring) {
+        // 1. Snapshot today's completed instance as an immutable Done history record
+        const completionDate = target.taskDate <= todayStr ? target.taskDate : todayStr;
+        const snapshot: Task = {
+          ...target,
+          id: `snap-${target.id}-${completionDate}-${Date.now()}`,
+          taskDate: completionDate,
+          dayOfWeek: getDayOfWeekFromDate(completionDate),
+          status: 'Done',
+          recurrence: 'None',
+          selectedDays: [],
+          bufferMinutes,
+          totalActualMinutes: actualDuration,
+          executionLogs: logs,
+          dateAdded: new Date().toISOString()
+        };
+
+        // 2. Advance master recurring task to the next scheduled date with fresh 'Pending' state
+        const nextDate = getNextRecurrenceDate(target, completionDate);
+        return [
+          snapshot,
+          ...prev.map(t => {
+            if (t.id === taskId) {
+              return {
+                ...t,
+                taskDate: nextDate,
+                dayOfWeek: getDayOfWeekFromDate(nextDate),
+                status: 'Pending' as TaskStatus,
+                executionLogs: [],
+                totalActualMinutes: 0
+              };
+            }
+            return t;
+          })
+        ];
+      }
 
       return prev.map(t => {
         if (t.id === taskId) {

@@ -315,11 +315,12 @@ export const ReminderCenterView: React.FC<ReminderCenterViewProps> = ({ onOpenTa
                         </span>
                       )}
 
-                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                        isDone ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300' :
+                      <span className={`text-[10px] font-black px-2.5 py-0.5 rounded-full flex items-center gap-1 shadow-sm ${
+                        isDone ? 'bg-emerald-600 text-white' :
+                        task.status === 'Terminated' ? 'bg-red-600 text-white' :
                         task.status === 'Hold' ? 'bg-amber-500 text-white' :
                         task.status === 'Incomplete' ? 'bg-red-600 text-white' :
-                        'bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300'
+                        'bg-blue-600 text-white'
                       }`}>
                         {task.status}
                       </span>

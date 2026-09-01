@@ -94,10 +94,10 @@ export const ActiveTaskBanner: React.FC = () => {
                     Overtime (+5m Buffer)
                   </span>
                 )}
-                <div className="font-mono text-xl sm:text-2xl font-black tracking-wider text-white">
+                <div className="font-mono text-2xl sm:text-3xl font-black tracking-wider text-white drop-shadow-md">
                   {formatTimer(elapsedSeconds)}
                 </div>
-                <span className="text-xs text-blue-200">
+                <span className="text-xs sm:text-sm text-blue-100 font-bold">
                   / {activeTask.appointedMinutes}m
                 </span>
               </div>

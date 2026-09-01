@@ -102,10 +102,14 @@ export const Header: React.FC<HeaderProps> = ({ onOpenNewTaskModal }) => {
               </div>
             </div>
 
-            {/* Live Clock Badge */}
-            <div className="hidden sm:flex items-center gap-1.5 bg-theme-card-hover px-2.5 py-1 rounded-lg border border-theme-border shadow-inner ml-1">
-              <Clock className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400 animate-pulse" />
-              <span className="font-mono text-xs font-bold tracking-wide text-theme-text">
+            {/* Big Live Clock Badge */}
+            <div className="hidden sm:flex items-center gap-2 bg-gradient-to-r from-blue-50/90 via-sky-50/50 to-theme-card dark:from-blue-950/50 dark:via-sky-950/30 dark:to-theme-card px-3.5 py-1.5 rounded-xl border border-blue-200 dark:border-blue-800/80 shadow-sm ml-2 ring-1 ring-blue-500/20">
+              <div className="relative flex h-2.5 w-2.5">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-blue-600 dark:bg-blue-400"></span>
+              </div>
+              <Clock className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+              <span className="font-mono text-sm sm:text-base font-black tracking-wider text-theme-text font-display">
                 {formattedTimeStr}
               </span>
             </div>

@@ -57,6 +57,14 @@ export function addMinutesToTime(timeStr: string, minutesToAdd: number): string 
   return formatMinutesTo12Hour(currentMin + minutesToAdd);
 }
 
+// Get current local time in 12-hour AM/PM format, rounded to nearest step (default: 15 minutes)
+export function getCurrentRoundedTime12Hour(stepMinutes = 15): string {
+  const now = new Date();
+  const totalMinutes = now.getHours() * 60 + now.getMinutes();
+  const rounded = Math.ceil(totalMinutes / stepMinutes) * stepMinutes;
+  return formatMinutesTo12Hour(rounded % 1440);
+}
+
 // Calculate difference in minutes between two 12-hour strings
 export function diffTimeInMinutes(startTimeStr: string, endTimeStr: string): number {
   const start = parse12HourToMinutes(startTimeStr);
@@ -314,6 +322,55 @@ export function isTaskScheduledForDate(task: {
   return false;
 }
 
+/**
+ * Calculates the next occurrence ISO date string for a recurring task after `fromDateStr`.
+ */
+export function getNextRecurrenceDate(task: {
+  taskDate: string;
+  recurrence?: string;
+  selectedDays?: string[];
+}, fromDateStr: string): string {
+  const recurrence = task.recurrence || 'None';
+  if (recurrence === 'None') return fromDateStr;
+
+  const [year, month, day] = fromDateStr.split('-').map(Number);
+  const current = new Date(year, month - 1, day);
+
+  if (recurrence === 'Daily') {
+    current.setDate(current.getDate() + 1);
+    return toISODateString(current);
+  }
+
+  if (recurrence === 'Selected Days') {
+    for (let i = 1; i <= 14; i++) {
+      const nextDate = new Date(year, month - 1, day + i);
+      const nextDateStr = toISODateString(nextDate);
+      if (isTaskScheduledForDate(task, nextDateStr)) {
+        return nextDateStr;
+      }
+    }
+    current.setDate(current.getDate() + 1);
+    return toISODateString(current);
+  }
+
+  if (recurrence === 'Weekly') {
+    current.setDate(current.getDate() + 7);
+    return toISODateString(current);
+  }
+
+  if (recurrence === 'Monthly') {
+    current.setMonth(current.getMonth() + 1);
+    return toISODateString(current);
+  }
+
+  if (recurrence === 'Yearly') {
+    current.setFullYear(current.getFullYear() + 1);
+    return toISODateString(current);
+  }
+
+  return fromDateStr;
+}
+
 export interface AvailableSlotResult {
   date: string;
   dayOfWeek: string;
@@ -322,24 +379,27 @@ export interface AvailableSlotResult {
   scheduledMinutesOnDay: number;
   remainingCapacityMinutes: number;
   isRedLine: boolean;
+  period?: 'Morning' | 'Afternoon' | 'Evening';
   reason?: string;
 }
 
 /**
- * Finds the earliest available conflict-free slot for a given duration on a target date,
- * respecting already scheduled tasks + breaks/buffers.
+ * Finds MULTIPLE conflict-free available slots on a target date, strictly within waking hours [dayStartTime, dayEndTime],
+ * completely avoiding sleep time, respecting existing tasks + buffers.
  */
-export function findAvailableSlotOnDate(
+export function findAllAvailableSlotsOnDate(
   dateStr: string,
   durationMinutes: number,
   allTasks: Array<{ taskDate: string; startTime: string; endTime: string; bufferMinutes?: number; status: string; recurrence?: string; selectedDays?: string[] }>,
   dayStartTime = '06:00 AM',
   dayEndTime = '11:00 PM',
-  earliestAllowedMinutes?: number
-): AvailableSlotResult | null {
+  earliestAllowedMinutes?: number,
+  maxSlotsPerDay = 5
+): AvailableSlotResult[] {
   const dayStartMin = parse12HourToMinutes(dayStartTime);
-  const dayEndMin = parse12HourToMinutes(dayEndTime);
-  
+  let dayEndMin = parse12HourToMinutes(dayEndTime);
+  if (dayEndMin <= dayStartMin) dayEndMin += 1440;
+
   // Filter active tasks occurring on dateStr (using isTaskScheduledForDate)
   const dayTasks = allTasks.filter(t => 
     isTaskScheduledForDate(t, dateStr) && 
@@ -363,7 +423,7 @@ export function findAvailableSlotOnDate(
     return { start: s, end: e + buf };
   }).sort((a, b) => a.start - b.start);
 
-  // Merge intervals
+  // Merge overlapping intervals
   const merged: { start: number; end: number }[] = [];
   for (const interval of intervals) {
     if (merged.length === 0) {
@@ -378,43 +438,172 @@ export function findAvailableSlotOnDate(
     }
   }
 
-  let cursor = Math.max(dayStartMin, earliestAllowedMinutes ?? dayStartMin);
-  let foundStart: number | null = null;
+  // Find all free gaps strictly within waking hours (without sleep time)
+  const effectiveStart = Math.max(dayStartMin, earliestAllowedMinutes ?? dayStartMin);
+  let cursor = effectiveStart;
+  const gaps: { start: number; end: number }[] = [];
 
   for (const block of merged) {
     if (block.start > cursor) {
-      const gap = block.start - cursor;
-      if (gap >= durationMinutes) {
-        foundStart = cursor;
-        break;
+      const gapStart = Math.max(cursor, effectiveStart);
+      const gapEnd = Math.min(block.start, dayEndMin);
+      if (gapEnd > gapStart && (gapEnd - gapStart) >= durationMinutes) {
+        gaps.push({ start: gapStart, end: gapEnd });
       }
     }
     cursor = Math.max(cursor, block.end);
   }
 
-  if (foundStart === null) {
-    if (cursor + durationMinutes <= dayEndMin) {
-      foundStart = cursor;
+  if (cursor < dayEndMin) {
+    const gapStart = Math.max(cursor, effectiveStart);
+    if (dayEndMin - gapStart >= durationMinutes) {
+      gaps.push({ start: gapStart, end: dayEndMin });
     }
   }
 
-  if (foundStart === null) {
-    return null; // Day is completely full
-  }
-
-  const foundEnd = foundStart + durationMinutes;
+  const results: AvailableSlotResult[] = [];
   const dayOfWeek = getDayOfWeekFromDate(dateStr);
   const remainingCapacity = Math.max(0, (14 * 60) - scheduledMinutesOnDay - durationMinutes);
+  const isRedLine = (scheduledMinutesOnDay + durationMinutes) > (14 * 60);
 
-  return {
-    date: dateStr,
-    dayOfWeek,
-    startTime: formatMinutesTo12Hour(foundStart),
-    endTime: formatMinutesTo12Hour(foundEnd),
-    scheduledMinutesOnDay,
-    remainingCapacityMinutes: remainingCapacity,
-    isRedLine: (scheduledMinutesOnDay + durationMinutes) > (14 * 60)
-  };
+  for (const gap of gaps) {
+    if (results.length >= maxSlotsPerDay) break;
+
+    // Add earliest slot in this gap
+    const slot1Start = gap.start;
+    const slot1End = slot1Start + durationMinutes;
+    const period1: 'Morning' | 'Afternoon' | 'Evening' = 
+      (slot1Start % 1440) < 720 ? 'Morning' : (slot1Start % 1440) < 1020 ? 'Afternoon' : 'Evening';
+
+    results.push({
+      date: dateStr,
+      dayOfWeek,
+      startTime: formatMinutesTo12Hour(slot1Start),
+      endTime: formatMinutesTo12Hour(slot1End),
+      scheduledMinutesOnDay,
+      remainingCapacityMinutes: remainingCapacity,
+      isRedLine,
+      period: period1
+    });
+
+    // If gap is large enough, add intermediate step slots (e.g. +30m or +60m)
+    const step = Math.max(30, durationMinutes >= 90 ? 60 : 30);
+    let nextStart = slot1Start + step;
+    while (nextStart + durationMinutes <= gap.end && results.length < maxSlotsPerDay) {
+      const periodNext: 'Morning' | 'Afternoon' | 'Evening' = 
+        (nextStart % 1440) < 720 ? 'Morning' : (nextStart % 1440) < 1020 ? 'Afternoon' : 'Evening';
+      results.push({
+        date: dateStr,
+        dayOfWeek,
+        startTime: formatMinutesTo12Hour(nextStart),
+        endTime: formatMinutesTo12Hour(nextStart + durationMinutes),
+        scheduledMinutesOnDay,
+        remainingCapacityMinutes: remainingCapacity,
+        isRedLine,
+        period: periodNext
+      });
+      nextStart += step;
+    }
+  }
+
+  return results;
+}
+
+/**
+ * Finds the earliest available conflict-free slot for a given duration on a target date,
+ * respecting already scheduled tasks + breaks/buffers.
+ */
+export function findAvailableSlotOnDate(
+  dateStr: string,
+  durationMinutes: number,
+  allTasks: Array<{ taskDate: string; startTime: string; endTime: string; bufferMinutes?: number; status: string; recurrence?: string; selectedDays?: string[] }>,
+  dayStartTime = '06:00 AM',
+  dayEndTime = '11:00 PM',
+  earliestAllowedMinutes?: number
+): AvailableSlotResult | null {
+  const slots = findAllAvailableSlotsOnDate(
+    dateStr,
+    durationMinutes,
+    allTasks,
+    dayStartTime,
+    dayEndTime,
+    earliestAllowedMinutes,
+    1
+  );
+  return slots.length > 0 ? slots[0] : null;
+}
+
+/**
+ * Returns the exact Date range [start, end] for a given task,
+ * seamlessly handling cross-midnight time spans (e.g. 11:00 PM on Sept 1 -> 01:00 AM on Sept 2).
+ */
+export function getTaskDateTimeRange(taskDateStr: string, startTimeStr: string, endTimeStr: string): { start: Date; end: Date } | null {
+  if (!taskDateStr || !startTimeStr || !endTimeStr || startTimeStr === 'All Day' || endTimeStr === 'All Day') {
+    return null;
+  }
+  const parts = taskDateStr.split('-').map(Number);
+  if (parts.length !== 3 || isNaN(parts[0]) || isNaN(parts[1]) || isNaN(parts[2])) return null;
+
+  const [year, month, day] = parts;
+  const startMinutes = parse12HourToMinutes(startTimeStr);
+  const endMinutes = parse12HourToMinutes(endTimeStr);
+
+  const start = new Date(year, month - 1, day, Math.floor(startMinutes / 60), startMinutes % 60, 0, 0);
+  
+  // If endMinutes <= startMinutes, the task crosses midnight into the next day
+  const isOvernight = endMinutes <= startMinutes;
+  const end = new Date(year, month - 1, isOvernight ? day + 1 : day, Math.floor(endMinutes / 60), endMinutes % 60, 0, 0);
+
+  return { start, end };
+}
+
+/**
+ * Checks if a task is currently in its active running time slot right now.
+ * Works seamlessly across midnight boundaries (e.g. 11:00 PM to 01:00 AM).
+ */
+export function isTaskInRunningSlot(taskDateStr: string, startTimeStr: string, endTimeStr: string, now: Date = new Date()): boolean {
+  const range = getTaskDateTimeRange(taskDateStr, startTimeStr, endTimeStr);
+  if (!range) return false;
+  return now >= range.start && now < range.end;
+}
+
+/**
+ * Checks if a task's scheduled end time has already elapsed (is Due / Overdue).
+ * Accurately treats 01:00 AM in an overnight task (11:00 PM - 01:00 AM) as the NEXT day.
+ */
+export function isTaskPastDue(taskDateStr: string, startTimeStr: string, endTimeStr: string, now: Date = new Date()): boolean {
+  const range = getTaskDateTimeRange(taskDateStr, startTimeStr, endTimeStr);
+  if (!range) {
+    // For tasks without specific times, check if task date is before today
+    const todayStr = toISODateString(now);
+    return taskDateStr < todayStr;
+  }
+  return now >= range.end;
+}
+
+/**
+ * Checks if a task has exceeded the 6-hour (360 mins) inactivity threshold.
+ * Uses exact anchor time respecting overnight next-day boundaries.
+ */
+export function isTaskAutoIncompleteExpired(
+  taskDateStr: string,
+  startTimeStr: string,
+  endTimeStr: string,
+  status: 'Pending' | 'Working',
+  now: Date = new Date(),
+  expireThresholdMinutes = 360
+): boolean {
+  const range = getTaskDateTimeRange(taskDateStr, startTimeStr, endTimeStr);
+  if (!range) {
+    const todayStr = toISODateString(now);
+    return taskDateStr < todayStr;
+  }
+
+  // If Pending, expire 6 hours after scheduled start time
+  // If Working, expire 6 hours after scheduled end time
+  const anchorTime = status === 'Working' ? range.end.getTime() : range.start.getTime();
+  const diffMs = now.getTime() - anchorTime;
+  return diffMs >= expireThresholdMinutes * 60 * 1000;
 }
 
 
