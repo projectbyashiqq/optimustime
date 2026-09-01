@@ -32,7 +32,8 @@ import {
   Plus,
   Trash2,
   Settings2,
-  Hourglass
+  Hourglass,
+  Lock
 } from 'lucide-react';
 
 const DURATION_PRESETS = [30, 45, 60, 90, 120, 180, 240];
@@ -121,7 +122,7 @@ export const EmergencyBufferModal: React.FC = () => {
     setDurationMinutes(cat.defaultDuration || 60);
   };
 
-  // Batch Action 1: +1 Hour Delay for all remaining tasks
+  // Batch Action 1: +1 Hour Delay for all flexible tasks
   const handleBatchDelay = (delayMins: number) => {
     const [y, m, d] = date.split('-').map(Number);
     const tomDate = new Date(y, m - 1, d);
@@ -130,6 +131,12 @@ export const EmergencyBufferModal: React.FC = () => {
     const dayEndMin = parse12HourToMinutes(capacitySettings.dayEndTime);
 
     setProposals(prev => prev.map(p => {
+      const origTask = tasks.find(t => t.id === p.taskId);
+      // Mandatory fixed tasks NEVER shift with batch delays
+      if (origTask?.isMandatorySchedule) {
+        return p;
+      }
+
       const origStartMin = parse12HourToMinutes(p.currentStartTime);
       const origEndMin = parse12HourToMinutes(p.currentEndTime);
       const dur = origEndMin - origStartMin;
@@ -161,7 +168,7 @@ export const EmergencyBufferModal: React.FC = () => {
     }));
   };
 
-  // Batch Action 2: Move All Remaining Tasks to Next Day (Tomorrow)
+  // Batch Action 2: Move Flexible Remaining Tasks to Next Day (Tomorrow)
   const handleBatchMoveAllToNextDay = () => {
     const [y, m, d] = date.split('-').map(Number);
     const tomDate = new Date(y, m - 1, d);
@@ -171,6 +178,12 @@ export const EmergencyBufferModal: React.FC = () => {
     let tomorrowCursor = parse12HourToMinutes(capacitySettings.dayStartTime);
 
     setProposals(prev => prev.map(p => {
+      const origTask = tasks.find(t => t.id === p.taskId);
+      // Mandatory fixed tasks NEVER defer to tomorrow
+      if (origTask?.isMandatorySchedule) {
+        return p;
+      }
+
       const origStartMin = parse12HourToMinutes(p.currentStartTime);
       const origEndMin = parse12HourToMinutes(p.currentEndTime);
       const dur = origEndMin - origStartMin;
@@ -191,14 +204,25 @@ export const EmergencyBufferModal: React.FC = () => {
 
   // Batch Action 3: Hold All
   const handleBatchHoldAll = () => {
-    setProposals(prev => prev.map(p => ({
-      ...p,
-      action: 'hold'
-    })));
+    setProposals(prev => prev.map(p => {
+      const origTask = tasks.find(t => t.id === p.taskId);
+      if (origTask?.isMandatorySchedule) {
+        return p;
+      }
+      return {
+        ...p,
+        action: 'hold'
+      };
+    }));
   };
 
   // Toggle Action for single task
   const handleToggleTaskAction = (taskId: string, actionType: TaskRescheduleProposal['action'], delayMins?: number) => {
+    const origTask = tasks.find(t => t.id === taskId);
+    if (origTask?.isMandatorySchedule) {
+      return; // Cannot modify mandatory locked task
+    }
+
     const [y, m, d] = date.split('-').map(Number);
     const tomDate = new Date(y, m - 1, d);
     tomDate.setDate(tomDate.getDate() + 1);
@@ -669,10 +693,17 @@ export const EmergencyBufferModal: React.FC = () => {
             ) : (
               <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
                 {proposals.map((p) => {
+                  const origTask = tasks.find(t => t.id === p.taskId);
+                  const isMandatory = origTask?.isMandatorySchedule;
+
                   return (
                     <div
                       key={p.taskId}
-                      className="p-3 rounded-xl bg-theme-card border border-theme-border flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2.5 hover:border-red-300 transition-colors shadow-sm"
+                      className={`p-3 rounded-xl border flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2.5 transition-colors shadow-sm ${
+                        isMandatory
+                          ? 'bg-amber-50/60 dark:bg-amber-950/20 border-amber-300 dark:border-amber-800'
+                          : 'bg-theme-card border-theme-border hover:border-red-300'
+                      }`}
                     >
                       <div className="space-y-1 min-w-0 flex-1">
                         <div className="flex items-center gap-1.5 flex-wrap">
@@ -683,9 +714,18 @@ export const EmergencyBufferModal: React.FC = () => {
                           }`}>
                             {p.priority}
                           </span>
+
                           <span className="text-[10px] font-mono text-theme-muted font-bold">
                             {p.projectCode}
                           </span>
+
+                          {isMandatory && (
+                            <span className="text-[10px] font-black px-2 py-0.2 bg-amber-200 dark:bg-amber-900 text-amber-900 dark:text-amber-200 rounded-full flex items-center gap-1">
+                              <Lock className="w-2.5 h-2.5" />
+                              <span>MANDATORY FIXED</span>
+                            </span>
+                          )}
+
                           <h5 className="text-xs font-bold text-theme-text truncate">
                             {p.taskTitle}
                           </h5>
@@ -693,69 +733,91 @@ export const EmergencyBufferModal: React.FC = () => {
 
                         {/* Shift Preview */}
                         <div className="flex items-center gap-2 text-xs font-mono">
-                          <span className="line-through text-theme-muted opacity-75">
-                            {p.currentStartTime} - {p.currentEndTime}
-                          </span>
-                          <ArrowRight className="w-3 h-3 text-red-500" />
-                          <span className={`font-bold ${
-                            p.action === 'defer_tomorrow' ? 'text-amber-600 dark:text-amber-400' :
-                            p.action === 'hold' ? 'text-zinc-500' :
-                            'text-emerald-600 dark:text-emerald-400'
-                          }`}>
-                            {p.action === 'hold' ? '⏸ Put on Hold' : `${p.proposedDate === date ? 'Today' : 'Tomorrow'} • ${p.proposedStartTime} - ${p.proposedEndTime}`}
-                          </span>
+                          {isMandatory ? (
+                            <span className="font-bold text-amber-700 dark:text-amber-300 flex items-center gap-1">
+                              <Lock className="w-3 h-3 text-amber-500" />
+                              <span>Anchored in slot: {p.currentStartTime} - {p.currentEndTime} (Locked • Never Shifts)</span>
+                            </span>
+                          ) : p.action === 'keep' ? (
+                            <span className="font-bold text-emerald-600 dark:text-emerald-400">
+                              ✓ Kept in original slot: {p.currentStartTime} - {p.currentEndTime}
+                            </span>
+                          ) : (
+                            <>
+                              <span className="line-through text-theme-muted opacity-75">
+                                {p.currentStartTime} - {p.currentEndTime}
+                              </span>
+                              <ArrowRight className="w-3 h-3 text-red-500" />
+                              <span className={`font-bold ${
+                                p.action === 'defer_tomorrow' ? 'text-amber-600 dark:text-amber-400' :
+                                p.action === 'hold' ? 'text-zinc-500' :
+                                'text-emerald-600 dark:text-emerald-400'
+                              }`}>
+                                {p.action === 'hold' ? '⏸ Put on Hold' : `${p.proposedDate === date ? 'Today' : 'Tomorrow'} • ${p.proposedStartTime} - ${p.proposedEndTime}`}
+                              </span>
+                            </>
+                          )}
                         </div>
                       </div>
 
                       {/* Individual Delay / Move Controls */}
                       <div className="flex items-center gap-1 shrink-0 self-end sm:self-auto flex-wrap">
-                        <button
-                          type="button"
-                          onClick={() => handleToggleTaskAction(p.taskId, 'shift_same_day', 60)}
-                          className={`px-2 py-1 rounded-lg text-[10px] font-bold transition-all ${
-                            p.action === 'shift_same_day' && p.delayMinutes === 60
-                              ? 'bg-blue-600 text-white shadow-sm'
-                              : 'bg-theme-card-hover text-theme-muted hover:text-theme-text'
-                          }`}
-                        >
-                          +1h Delay
-                        </button>
+                        {isMandatory ? (
+                          <span className="text-[10px] font-bold font-mono text-amber-800 dark:text-amber-300 bg-amber-100 dark:bg-amber-950/80 px-2.5 py-1 rounded-lg border border-amber-300 dark:border-amber-700 flex items-center gap-1">
+                            <Lock className="w-3 h-3 text-amber-600" />
+                            <span>Locked Schedule</span>
+                          </span>
+                        ) : (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => handleToggleTaskAction(p.taskId, 'shift_same_day', 60)}
+                              className={`px-2 py-1 rounded-lg text-[10px] font-bold transition-all ${
+                                p.action === 'shift_same_day' && p.delayMinutes === 60
+                                  ? 'bg-blue-600 text-white shadow-sm'
+                                  : 'bg-theme-card-hover text-theme-muted hover:text-theme-text'
+                              }`}
+                            >
+                              +1h Delay
+                            </button>
 
-                        <button
-                          type="button"
-                          onClick={() => handleToggleTaskAction(p.taskId, 'shift_same_day', 120)}
-                          className={`px-2 py-1 rounded-lg text-[10px] font-bold transition-all ${
-                            p.action === 'shift_same_day' && p.delayMinutes === 120
-                              ? 'bg-indigo-600 text-white shadow-sm'
-                              : 'bg-theme-card-hover text-theme-muted hover:text-theme-text'
-                          }`}
-                        >
-                          +2h Delay
-                        </button>
+                            <button
+                              type="button"
+                              onClick={() => handleToggleTaskAction(p.taskId, 'shift_same_day', 120)}
+                              className={`px-2 py-1 rounded-lg text-[10px] font-bold transition-all ${
+                                p.action === 'shift_same_day' && p.delayMinutes === 120
+                                  ? 'bg-indigo-600 text-white shadow-sm'
+                                  : 'bg-theme-card-hover text-theme-muted hover:text-theme-text'
+                              }`}
+                            >
+                              +2h Delay
+                            </button>
 
-                        <button
-                          type="button"
-                          onClick={() => handleToggleTaskAction(p.taskId, 'defer_tomorrow')}
-                          className={`px-2 py-1 rounded-lg text-[10px] font-bold transition-all ${
-                            p.action === 'defer_tomorrow'
-                              ? 'bg-amber-500 text-white shadow-sm'
-                              : 'bg-theme-card-hover text-theme-muted hover:text-theme-text'
-                          }`}
-                        >
-                          Next Day
-                        </button>
+                            <button
+                              type="button"
+                              onClick={() => handleToggleTaskAction(p.taskId, 'defer_tomorrow')}
+                              className={`px-2 py-1 rounded-lg text-[10px] font-bold transition-all ${
+                                p.action === 'defer_tomorrow'
+                                  ? 'bg-amber-500 text-white shadow-sm'
+                                  : 'bg-theme-card-hover text-theme-muted hover:text-theme-text'
+                              }`}
+                            >
+                              Next Day
+                            </button>
 
-                        <button
-                          type="button"
-                          onClick={() => handleToggleTaskAction(p.taskId, 'hold')}
-                          className={`px-2 py-1 rounded-lg text-[10px] font-bold transition-all ${
-                            p.action === 'hold'
-                              ? 'bg-zinc-700 text-white shadow-sm'
-                              : 'bg-theme-card-hover text-theme-muted hover:text-theme-text'
-                          }`}
-                        >
-                          Hold
-                        </button>
+                            <button
+                              type="button"
+                              onClick={() => handleToggleTaskAction(p.taskId, 'hold')}
+                              className={`px-2 py-1 rounded-lg text-[10px] font-bold transition-all ${
+                                p.action === 'hold'
+                                  ? 'bg-zinc-700 text-white shadow-sm'
+                                  : 'bg-theme-card-hover text-theme-muted hover:text-theme-text'
+                              }`}
+                            >
+                              Hold
+                            </button>
+                          </>
+                        )}
                       </div>
                     </div>
                   );

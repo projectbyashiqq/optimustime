@@ -1085,24 +1085,30 @@ export function calculateEmergencyReschedule(
   tomDate.setDate(tomDate.getDate() + 1);
   const tomorrowDateStr = toISODateString(tomDate);
 
-  // Filter tasks on this date that are affected
-  const affected = allDayTasks.filter(t => {
-    if (t.status === 'Done' || t.status === 'Terminated' || t.isEmergencyBuffer) return false;
-    const taskStartMin = parse12HourToMinutes(t.startTime);
-    const taskEndMin = parse12HourToMinutes(t.endTime);
-    // Overlaps with emergency or starts after emergency start
-    return taskEndMin > emergencyStartMin;
-  });
+  // Active tasks on this date (excluding done, terminated, or existing emergency buffer)
+  const activeTasks = allDayTasks.filter(t => 
+    t.status !== 'Done' && t.status !== 'Terminated' && !t.isEmergencyBuffer
+  ).sort((a, b) => parse12HourToMinutes(a.startTime) - parse12HourToMinutes(b.startTime));
 
-  // Sort chronologically by original start time
-  affected.sort((a, b) => parse12HourToMinutes(a.startTime) - parse12HourToMinutes(b.startTime));
+  // Get all mandatory locked tasks that CANNOT move
+  const mandatoryTasks = activeTasks.filter(t => t.isMandatorySchedule);
 
   const proposals: import('../types').TaskRescheduleProposal[] = [];
-  let currentCascadeMin = emergencyEndMin;
+  let currentCascadeCursor = emergencyEndMin;
   let tomorrowSlotCursor = parse12HourToMinutes(capacitySettings.dayStartTime);
 
-  for (const task of affected) {
-    // If task is locked with a Mandatory Schedule, keep it fixed in its original time slot
+  for (const task of activeTasks) {
+    const origStartMin = parse12HourToMinutes(task.startTime);
+    const origEndMin = parse12HourToMinutes(task.endTime);
+    const taskDuration = task.appointedMinutes || (origEndMin - origStartMin);
+    const buffer = task.bufferMinutes || 5;
+
+    // 1. If task ends before emergency starts, it is 100% unaffected
+    if (origEndMin <= emergencyStartMin) {
+      continue;
+    }
+
+    // 2. If task is locked with a Mandatory Schedule, it is 100% fixed and NEVER moves
     if (task.isMandatorySchedule) {
       proposals.push({
         taskId: task.id,
@@ -1117,32 +1123,72 @@ export function calculateEmergencyReschedule(
         proposedEndTime: task.endTime,
         action: 'keep'
       });
+      // Advance cascade cursor past mandatory task if needed so non-mandatory tasks don't overlap it
+      if (origEndMin > currentCascadeCursor) {
+        currentCascadeCursor = Math.max(currentCascadeCursor, origEndMin + buffer);
+      }
       continue;
     }
 
-    const taskDuration = task.appointedMinutes || (parse12HourToMinutes(task.endTime) - parse12HourToMinutes(task.startTime));
-    const buffer = task.bufferMinutes || 5;
+    // 3. For flexible (non-mandatory) tasks:
+    // Start at original time if after cascade cursor, or shift forward to currentCascadeCursor
+    let candidateStartMin = Math.max(origStartMin, currentCascadeCursor);
 
-    // Check if we can fit on same day before dayEndTime
-    if (currentCascadeMin + taskDuration <= dayEndMin) {
-      const proposedStartMin = currentCascadeMin;
-      const proposedEndMin = proposedStartMin + taskDuration;
+    // If candidate slot collides with any mandatory task on this day, jump past the mandatory task
+    let collisionWithMandatory = true;
+    while (collisionWithMandatory) {
+      collisionWithMandatory = false;
+      const candidateEndMin = candidateStartMin + taskDuration;
+      for (const mand of mandatoryTasks) {
+        const mStart = parse12HourToMinutes(mand.startTime);
+        const mEnd = parse12HourToMinutes(mand.endTime);
+        // If candidate slot overlaps with mandatory task
+        if (candidateStartMin < mEnd && candidateEndMin > mStart) {
+          candidateStartMin = mEnd + (mand.bufferMinutes || 5);
+          collisionWithMandatory = true;
+          break;
+        }
+      }
+    }
 
-      proposals.push({
-        taskId: task.id,
-        taskTitle: task.title,
-        projectCode: task.projectCode,
-        priority: task.priority,
-        currentDate: dateStr,
-        currentStartTime: task.startTime,
-        currentEndTime: task.endTime,
-        proposedDate: dateStr,
-        proposedStartTime: formatMinutesTo12Hour(proposedStartMin),
-        proposedEndTime: formatMinutesTo12Hour(proposedEndMin),
-        action: 'shift_same_day'
-      });
+    const candidateEndMin = candidateStartMin + taskDuration;
 
-      currentCascadeMin = proposedEndMin + buffer;
+    // Check if the candidate slot fits on the same day before dayEndTime
+    if (candidateEndMin <= dayEndMin) {
+      // If the candidate start is identical to the original start time, keep as unchanged
+      if (candidateStartMin === origStartMin) {
+        proposals.push({
+          taskId: task.id,
+          taskTitle: task.title,
+          projectCode: task.projectCode,
+          priority: task.priority,
+          currentDate: dateStr,
+          currentStartTime: task.startTime,
+          currentEndTime: task.endTime,
+          proposedDate: dateStr,
+          proposedStartTime: task.startTime,
+          proposedEndTime: task.endTime,
+          action: 'keep'
+        });
+      } else {
+        const delayMins = candidateStartMin - origStartMin;
+        proposals.push({
+          taskId: task.id,
+          taskTitle: task.title,
+          projectCode: task.projectCode,
+          priority: task.priority,
+          currentDate: dateStr,
+          currentStartTime: task.startTime,
+          currentEndTime: task.endTime,
+          proposedDate: dateStr,
+          proposedStartTime: formatMinutesTo12Hour(candidateStartMin),
+          proposedEndTime: formatMinutesTo12Hour(candidateEndMin),
+          action: 'shift_same_day',
+          delayMinutes: delayMins
+        });
+      }
+
+      currentCascadeCursor = candidateEndMin + buffer;
     } else {
       // Overflows past dayEndMin -> defer to tomorrow morning
       const tomStartMin = tomorrowSlotCursor;

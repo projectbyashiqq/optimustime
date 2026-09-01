@@ -416,6 +416,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     setTasks(prev => {
       const updated = prev.map(t => {
+        // Strict Immutable Guard: Mandatory schedules can NEVER be rescheduled or deferred by emergency buffers
+        if (t.isMandatorySchedule) {
+          return t;
+        }
+
         const prop = proposalMap.get(t.id);
         if (!prop) return t;
 
