@@ -7,6 +7,7 @@ import {
   parse12HourToMinutes, 
   calculateEmergencyReschedule,
   getSmartNextFreeSlot,
+  isTaskScheduledForDate,
   getDayOfWeekFromDate,
   addMinutesToTime
 } from '../utils/timeUtils';
@@ -123,13 +124,19 @@ export const EmergencyBufferModal: React.FC = () => {
     setDurationMinutes(cat.defaultDuration || 60);
   };
 
-  // Batch Action 1: +1 Hour Delay for all flexible tasks
+  // Batch Action 1: Delay for all flexible tasks with zero collisions
   const handleBatchDelay = (delayMins: number) => {
     const [y, m, d] = date.split('-').map(Number);
     const tomDate = new Date(y, m - 1, d);
     tomDate.setDate(tomDate.getDate() + 1);
     const tomorrowStr = toISODateString(tomDate);
     const dayEndMin = parse12HourToMinutes(capacitySettings.dayEndTime);
+
+    const tomorrowTasks = tasks.filter(t => isTaskScheduledForDate(t, tomorrowStr) && t.status !== 'Done' && t.status !== 'Terminated' && !t.isEmergencyBuffer);
+    const simulatedTomorrowPool: any[] = [...tomorrowTasks];
+
+    // Find all mandatory tasks today to avoid colliding with them
+    const mandatoryTasks = tasks.filter(t => isTaskScheduledForDate(t, date) && t.isMandatorySchedule);
 
     setProposals(prev => prev.map(p => {
       const origTask = tasks.find(t => t.id === p.taskId);
@@ -141,8 +148,26 @@ export const EmergencyBufferModal: React.FC = () => {
       const origStartMin = parse12HourToMinutes(p.currentStartTime);
       const origEndMin = parse12HourToMinutes(p.currentEndTime);
       const dur = origEndMin - origStartMin;
+      const buffer = origTask?.bufferMinutes || 5;
       
-      const newStartMin = origStartMin + delayMins;
+      let newStartMin = origStartMin + delayMins;
+
+      // Avoid collision with any mandatory task on today
+      let collision = true;
+      while (collision) {
+        collision = false;
+        const newEndMin = newStartMin + dur;
+        for (const mand of mandatoryTasks) {
+          const mStart = parse12HourToMinutes(mand.startTime);
+          const mEnd = parse12HourToMinutes(mand.endTime);
+          if (newStartMin < mEnd && newEndMin > mStart) {
+            newStartMin = mEnd + (mand.bufferMinutes || 5);
+            collision = true;
+            break;
+          }
+        }
+      }
+
       const newEndMin = newStartMin + dur;
 
       if (newEndMin <= dayEndMin) {
@@ -155,13 +180,31 @@ export const EmergencyBufferModal: React.FC = () => {
           delayMinutes: delayMins
         };
       } else {
-        // Exceeds day end -> move to tomorrow morning
-        const tomStart = parse12HourToMinutes(capacitySettings.dayStartTime);
+        // Exceeds day end -> move to tomorrow morning without overlapping tomorrow tasks
+        const tomSlot = getSmartNextFreeSlot(
+          tomorrowStr,
+          dur,
+          simulatedTomorrowPool,
+          [],
+          p.taskId,
+          buffer
+        );
+
+        simulatedTomorrowPool.push({
+          id: p.taskId,
+          taskDate: tomorrowStr,
+          startTime: tomSlot.startTime,
+          endTime: tomSlot.endTime,
+          appointedMinutes: dur,
+          bufferMinutes: buffer,
+          status: 'Pending'
+        });
+
         return {
           ...p,
           proposedDate: tomorrowStr,
-          proposedStartTime: formatMinutesTo12Hour(tomStart),
-          proposedEndTime: formatMinutesTo12Hour(tomStart + dur),
+          proposedStartTime: tomSlot.startTime,
+          proposedEndTime: tomSlot.endTime,
           action: 'defer_tomorrow',
           delayMinutes: delayMins
         };
@@ -176,7 +219,7 @@ export const EmergencyBufferModal: React.FC = () => {
     tomDate.setDate(tomDate.getDate() + 1);
     const tomorrowStr = toISODateString(tomDate);
 
-    const tomorrowTasks = tasks.filter(t => t.taskDate === tomorrowStr && t.status !== 'Done' && t.status !== 'Terminated' && !t.isEmergencyBuffer);
+    const tomorrowTasks = tasks.filter(t => isTaskScheduledForDate(t, tomorrowStr) && t.status !== 'Done' && t.status !== 'Terminated' && !t.isEmergencyBuffer);
     const simulatedPool: any[] = [...tomorrowTasks];
 
     setProposals(prev => prev.map(p => {
@@ -254,7 +297,7 @@ export const EmergencyBufferModal: React.FC = () => {
       const dur = origEndMin - origStartMin;
 
       if (actionType === 'defer_tomorrow') {
-        const tomorrowTasks = tasks.filter(t => t.taskDate === tomorrowStr && t.status !== 'Done' && t.status !== 'Terminated' && !t.isEmergencyBuffer && t.id !== taskId);
+        const tomorrowTasks = tasks.filter(t => isTaskScheduledForDate(t, tomorrowStr) && t.status !== 'Done' && t.status !== 'Terminated' && !t.isEmergencyBuffer && t.id !== taskId);
         const tomSlot = getSmartNextFreeSlot(
           tomorrowStr,
           dur,
@@ -688,12 +731,22 @@ export const EmergencyBufferModal: React.FC = () => {
               <div className="flex items-center gap-1.5 flex-wrap">
                 <button
                   type="button"
+                  onClick={() => handleBatchDelay(durationMinutes)}
+                  className="px-3 py-1.5 rounded-xl bg-gradient-to-r from-red-600 to-orange-600 hover:from-red-700 hover:to-orange-700 text-white text-xs font-bold transition-all shadow-sm flex items-center gap-1"
+                  title={`Shift all remaining flexible tasks forward by the emergency buffer duration (+${durationMinutes}m)`}
+                >
+                  <Zap className="w-3.5 h-3.5" />
+                  <span>⚡ Shift by Emergency (+{durationMinutes >= 60 ? `${durationMinutes / 60}h` : `${durationMinutes}m`})</span>
+                </button>
+
+                <button
+                  type="button"
                   onClick={() => handleBatchDelay(60)}
                   className="px-3 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold transition-all shadow-sm flex items-center gap-1"
                   title="Shift all remaining day tasks forward by +1 Hour"
                 >
                   <FastForward className="w-3.5 h-3.5" />
-                  <span>⏱️ +1 Hour Delay</span>
+                  <span>⏱️ +1h</span>
                 </button>
 
                 <button
@@ -703,7 +756,7 @@ export const EmergencyBufferModal: React.FC = () => {
                   title="Shift all remaining day tasks forward by +2 Hours"
                 >
                   <FastForward className="w-3.5 h-3.5" />
-                  <span>⏱️ +2 Hours Delay</span>
+                  <span>⏱️ +2h</span>
                 </button>
 
                 <button

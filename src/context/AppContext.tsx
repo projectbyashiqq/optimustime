@@ -413,6 +413,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
 
     const proposalMap = new Map(proposals.map(p => [p.taskId, p]));
+    const spawnedSingleInstances: Task[] = [];
 
     setTasks(prev => {
       const updated = prev.map(t => {
@@ -422,8 +423,37 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         }
 
         const prop = proposalMap.get(t.id);
-        if (!prop) return t;
+        if (!prop || prop.action === 'keep') return t;
 
+        const isRecurring = t.recurrence && t.recurrence !== 'None';
+
+        if (isRecurring) {
+          // If task is recurring, DO NOT modify future recurring schedule!
+          // Exclude the emergency date from recurring series and create a standalone instance for the shifted day
+          const existingExcluded = t.excludedDates || [];
+          const updatedMaster = {
+            ...t,
+            excludedDates: existingExcluded.includes(plan.date) ? existingExcluded : [...existingExcluded, plan.date]
+          };
+
+          const singleDayInstance: Task = {
+            ...t,
+            id: `task_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`,
+            taskDate: prop.proposedDate,
+            dayOfWeek: getDayOfWeekFromDate(prop.proposedDate),
+            startTime: prop.proposedStartTime,
+            endTime: prop.proposedEndTime,
+            recurrence: 'None',
+            selectedDays: undefined,
+            excludedDates: undefined,
+            status: (prop.action === 'hold' ? 'Hold' : 'Pending') as TaskStatus
+          };
+
+          spawnedSingleInstances.push(singleDayInstance);
+          return updatedMaster;
+        }
+
+        // For regular non-recurring tasks:
         if (prop.action === 'hold') {
           return { ...t, status: 'Hold' as TaskStatus };
         } else if (prop.action === 'shift_same_day') {
@@ -447,7 +477,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         return t;
       });
 
-      return [emergencyTask, ...updated];
+      return [emergencyTask, ...spawnedSingleInstances, ...updated];
     });
 
     logLifeEvent({

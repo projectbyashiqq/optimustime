@@ -1085,9 +1085,9 @@ export function calculateEmergencyReschedule(
   tomDate.setDate(tomDate.getDate() + 1);
   const tomorrowDateStr = toISODateString(tomDate);
 
-  // Active tasks on this date (excluding done, terminated, or existing emergency buffer)
+  // Active tasks on this date (respecting recurring series, excluding done, terminated, or existing emergency buffer)
   const activeTasks = allDayTasks.filter(t => 
-    t.taskDate === dateStr &&
+    isTaskScheduledForDate(t, dateStr) &&
     t.status !== 'Done' && 
     t.status !== 'Terminated' && 
     !t.isEmergencyBuffer
@@ -1095,7 +1095,7 @@ export function calculateEmergencyReschedule(
 
   // Existing active tasks on tomorrow's date to guarantee ZERO overlaps if anything overflows
   const simulatedTomorrowTasks: any[] = allDayTasks.filter(t =>
-    t.taskDate === tomorrowDateStr &&
+    isTaskScheduledForDate(t, tomorrowDateStr) &&
     t.status !== 'Done' &&
     t.status !== 'Terminated' &&
     !t.isEmergencyBuffer
