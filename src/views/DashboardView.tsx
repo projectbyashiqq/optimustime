@@ -10,7 +10,8 @@ import {
   isTaskScheduledForDate,
   TimeGap,
   isTaskInRunningSlot,
-  isTaskPastDue
+  isTaskPastDue,
+  findSimultaneousTasks
 } from '../utils/timeUtils';
 import { 
   Play, 
@@ -36,7 +37,8 @@ import {
   Activity,
   X,
   Bell,
-  RotateCcw
+  RotateCcw,
+  Zap
 } from 'lucide-react';
 import { RescheduleModal } from '../components/RescheduleModal';
 
@@ -609,6 +611,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
                         (task.status === 'Pending' && isTaskPastDue(task.taskDate, task.startTime, task.endTime, nowTime)) ||
                         (task.status === 'Working' && isTaskPastDue(task.taskDate, task.startTime, task.endTime, nowTime));
 
+                      const simultaneousList = findSimultaneousTasks(task, dateTasks);
+                      const isSimultaneous = simultaneousList.length > 0;
+
                       const isFirstIncomplete = isIncomplete && (idx === 0 || arr[idx - 1].status !== 'Incomplete');
 
                       return (
@@ -628,7 +633,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
                               ? 'bg-red-50/30 dark:bg-red-950/20 border-red-300 dark:border-red-900/60 shadow-sm'
                               : isRunning
                                 ? 'bg-gradient-to-r from-blue-50/90 via-sky-50/50 to-theme-card dark:from-blue-950/60 dark:via-sky-950/30 dark:to-theme-card border-blue-500 shadow-xl shadow-blue-500/20 ring-2 ring-blue-500/60'
-                                : 'bg-theme-card border-theme-border hover:border-blue-300 dark:hover:border-blue-700 hover:shadow-md'
+                                : isSimultaneous
+                                  ? 'bg-purple-50/20 dark:bg-purple-950/10 border-purple-300 dark:border-purple-800 hover:shadow-md'
+                                  : 'bg-theme-card border-theme-border hover:border-blue-300 dark:hover:border-blue-700 hover:shadow-md'
                           }`}
                         >
                           <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
@@ -667,6 +674,17 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
                                     </span>
                                   )}
 
+                                  {/* Simultaneous / Overlapped Signal Badge */}
+                                  {isSimultaneous && (
+                                    <span 
+                                      className="text-[10px] font-black px-2 py-0.5 bg-gradient-to-r from-purple-600 to-indigo-600 text-white rounded-full flex items-center gap-1 shadow-sm shadow-purple-500/20"
+                                      title={`Co-running simultaneously with: ${simultaneousList.map(s => `${s.projectCode} (${s.title})`).join(', ')}`}
+                                    >
+                                      <Zap className="w-2.5 h-2.5 text-yellow-300" />
+                                      <span>🔀 SIMULTANEOUS ({simultaneousList.length})</span>
+                                    </span>
+                                  )}
+
                                   {/* Running Time Blue Lighting Badge */}
                                   {isRunning && !isDue && (
                                     <span className="text-[10px] font-black px-2 py-0.5 bg-blue-600 text-white rounded-full flex items-center gap-1.5 shadow-md shadow-blue-500/40">
@@ -694,6 +712,21 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
                                 <h4 className="text-base sm:text-lg font-bold tracking-tight text-theme-text font-openSans leading-snug">
                                   {task.title}
                                 </h4>
+
+                                {/* Simultaneous Co-Running Twin Details */}
+                                {isSimultaneous && (
+                                  <div className="text-[11px] font-semibold text-purple-700 dark:text-purple-300 bg-purple-50/80 dark:bg-purple-950/40 px-2.5 py-1 rounded-lg border border-purple-200/80 dark:border-purple-800/80 flex items-center gap-1.5 flex-wrap">
+                                    <span className="font-bold flex items-center gap-1">
+                                      <Zap className="w-3 h-3 text-purple-600 dark:text-purple-400" />
+                                      Co-Running Twin:
+                                    </span>
+                                    {simultaneousList.map(st => (
+                                      <span key={st.id} className="font-mono font-bold text-blue-600 dark:text-blue-400">
+                                        {st.projectCode}: {st.title} ({st.startTime}-{st.endTime})
+                                      </span>
+                                    ))}
+                                  </div>
+                                )}
 
                                 {/* Live Status Badge + Countdown Pill */}
                                 <div className="flex items-center gap-2 flex-wrap py-0.5">

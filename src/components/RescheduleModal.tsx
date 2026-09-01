@@ -43,21 +43,30 @@ export const RescheduleModal: React.FC<RescheduleModalProps> = ({
   onConfirmReschedule,
   onClose
 }) => {
+  const todayStr = toISODateString(new Date());
+  const tomorrowStr = (() => {
+    const d = new Date();
+    d.setDate(d.getDate() + 1);
+    return toISODateString(d);
+  })();
+
+  const [anchorDate, setAnchorDate] = useState<string>(task.taskDate || todayStr);
   const [selectedSlot, setSelectedSlot] = useState<AvailableSlotResult | null>(null);
   const [selectedDayFilter, setSelectedDayFilter] = useState<number | 'ALL'>('ALL');
-  const [customDate, setCustomDate] = useState<string>(toISODateString(new Date()));
+  const [customDate, setCustomDate] = useState<string>(task.taskDate || todayStr);
   const [viewMode, setViewMode] = useState<'week' | 'scanner' | 'custom'>('week');
 
   const now = new Date();
   const currentMinutes = now.getHours() * 60 + now.getMinutes();
 
-  // Helper to compute multiple conflict-free slots on a specific day offset without sleep time
+  // Helper to compute multiple conflict-free slots relative to anchorDate (0..7 days)
   const getSlotsForDayOffset = (days: number): { dayLabel: string; subLabel: string; dateStr: string; dayOfWeek: string; slots: AvailableSlotResult[] } => {
-    const target = new Date();
-    target.setDate(target.getDate() + days);
+    const parts = anchorDate.split('-').map(Number);
+    const target = new Date(parts[0], parts[1] - 1, parts[2] + days);
     const dateStr = toISODateString(target);
     const dayOfWeek = getDayOfWeekFromDate(dateStr);
-    const earliestAllowed = (days === 0) ? currentMinutes + 5 : undefined;
+    const isToday = (dateStr === todayStr);
+    const earliestAllowed = isToday ? currentMinutes + 5 : undefined;
 
     const slots = findAllAvailableSlotsOnDate(
       dateStr,
@@ -71,17 +80,21 @@ export const RescheduleModal: React.FC<RescheduleModalProps> = ({
 
     let dayLabel = `+${days} Days`;
     let subLabel = `${dayOfWeek.slice(0, 3)}, ${dateStr}`;
-    if (days === 0) {
+    
+    if (dateStr === task.taskDate && days === 0) {
+      dayLabel = `Task Date (${dayOfWeek.slice(0, 3)})`;
+      subLabel = `${dateStr} (Current)`;
+    } else if (dateStr === todayStr) {
       dayLabel = 'Today';
       subLabel = `Remaining (${dayOfWeek.slice(0, 3)})`;
-    } else if (days === 1) {
+    } else if (dateStr === tomorrowStr) {
       dayLabel = 'Tomorrow';
       subLabel = `Full Day (${dayOfWeek.slice(0, 3)})`;
-    } else if (days === 2) {
-      dayLabel = 'In 2 Days';
+    } else if (days === 1) {
+      dayLabel = `Next Day (+1d)`;
       subLabel = `${dayOfWeek.slice(0, 3)}, ${dateStr.slice(5)}`;
     } else if (days === 7) {
-      dayLabel = 'Next Week (+7d)';
+      dayLabel = `+1 Week (+7d)`;
       subLabel = `${dayOfWeek.slice(0, 3)}, ${dateStr.slice(5)}`;
     }
 
@@ -94,19 +107,15 @@ export const RescheduleModal: React.FC<RescheduleModalProps> = ({
     };
   };
 
-  // Compute Multiple Slots for Today, Tomorrow & Next 7 Days (Days 0 to 7)
+  // Compute Multiple Slots for Anchor Date + Next 7 Days (Days 0 to 7)
   const weekDaysData = useMemo(() => {
     const daysArr: ReturnType<typeof getSlotsForDayOffset>[] = [];
-    // Day 0 (Today) through Day 7 (+7 Days)
     for (let d = 0; d <= 7; d++) {
       const dayData = getSlotsForDayOffset(d);
-      // Only include Day 0 if there are available slots today
-      if (d > 0 || dayData.slots.length > 0) {
-        daysArr.push(dayData);
-      }
+      daysArr.push(dayData);
     }
     return daysArr;
-  }, [task.appointedMinutes, allTasks, capacitySettings]);
+  }, [anchorDate, task.appointedMinutes, allTasks, capacitySettings]);
 
   // 100-Day Smart Scanner: Scans the next 100 days to find earliest recommended conflict-free slots
   const scannedSlots = useMemo(() => {
@@ -209,6 +218,72 @@ export const RescheduleModal: React.FC<RescheduleModalProps> = ({
           </button>
         </div>
 
+        {/* Anchor Date Quick Switcher Bar */}
+        <div className="flex items-center justify-between p-2.5 rounded-2xl bg-theme-card-hover border border-theme-border flex-wrap gap-2 text-xs shrink-0">
+          <div className="flex items-center gap-2">
+            <Calendar className="w-4 h-4 text-blue-500 shrink-0" />
+            <span className="font-bold text-theme-text">Target Base Date:</span>
+            <input 
+              type="date"
+              value={anchorDate}
+              onChange={(e) => {
+                if (e.target.value) {
+                  setAnchorDate(e.target.value);
+                  setSelectedSlot(null);
+                }
+              }}
+              className="px-2.5 py-1 rounded-lg bg-theme-card border border-theme-border text-theme-text font-mono font-bold text-xs focus:outline-none focus:ring-1 focus:ring-blue-500"
+            />
+          </div>
+
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <button
+              type="button"
+              onClick={() => {
+                setAnchorDate(task.taskDate || todayStr);
+                setSelectedSlot(null);
+              }}
+              className={`px-2.5 py-1 rounded-lg font-bold transition-all border ${
+                anchorDate === task.taskDate
+                  ? 'bg-blue-600 text-white border-blue-600 shadow-sm'
+                  : 'bg-theme-card text-theme-muted hover:text-theme-text border-theme-border'
+              }`}
+            >
+              Task Date ({task.taskDate})
+            </button>
+            
+            <button
+              type="button"
+              onClick={() => {
+                setAnchorDate(todayStr);
+                setSelectedSlot(null);
+              }}
+              className={`px-2.5 py-1 rounded-lg font-bold transition-all border ${
+                anchorDate === todayStr
+                  ? 'bg-blue-600 text-white border-blue-600 shadow-sm'
+                  : 'bg-theme-card text-theme-muted hover:text-theme-text border-theme-border'
+              }`}
+            >
+              Today
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setAnchorDate(tomorrowStr);
+                setSelectedSlot(null);
+              }}
+              className={`px-2.5 py-1 rounded-lg font-bold transition-all border ${
+                anchorDate === tomorrowStr
+                  ? 'bg-blue-600 text-white border-blue-600 shadow-sm'
+                  : 'bg-theme-card text-theme-muted hover:text-theme-text border-theme-border'
+              }`}
+            >
+              Tomorrow
+            </button>
+          </div>
+        </div>
+
         {/* Navigation Mode Tabs */}
         <div className="flex items-center gap-1.5 p-1 bg-theme-card-hover rounded-xl border border-theme-border text-xs font-bold shrink-0">
           <button
@@ -220,7 +295,7 @@ export const RescheduleModal: React.FC<RescheduleModalProps> = ({
             }`}
           >
             <CalendarDays className="w-4 h-4" />
-            <span>Tomorrow & Next 7 Days (Multiple Slots)</span>
+            <span>7-Day Schedule Matrix (from {anchorDate})</span>
           </button>
           <button
             onClick={() => setViewMode('scanner')}

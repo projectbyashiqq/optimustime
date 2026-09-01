@@ -125,6 +125,33 @@ export function checkOverlap(
   return Math.max(s1, s2) < Math.min(e1, e2);
 }
 
+/**
+ * Detects all active tasks that overlap in time or are explicitly linked simultaneously with the given task on the same date.
+ */
+export function findSimultaneousTasks<T extends { id: string; taskDate: string; startTime: string; endTime: string; status: string; simultaneousWithIds?: string[]; recurrence?: string; selectedDays?: string[] }>(
+  targetTask: T,
+  allTasks: T[]
+): T[] {
+  if (!targetTask.startTime || !targetTask.endTime || targetTask.startTime === 'All Day') return [];
+  return allTasks.filter(other => {
+    if (other.id === targetTask.id) return false;
+    if (other.status === 'Terminated' || other.status === 'Done') return false;
+    if (other.startTime === 'All Day' || !other.startTime || !other.endTime) return false;
+
+    // Check if both occur on the same target date (considering recurrence or same taskDate)
+    const onSameDate = other.taskDate === targetTask.taskDate || isTaskScheduledForDate(other, targetTask.taskDate);
+    if (!onSameDate) return false;
+
+    // Check explicit simultaneous link
+    const isExplicitlyLinked = !!((targetTask.simultaneousWithIds && targetTask.simultaneousWithIds.includes(other.id)) ||
+      (other.simultaneousWithIds && other.simultaneousWithIds.includes(targetTask.id)));
+    if (isExplicitlyLinked) return true;
+
+    // Check time window overlap
+    return checkOverlap(targetTask.startTime, targetTask.endTime, other.startTime, other.endTime);
+  });
+}
+
 export interface TimeGap {
   startTime: string;
   endTime: string;
