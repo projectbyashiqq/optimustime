@@ -8,6 +8,7 @@ import {
   Layers, 
   BarChart3, 
   BookOpen, 
+  FileText,
   Bell, 
   Settings2,
   Flame,
@@ -15,7 +16,7 @@ import {
 } from 'lucide-react';
 
 export const Navbar: React.FC = () => {
-  const { activeTab, setActiveTab, tasks, reminders } = useApp();
+  const { activeTab, setActiveTab, tasks, reminders, knowledge } = useApp();
 
   const workingCount = tasks.filter(t => t.status === 'Working').length;
   const incompleteCount = tasks.filter(t => t.status === 'Incomplete').length;
@@ -28,7 +29,7 @@ export const Navbar: React.FC = () => {
     { id: 'categories', label: 'Categories Hub', icon: FolderKanban },
     { id: 'projects', label: 'Projects & Hierarchy', icon: Layers, badge: escalatedProjectsCount > 0 ? escalatedProjectsCount : undefined, badgeColor: 'bg-purple-500 text-white' },
     { id: 'analytics', label: 'Analytics & Accuracy', icon: BarChart3 },
-    { id: 'knowledge', label: 'Knowledge & Notes', icon: BookOpen },
+    { id: 'knowledge', label: 'Notes & Knowledge', icon: FileText, badge: knowledge.length > 0 ? knowledge.length : undefined, badgeColor: 'bg-indigo-500 text-white' },
     { id: 'reminders', label: 'Reminder Center', icon: Bell, badge: pendingRemindersCount > 0 ? pendingRemindersCount : undefined, badgeColor: 'bg-amber-500 text-white' },
     { id: 'settings', label: 'Admin Settings', icon: Settings2 },
   ];
