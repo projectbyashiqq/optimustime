@@ -277,6 +277,14 @@ export const EmergencyBufferModal: React.FC = () => {
     }));
   };
 
+  // Helper to format duration text nicely
+  const formatDurationLabel = (mins: number) => {
+    if (mins === 1440) return '24h (Full Day)';
+    if (mins % 60 === 0) return `${mins / 60}h`;
+    if (mins >= 60) return `${Math.floor(mins / 60)}h ${mins % 60}m`;
+    return `${mins}m`;
+  };
+
   // Toggle Action for single task
   const handleToggleTaskAction = (taskId: string, actionType: TaskRescheduleProposal['action'], delayMins?: number) => {
     const origTask = tasks.find(t => t.id === taskId);
@@ -296,7 +304,16 @@ export const EmergencyBufferModal: React.FC = () => {
       const origEndMin = parse12HourToMinutes(p.currentEndTime);
       const dur = origEndMin - origStartMin;
 
-      if (actionType === 'defer_tomorrow') {
+      if (actionType === 'keep') {
+        return {
+          ...p,
+          proposedDate: date,
+          proposedStartTime: p.currentStartTime,
+          proposedEndTime: p.currentEndTime,
+          action: 'keep',
+          delayMinutes: 0
+        };
+      } else if (actionType === 'defer_tomorrow') {
         const tomorrowTasks = tasks.filter(t => isTaskScheduledForDate(t, tomorrowStr) && t.status !== 'Done' && t.status !== 'Terminated' && !t.isEmergencyBuffer && t.id !== taskId);
         const tomSlot = getSmartNextFreeSlot(
           tomorrowStr,
@@ -732,31 +749,31 @@ export const EmergencyBufferModal: React.FC = () => {
                 <button
                   type="button"
                   onClick={() => handleBatchDelay(durationMinutes)}
-                  className="px-3 py-1.5 rounded-xl bg-gradient-to-r from-red-600 to-orange-600 hover:from-red-700 hover:to-orange-700 text-white text-xs font-bold transition-all shadow-sm flex items-center gap-1"
+                  className="px-3 py-1.5 rounded-xl bg-gradient-to-r from-red-600 to-orange-600 hover:from-red-700 hover:to-orange-700 text-white text-xs font-bold transition-all shadow-sm flex items-center gap-1.5"
                   title={`Shift all remaining flexible tasks forward by the emergency buffer duration (+${durationMinutes}m)`}
                 >
                   <Zap className="w-3.5 h-3.5" />
-                  <span>⚡ Shift by Emergency (+{durationMinutes >= 60 ? `${durationMinutes / 60}h` : `${durationMinutes}m`})</span>
+                  <span>⚡ Shift by Emergency (+{formatDurationLabel(durationMinutes)})</span>
                 </button>
 
                 <button
                   type="button"
                   onClick={() => handleBatchDelay(60)}
                   className="px-3 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold transition-all shadow-sm flex items-center gap-1"
-                  title="Shift all remaining day tasks forward by +1 Hour"
+                  title="Shift all remaining day tasks forward by +1 Hour (+60m)"
                 >
                   <FastForward className="w-3.5 h-3.5" />
-                  <span>⏱️ +1h</span>
+                  <span>⏱️ +1h Delay</span>
                 </button>
 
                 <button
                   type="button"
                   onClick={() => handleBatchDelay(120)}
                   className="px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold transition-all shadow-sm flex items-center gap-1"
-                  title="Shift all remaining day tasks forward by +2 Hours"
+                  title="Shift all remaining day tasks forward by +2 Hours (+120m)"
                 >
                   <FastForward className="w-3.5 h-3.5" />
-                  <span>⏱️ +2h</span>
+                  <span>⏱️ +2h Delay</span>
                 </button>
 
                 <button
@@ -777,6 +794,16 @@ export const EmergencyBufferModal: React.FC = () => {
                 >
                   <Pause className="w-3 h-3" />
                   <span>Hold All</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setProposals(autoProposals)}
+                  className="px-2.5 py-1.5 rounded-xl bg-theme-card hover:bg-theme-border text-theme-muted hover:text-theme-text border border-theme-border text-xs font-semibold transition-all flex items-center gap-1"
+                  title="Reset to Smart Auto-Calculated Schedule"
+                >
+                  <RotateCcw className="w-3 h-3" />
+                  <span>Reset Auto</span>
                 </button>
               </div>
             </div>
@@ -871,6 +898,19 @@ export const EmergencyBufferModal: React.FC = () => {
                           </span>
                         ) : (
                           <>
+                            <button
+                              type="button"
+                              onClick={() => handleToggleTaskAction(p.taskId, 'keep')}
+                              className={`px-2 py-1 rounded-lg text-[10px] font-bold transition-all ${
+                                p.action === 'keep'
+                                  ? 'bg-emerald-600 text-white shadow-sm'
+                                  : 'bg-theme-card-hover text-theme-muted hover:text-theme-text'
+                              }`}
+                              title="Keep task in original scheduled slot"
+                            >
+                              Keep Original
+                            </button>
+
                             <button
                               type="button"
                               onClick={() => handleToggleTaskAction(p.taskId, 'shift_same_day', 60)}
