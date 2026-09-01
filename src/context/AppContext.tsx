@@ -15,7 +15,16 @@ import {
   CloudSyncConfig,
   CloudSyncStatus,
   LifeEventLog,
-  LifeEventType
+  LifeEventType,
+  BufferStatusNote,
+  BufferCategoryItem,
+  EmergencyCategoryItem,
+  EmergencyBufferPlan,
+  TaskRescheduleProposal,
+  EmergencyType,
+  PlanProjectFolder,
+  PlanProjectType,
+  PlanProjectStatus
 } from '../types';
 import { 
   DEFAULT_CAPACITY, 
@@ -25,7 +34,11 @@ import {
   INITIAL_CATEGORIES, 
   INITIAL_TASKS, 
   INITIAL_KNOWLEDGE, 
-  INITIAL_REMINDERS 
+  INITIAL_REMINDERS,
+  INITIAL_BUFFER_NOTES,
+  INITIAL_BUFFER_CATEGORIES,
+  INITIAL_EMERGENCY_CATEGORIES,
+  INITIAL_PLAN_PROJECTS
 } from './initialData';
 import { 
   generateProjectCode, 
@@ -49,6 +62,20 @@ import {
   testSupabaseConnection 
 } from '../services/supabase';
 import confetti from 'canvas-confetti';
+
+export interface BufferNoteModalParams {
+  id?: string;
+  date?: string;
+  startTime?: string;
+  endTime?: string;
+  durationMinutes?: number;
+  activityTag?: string;
+  notes?: string;
+  energyLevel?: number;
+  relatedTaskId?: string;
+  relatedTaskTitle?: string;
+  existingNote?: BufferStatusNote;
+}
 
 interface AppContextType {
   // State
@@ -74,6 +101,13 @@ interface AppContextType {
   addTask: (task: Omit<Task, 'id' | 'projectCode' | 'dateAdded' | 'executionLogs' | 'totalActualMinutes'> & { id?: string; projectCode?: string }) => Task;
   updateTask: (task: Task) => void;
   deleteTask: (taskId: string) => void;
+  deleteRecurringInstance: (taskId: string, dateStr: string) => void;
+  deleteRecurringSeries: (taskId: string) => void;
+  pauseRecurringSeries: (taskId: string) => void;
+  resumeRecurringSeries: (taskId: string) => void;
+  requestDeleteTask: (task: Task, date?: string) => void;
+  recurringDeletePrompt: { isOpen: boolean; task?: Task; date?: string } | null;
+  closeRecurringDeletePrompt: () => void;
   startTask: (taskId: string) => void;
   pauseTask: (taskId: string) => void;
   completeTask: (taskId: string) => void;
@@ -86,10 +120,10 @@ interface AppContextType {
   cascadeShiftDownstream: (date: string, fromStartTime: string, shiftMinutes: number, ignoreTaskId?: string) => number;
   linkSimultaneousTasks: (task1Id: string, task2Id: string) => void;
   
-  // Sub-task & Escalation Engine
-  addSubTask: (taskId: string, title: string, parentSubTaskId?: string) => void;
+  // Sub-task Engine
+  addSubTask: (taskId: string, title: string, parentSubTaskId?: string, assignedTimeMin?: number) => void;
+  deleteSubTask: (taskId: string, subTaskId: string) => void;
   toggleSubTask: (taskId: string, subTaskId: string) => void;
-  escalateToProject: (taskId: string, reason?: string) => void;
   
   // Category CRUD
   addCategory: (category: Omit<Category, 'id'>) => void;
@@ -105,7 +139,42 @@ interface AppContextType {
   addKnowledgeItem: (item: Omit<KnowledgeItem, 'id' | 'createdAt' | 'updatedAt'>) => void;
   updateKnowledgeItem: (item: KnowledgeItem) => void;
   deleteKnowledgeItem: (itemId: string) => void;
+
+  // Planning & Projects Folders Hub
+  planProjects: PlanProjectFolder[];
+  addPlanProject: (folder: Omit<PlanProjectFolder, 'id' | 'createdAt' | 'updatedAt'> & { id?: string }) => PlanProjectFolder;
+  updatePlanProject: (folder: PlanProjectFolder) => void;
+  deletePlanProject: (folderId: string, deleteAssociatedTasks?: boolean) => void;
+  assignTaskToPlanProject: (taskId: string, planProjectId?: string) => void;
   
+  // Buffer Status Notes & Free Time Engine (24-Hour Accountability)
+  bufferNotes: BufferStatusNote[];
+  bufferCategories: BufferCategoryItem[];
+  addBufferNote: (note: Omit<BufferStatusNote, 'id' | 'createdAt'> & { id?: string }) => BufferStatusNote;
+  updateBufferNote: (note: BufferStatusNote) => void;
+  deleteBufferNote: (noteId: string) => void;
+  addBufferCategory: (cat: Omit<BufferCategoryItem, 'id'> & { id?: string }) => void;
+  updateBufferCategory: (cat: BufferCategoryItem) => void;
+  deleteBufferCategory: (catId: string) => void;
+  resetBufferCategories: () => void;
+  bufferNoteModalState: { isOpen: boolean; initialData?: BufferNoteModalParams };
+  openBufferNoteModal: (params?: BufferNoteModalParams) => void;
+  closeBufferNoteModal: () => void;
+  activeBufferPrompt: { date: string; startTime: string; endTime: string; durationMinutes: number; relatedTaskId?: string; relatedTaskTitle?: string } | null;
+  setActiveBufferPrompt: (prompt: { date: string; startTime: string; endTime: string; durationMinutes: number; relatedTaskId?: string; relatedTaskTitle?: string } | null) => void;
+
+  // Emergency Buffer Protocol
+  isEmergencyModalOpen: boolean;
+  emergencyModalParams: { date?: string; startTime?: string } | null;
+  openEmergencyModal: (params?: { date?: string; startTime?: string }) => void;
+  closeEmergencyModal: () => void;
+  triggerEmergencyBuffer: (plan: EmergencyBufferPlan, proposals: TaskRescheduleProposal[]) => void;
+  emergencyCategories: EmergencyCategoryItem[];
+  addEmergencyCategory: (cat: Omit<EmergencyCategoryItem, 'id'> & { id?: string }) => void;
+  updateEmergencyCategory: (cat: EmergencyCategoryItem) => void;
+  deleteEmergencyCategory: (catId: string) => void;
+  resetEmergencyCategories: () => void;
+
   // Settings & Capacity
   updateCapacitySettings: (settings: CapacitySettings) => void;
   updatePrioritySettings: (settings: PrioritySettings) => void;
@@ -210,6 +279,73 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   });
 
+  // Buffer Status Notes (24-Hour continuous accountability)
+  const [bufferNotes, setBufferNotes] = useState<BufferStatusNote[]>(() => {
+    try {
+      const saved = localStorage.getItem(`${STORAGE_KEY}_buffer_notes`);
+      return saved ? JSON.parse(saved) : INITIAL_BUFFER_NOTES;
+    } catch {
+      return INITIAL_BUFFER_NOTES;
+    }
+  });
+
+  // Editable Buffer Activity Categories
+  const [bufferCategories, setBufferCategories] = useState<BufferCategoryItem[]>(() => {
+    try {
+      const saved = localStorage.getItem(`${STORAGE_KEY}_buffer_categories`);
+      return saved ? JSON.parse(saved) : INITIAL_BUFFER_CATEGORIES;
+    } catch {
+      return INITIAL_BUFFER_CATEGORIES;
+    }
+  });
+
+  // Editable Emergency Buffer Presets & Categories
+  const [emergencyCategories, setEmergencyCategories] = useState<EmergencyCategoryItem[]>(() => {
+    try {
+      const saved = localStorage.getItem(`${STORAGE_KEY}_emergency_categories`);
+      return saved ? JSON.parse(saved) : INITIAL_EMERGENCY_CATEGORIES;
+    } catch {
+      return INITIAL_EMERGENCY_CATEGORIES;
+    }
+  });
+
+  // Planning & Projects Folders State
+  const [planProjects, setPlanProjects] = useState<PlanProjectFolder[]>(() => {
+    try {
+      const saved = localStorage.getItem(`${STORAGE_KEY}_plan_projects`);
+      return saved ? JSON.parse(saved) : INITIAL_PLAN_PROJECTS;
+    } catch {
+      return INITIAL_PLAN_PROJECTS;
+    }
+  });
+
+  // Buffer Status Note Modal State
+  const [bufferNoteModalState, setBufferNoteModalState] = useState<{
+    isOpen: boolean;
+    initialData?: BufferNoteModalParams;
+  }>({ isOpen: false });
+
+  // Active post-task buffer prompt banner
+  const [activeBufferPrompt, setActiveBufferPrompt] = useState<{
+    date: string;
+    startTime: string;
+    endTime: string;
+    durationMinutes: number;
+    relatedTaskId?: string;
+    relatedTaskTitle?: string;
+  } | null>(null);
+
+  const openBufferNoteModal = useCallback((params?: BufferNoteModalParams) => {
+    setBufferNoteModalState({
+      isOpen: true,
+      initialData: params
+    });
+  }, []);
+
+  const closeBufferNoteModal = useCallback(() => {
+    setBufferNoteModalState({ isOpen: false });
+  }, []);
+
   const logLifeEvent = useCallback((event: Omit<LifeEventLog, 'id' | 'timestamp' | 'date'>) => {
     const now = new Date();
     const newLog: LifeEventLog = {
@@ -229,6 +365,103 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       console.error('Failed to clear audit logs', e);
     }
   }, []);
+
+  // Emergency Buffer State
+  const [isEmergencyModalOpen, setIsEmergencyModalOpen] = useState(false);
+  const [emergencyModalParams, setEmergencyModalParams] = useState<{ date?: string; startTime?: string } | null>(null);
+
+  const openEmergencyModal = useCallback((params?: { date?: string; startTime?: string }) => {
+    setEmergencyModalParams(params || null);
+    setIsEmergencyModalOpen(true);
+  }, []);
+
+  const closeEmergencyModal = useCallback(() => {
+    setIsEmergencyModalOpen(false);
+    setEmergencyModalParams(null);
+  }, []);
+
+  const triggerEmergencyBuffer = useCallback((plan: EmergencyBufferPlan, proposals: TaskRescheduleProposal[]) => {
+    const emergencyTask: Task = {
+      id: plan.id || `emerg_${Date.now()}`,
+      projectCode: `EMERG-${(plan.emergencyType || 'URG').slice(0, 4).toUpperCase().replace(/[^A-Z]/g, '') || 'URG'}`,
+      title: plan.title,
+      description: plan.notes || `Uncontrollable emergency buffer (${plan.emergencyType})`,
+      dateAdded: new Date().toISOString(),
+      taskDate: plan.date,
+      dayOfWeek: getDayOfWeekFromDate(plan.date),
+      priority: 'P1',
+      category: '⚡ Emergency Buffer',
+      subCategory: plan.emergencyType,
+      appointedMinutes: plan.durationMinutes,
+      startTime: plan.startTime,
+      endTime: plan.endTime,
+      status: 'Working',
+      bufferMinutes: 0,
+      recurrence: 'None',
+      isEmergencyBuffer: true,
+      emergencyType: plan.emergencyType,
+      executionLogs: [{
+        startedAt: new Date().toISOString(),
+        actualDurationMinutes: plan.durationMinutes,
+        isLateFinish: false,
+        notes: plan.notes
+      }],
+      totalActualMinutes: 0,
+      notes: plan.notes,
+      links: [],
+      subtasks: []
+    };
+
+    const proposalMap = new Map(proposals.map(p => [p.taskId, p]));
+
+    setTasks(prev => {
+      const updated = prev.map(t => {
+        const prop = proposalMap.get(t.id);
+        if (!prop) return t;
+
+        if (prop.action === 'hold') {
+          return { ...t, status: 'Hold' as TaskStatus };
+        } else if (prop.action === 'shift_same_day') {
+          return {
+            ...t,
+            taskDate: prop.proposedDate,
+            dayOfWeek: getDayOfWeekFromDate(prop.proposedDate),
+            startTime: prop.proposedStartTime,
+            endTime: prop.proposedEndTime
+          };
+        } else if (prop.action === 'defer_tomorrow') {
+          return {
+            ...t,
+            taskDate: prop.proposedDate,
+            dayOfWeek: getDayOfWeekFromDate(prop.proposedDate),
+            startTime: prop.proposedStartTime,
+            endTime: prop.proposedEndTime,
+            status: 'Pending' as TaskStatus
+          };
+        }
+        return t;
+      });
+
+      return [emergencyTask, ...updated];
+    });
+
+    logLifeEvent({
+      eventType: 'EMERGENCY_BUFFER_TRIGGERED',
+      taskTitle: plan.title,
+      projectCode: emergencyTask.projectCode,
+      message: `🚨 Emergency Buffer Activated: ${plan.title} (${plan.startTime} - ${plan.endTime})`,
+      details: {
+        emergencyType: plan.emergencyType,
+        newDate: plan.date,
+        durationMinutes: plan.durationMinutes,
+        proposalsCount: proposals.length,
+        reason: plan.notes || plan.emergencyType
+      }
+    });
+
+    setIsEmergencyModalOpen(false);
+    setEmergencyModalParams(null);
+  }, [logLifeEvent]);
 
   const [theme, setThemeState] = useState<ThemeName>(() => {
     try {
@@ -320,13 +553,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       localStorage.setItem(`${STORAGE_KEY}_reminders`, JSON.stringify(reminders));
       localStorage.setItem(`${STORAGE_KEY}_knowledge`, JSON.stringify(knowledge));
       localStorage.setItem(`${STORAGE_KEY}_audit_logs`, JSON.stringify(auditLogs));
+      localStorage.setItem(`${STORAGE_KEY}_buffer_notes`, JSON.stringify(bufferNotes));
+      localStorage.setItem(`${STORAGE_KEY}_buffer_categories`, JSON.stringify(bufferCategories));
+      localStorage.setItem(`${STORAGE_KEY}_emergency_categories`, JSON.stringify(emergencyCategories));
+      localStorage.setItem(`${STORAGE_KEY}_plan_projects`, JSON.stringify(planProjects));
       localStorage.setItem(`${STORAGE_KEY}_theme`, theme);
       localStorage.setItem(`${STORAGE_KEY}_security`, JSON.stringify(securitySettings));
       localStorage.setItem(`${STORAGE_KEY}_cloud_sync`, JSON.stringify(cloudSyncConfig));
     } catch (e) {
       console.error('Failed to sync to LocalStorage', e);
     }
-  }, [tasks, categories, capacitySettings, prioritySettings, reminders, knowledge, auditLogs, theme, securitySettings, cloudSyncConfig]);
+  }, [tasks, categories, capacitySettings, prioritySettings, reminders, knowledge, auditLogs, bufferNotes, bufferCategories, emergencyCategories, planProjects, theme, securitySettings, cloudSyncConfig]);
 
   const updateCloudSyncConfig = useCallback((config: CloudSyncConfig) => {
     setCloudSyncConfig(config);
@@ -349,6 +586,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     prioritySettings,
     reminders,
     knowledge,
+    planProjects,
     theme,
     securitySettings
   });
@@ -360,10 +598,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       prioritySettings,
       reminders,
       knowledge,
+      planProjects,
       theme,
       securitySettings
     };
-  }, [tasks, categories, capacitySettings, prioritySettings, reminders, knowledge, theme, securitySettings]);
+  }, [tasks, categories, capacitySettings, prioritySettings, reminders, knowledge, planProjects, theme, securitySettings]);
 
   const cloudSyncConfigRef = useRef(cloudSyncConfig);
   useEffect(() => {
@@ -381,6 +620,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       prioritySettings: s.prioritySettings,
       reminders: s.reminders,
       knowledge: s.knowledge,
+      planProjects: s.planProjects,
       theme: s.theme,
       securitySettings: s.securitySettings
     };
@@ -727,7 +967,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     setTasks(prevTasks => {
       return prevTasks.map(t => {
-        if (t.id === ignoreTaskId || t.taskDate !== date || t.status === 'Done' || t.status === 'Terminated') {
+        // Never auto-shift mandatory/fixed schedule tasks, terminated/done tasks, or ignored tasks
+        if (t.id === ignoreTaskId || t.taskDate !== date || t.status === 'Done' || t.status === 'Terminated' || t.isMandatorySchedule) {
           return t;
         }
         const taskStartMin = parse12HourToMinutes(t.startTime);
@@ -776,13 +1017,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       bufferMinutes: 15,
       recurrence: taskData.recurrence || 'None',
       selectedDays: taskData.selectedDays || [],
+      isMandatorySchedule: taskData.isMandatorySchedule || false,
+      planProjectId: taskData.planProjectId,
       executionLogs: [],
       totalActualMinutes: 0,
       notes: taskData.notes || '',
       links: taskData.links || [],
-      subtasks: taskData.subtasks || [],
-      isProject: taskData.isProject || false,
-      escalationReason: taskData.escalationReason
+      subtasks: taskData.subtasks || []
     };
 
     setTasks(prev => [newTask, ...prev]);
@@ -864,16 +1105,151 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     });
   }, [logLifeEvent]);
 
-  // Execution Trackers: Start Task
-  const startTask = useCallback((taskId: string) => {
+  // Recurring Delete Prompt State
+  const [recurringDeletePrompt, setRecurringDeletePrompt] = useState<{
+    isOpen: boolean;
+    task?: Task;
+    date?: string;
+  } | null>(null);
+
+  const closeRecurringDeletePrompt = useCallback(() => {
+    setRecurringDeletePrompt(null);
+  }, []);
+
+  const requestDeleteTask = useCallback((task: Task, date?: string) => {
+    if (task.recurrence && task.recurrence !== 'None') {
+      setRecurringDeletePrompt({
+        isOpen: true,
+        task,
+        date: date || task.taskDate || toISODateString(new Date())
+      });
+    } else {
+      deleteTask(task.id);
+    }
+  }, [deleteTask]);
+
+  // Delete only a single day's occurrence of a recurring series (adds date to excludedDates)
+  const deleteRecurringInstance = useCallback((taskId: string, dateStr: string) => {
+    setTasks(prev => {
+      const target = prev.find(t => t.id === taskId);
+      if (!target) return prev;
+
+      if (!target.recurrence || target.recurrence === 'None') {
+        return prev.filter(t => t.id !== taskId);
+      }
+
+      const existingExclusions = target.excludedDates || [];
+      const updatedExclusions = Array.from(new Set([...existingExclusions, dateStr]));
+
+      logLifeEvent({
+        eventType: 'TASK_INSTANCE_EXCLUDED',
+        taskId: target.id,
+        taskTitle: target.title,
+        projectCode: target.projectCode,
+        priority: target.priority,
+        category: target.category,
+        message: `Deleted recurring occurrence for "${target.title}" on ${dateStr}`,
+        details: {
+          previousDate: dateStr,
+          newDate: dateStr
+        }
+      });
+
+      return prev.map(t => {
+        if (t.id === taskId) {
+          return {
+            ...t,
+            excludedDates: updatedExclusions
+          };
+        }
+        return t;
+      });
+    });
+    setRecurringDeletePrompt(null);
+    playNotificationChime('alert');
+  }, [logLifeEvent]);
+
+  // Delete the master recurring series completely
+  const deleteRecurringSeries = useCallback((taskId: string) => {
+    setTasks(prev => {
+      const target = prev.find(t => t.id === taskId);
+      if (target) {
+        logLifeEvent({
+          eventType: 'TASK_SERIES_DELETED',
+          taskId: target.id,
+          taskTitle: target.title,
+          projectCode: target.projectCode,
+          priority: target.priority,
+          category: target.category,
+          message: `⚠️ Deleted entire recurring series for "${target.title}" [${target.recurrence}]`
+        });
+      }
+      return prev.filter(t => t.id !== taskId);
+    });
+    setRecurringDeletePrompt(null);
+    playNotificationChime('alert');
+  }, [logLifeEvent]);
+
+  // Pause / Resume Recurring Series
+  const pauseRecurringSeries = useCallback((taskId: string) => {
     setTasks(prev => prev.map(t => {
       if (t.id === taskId) {
-        const nowIso = new Date().toISOString();
+        logLifeEvent({
+          eventType: 'TASK_HOLD',
+          taskId: t.id,
+          taskTitle: t.title,
+          projectCode: t.projectCode,
+          message: `⏸ Paused recurring schedule for "${t.title}"`
+        });
+        return { ...t, status: 'Hold' as TaskStatus };
+      }
+      return t;
+    }));
+  }, [logLifeEvent]);
+
+  const resumeRecurringSeries = useCallback((taskId: string) => {
+    setTasks(prev => prev.map(t => {
+      if (t.id === taskId) {
+        logLifeEvent({
+          eventType: 'TASK_STARTED',
+          taskId: t.id,
+          taskTitle: t.title,
+          projectCode: t.projectCode,
+          message: `▶ Resumed recurring schedule for "${t.title}"`
+        });
+        return { ...t, status: 'Pending' as TaskStatus };
+      }
+      return t;
+    }));
+  }, [logLifeEvent]);
+
+  // Execution Trackers: Start Task (With Intelligent Late Start Detection & Logging)
+  const startTask = useCallback((taskId: string) => {
+    const now = new Date();
+    const nowIso = now.toISOString();
+    const todayStr = toISODateString(now);
+
+    setTasks(prev => prev.map(t => {
+      if (t.id === taskId) {
+        let lateStartMinutes = 0;
+        if (t.taskDate === todayStr && t.startTime && t.startTime !== 'All Day') {
+          const scheduledStartMin = parse12HourToMinutes(t.startTime);
+          const curMin = now.getHours() * 60 + now.getMinutes();
+          if (curMin > scheduledStartMin + 3) {
+            lateStartMinutes = curMin - scheduledStartMin;
+          }
+        }
+
         const logs = [...t.executionLogs, {
           startedAt: nowIso,
           actualDurationMinutes: 0,
-          isLateFinish: false
+          isLateFinish: false,
+          lateStartMinutes,
+          scheduledStartTime: t.startTime
         }];
+
+        const lateMsg = lateStartMinutes > 0 ? ` • ⚠️ Late Start by +${lateStartMinutes}m (Scheduled: ${t.startTime})` : ' (On-Time)';
+
         logLifeEvent({
           eventType: 'TASK_STARTED',
           taskId: t.id,
@@ -881,8 +1257,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           projectCode: t.projectCode,
           priority: t.priority,
           category: t.category,
-          message: `⚡ Started working on task "${t.title}" (${t.projectCode})`
+          message: `⚡ Started working on task "${t.title}" (${t.projectCode})${lateMsg}`,
+          details: {
+            scheduledStartTime: t.startTime,
+            actualStartTime: formatMinutesTo12Hour(now.getHours() * 60 + now.getMinutes()),
+            lateStartMinutes,
+            isLateStart: lateStartMinutes > 0
+          }
         });
+
         return {
           ...t,
           status: 'Working' as TaskStatus,
@@ -922,12 +1305,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Complete Task + Auto Buffer Engine (15m normal, 5m late) + Recurring Rollover
   const completeTask = useCallback((taskId: string) => {
+    let completedTarget: Task | undefined;
+    let isLateFinish = false;
+    const now = new Date();
+    const todayStr = toISODateString(now);
+
     setTasks(prev => {
       const target = prev.find(t => t.id === taskId);
       if (!target) return prev;
 
-      const now = new Date();
-      const todayStr = toISODateString(now);
+      completedTarget = target;
       let actualDuration = target.appointedMinutes;
       let isLate = false;
 
@@ -942,6 +1329,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         isLate = elapsedMinutes > target.appointedMinutes;
         currentLog.isLateFinish = isLate;
       }
+      isLateFinish = isLate;
 
       const bufferMinutes = isLate ? 5 : 15;
       const isRecurring = target.recurrence && target.recurrence !== 'None';
@@ -1042,7 +1430,88 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       // Ignored if confetti fails
     }
     playNotificationChime('timer');
+
+    // Trigger Buffer Status Prompt: Ask what user does during the free buffer time
+    if (completedTarget) {
+      const current12h = getCurrentRoundedTime12Hour(1);
+      const bufMin = isLateFinish ? 5 : 15;
+      const bufferEnd12h = addMinutesToTime(current12h, bufMin);
+      setActiveBufferPrompt({
+        date: (completedTarget as Task).taskDate || todayStr,
+        startTime: current12h,
+        endTime: bufferEnd12h,
+        durationMinutes: bufMin,
+        relatedTaskId: (completedTarget as Task).id,
+        relatedTaskTitle: (completedTarget as Task).title
+      });
+    }
   }, [logLifeEvent]);
+
+  // Plan & Project Folders CRUD
+  const addPlanProject = useCallback((folderData: Omit<PlanProjectFolder, 'id' | 'createdAt' | 'updatedAt'> & { id?: string }): PlanProjectFolder => {
+    const newFolder: PlanProjectFolder = {
+      id: folderData.id || `${folderData.type}-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+      type: folderData.type,
+      title: folderData.title,
+      code: folderData.code || `${folderData.type === 'plan' ? 'PLN' : 'PRJ'}-${Date.now().toString().slice(-4)}`,
+      description: folderData.description || '',
+      color: folderData.color || '#3B82F6',
+      iconName: folderData.iconName || (folderData.type === 'plan' ? 'Target' : 'Briefcase'),
+      category: folderData.category || 'VRTX',
+      startDate: folderData.startDate || toISODateString(new Date()),
+      endDate: folderData.endDate || toISODateString(new Date()),
+      targetMinutes: folderData.targetMinutes,
+      status: folderData.status || 'active',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+
+    setPlanProjects(prev => [newFolder, ...prev]);
+    logLifeEvent({
+      eventType: 'PLAN_PROJECT_CREATED',
+      taskTitle: newFolder.title,
+      projectCode: newFolder.code,
+      message: `Created ${newFolder.type === 'plan' ? 'Plan' : 'Project'} Folder "${newFolder.title}" (${newFolder.code}) • Deadline: ${newFolder.endDate}`
+    });
+    playNotificationChime('success');
+    return newFolder;
+  }, [logLifeEvent]);
+
+  const updatePlanProject = useCallback((updated: PlanProjectFolder) => {
+    setPlanProjects(prev => prev.map(p => p.id === updated.id ? { ...updated, updatedAt: new Date().toISOString() } : p));
+    logLifeEvent({
+      eventType: 'PLAN_PROJECT_UPDATED',
+      taskTitle: updated.title,
+      projectCode: updated.code,
+      message: `Updated ${updated.type === 'plan' ? 'Plan' : 'Project'} Folder "${updated.title}"`
+    });
+  }, [logLifeEvent]);
+
+  const deletePlanProject = useCallback((folderId: string, deleteAssociatedTasks = false) => {
+    setPlanProjects(prev => {
+      const target = prev.find(p => p.id === folderId);
+      if (target) {
+        logLifeEvent({
+          eventType: 'PLAN_PROJECT_DELETED',
+          taskTitle: target.title,
+          projectCode: target.code,
+          message: `Deleted ${target.type === 'plan' ? 'Plan' : 'Project'} Folder "${target.title}"`
+        });
+      }
+      return prev.filter(p => p.id !== folderId);
+    });
+
+    if (deleteAssociatedTasks) {
+      setTasks(prev => prev.filter(t => t.planProjectId !== folderId));
+    } else {
+      setTasks(prev => prev.map(t => t.planProjectId === folderId ? { ...t, planProjectId: undefined } : t));
+    }
+    playNotificationChime('alert');
+  }, [logLifeEvent]);
+
+  const assignTaskToPlanProject = useCallback((taskId: string, planProjectId?: string) => {
+    setTasks(prev => prev.map(t => t.id === taskId ? { ...t, planProjectId } : t));
+  }, []);
 
   const holdTask = useCallback((taskId: string) => {
     setTasks(prev => prev.map(t => {
@@ -1065,6 +1534,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const rescheduleTask = useCallback((taskId: string, newDate: string, newStartTime: string) => {
     setTasks(prev => prev.map(t => {
       if (t.id === taskId) {
+        if (t.isMandatorySchedule) {
+          logLifeEvent({
+            eventType: 'TASK_HOLD',
+            taskId: t.id,
+            taskTitle: t.title,
+            projectCode: t.projectCode,
+            priority: t.priority,
+            category: t.category,
+            message: `⚠️ Reschedule blocked: "${t.title}" is a Mandatory Fixed Schedule and cannot be modified.`
+          });
+          return t;
+        }
+
         const newEndTime = addMinutesToTime(newStartTime, t.appointedMinutes);
         logLifeEvent({
           eventType: 'TASK_RESCHEDULED',
@@ -1128,7 +1610,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }));
   }, []);
 
-  // Sub-task & Auto Project Escalation Engine
+  // Sub-task & Project/Plan Escalation Engine
   const countTotalSubtasks = (subtasks: SubTask[]): number => {
     let count = subtasks.length;
     for (const st of subtasks) {
@@ -1139,7 +1621,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return count;
   };
 
-  const addSubTask = useCallback((taskId: string, title: string, parentSubTaskId?: string) => {
+  const addSubTask = useCallback((taskId: string, title: string, parentSubTaskId?: string, assignedTimeMin?: number) => {
     setTasks(prev => prev.map(t => {
       if (t.id !== taskId) return t;
 
@@ -1148,6 +1630,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         title,
         isCompleted: false,
         depthLevel: parentSubTaskId ? 2 : 1,
+        assignedTimeMin: assignedTimeMin || 30,
         subtasks: []
       };
 
@@ -1172,17 +1655,29 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         updatedSubtasks = attachNested(t.subtasks);
       }
 
-      // Check for multi-level escalation
-      const totalCount = countTotalSubtasks(updatedSubtasks);
-      const shouldEscalate = totalCount >= 4 || newSub.depthLevel >= 2;
+      return {
+        ...t,
+        subtasks: updatedSubtasks
+      };
+    }));
+  }, []);
+
+  const deleteSubTask = useCallback((taskId: string, subTaskId: string) => {
+    setTasks(prev => prev.map(t => {
+      if (t.id !== taskId) return t;
+
+      const removeFromTree = (items: SubTask[]): SubTask[] => {
+        return items
+          .filter(item => item.id !== subTaskId)
+          .map(item => ({
+            ...item,
+            subtasks: item.subtasks ? removeFromTree(item.subtasks) : []
+          }));
+      };
 
       return {
         ...t,
-        subtasks: updatedSubtasks,
-        isProject: t.isProject || shouldEscalate,
-        escalationReason: shouldEscalate && !t.isProject 
-          ? `Auto-Escalated to Project: Contains multi-level submodules (${totalCount} subtasks, Level ${newSub.depthLevel} depth)` 
-          : t.escalationReason
+        subtasks: removeFromTree(t.subtasks)
       };
     }));
   }, []);
@@ -1207,19 +1702,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         ...t,
         subtasks: toggleInTree(t.subtasks)
       };
-    }));
-  }, []);
-
-  const escalateToProject = useCallback((taskId: string, reason?: string) => {
-    setTasks(prev => prev.map(t => {
-      if (t.id === taskId) {
-        return {
-          ...t,
-          isProject: true,
-          escalationReason: reason || 'Manually promoted to full project status with multi-level tracking.'
-        };
-      }
-      return t;
     }));
   }, []);
 
@@ -1278,6 +1760,110 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setKnowledge(prev => prev.filter(k => k.id !== itemId));
   }, []);
 
+  // Buffer Status Notes CRUD (24-Hour Continuous Life Accounting)
+  const addBufferNote = useCallback((noteData: Omit<BufferStatusNote, 'id' | 'createdAt'> & { id?: string }): BufferStatusNote => {
+    const newNote: BufferStatusNote = {
+      id: noteData.id || `buf-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+      date: noteData.date || toISODateString(new Date()),
+      startTime: noteData.startTime,
+      endTime: noteData.endTime,
+      durationMinutes: noteData.durationMinutes || Math.max(5, diffTimeInMinutes(noteData.startTime, noteData.endTime)),
+      activityTag: noteData.activityTag || 'Break / Rest',
+      notes: noteData.notes || '',
+      energyLevel: noteData.energyLevel ?? 4,
+      relatedTaskId: noteData.relatedTaskId,
+      relatedTaskTitle: noteData.relatedTaskTitle,
+      createdAt: new Date().toISOString()
+    };
+
+    setBufferNotes(prev => [newNote, ...prev]);
+
+    logLifeEvent({
+      eventType: 'BUFFER_NOTE_LOGGED',
+      taskId: newNote.relatedTaskId,
+      taskTitle: newNote.relatedTaskTitle,
+      category: 'Buffer / Rest',
+      message: `☕ Buffer Logged: [${newNote.activityTag}] ${newNote.startTime} - ${newNote.endTime} (${newNote.durationMinutes}m) • "${newNote.notes || 'Free Time'}"`,
+      details: {
+        newDate: newNote.date,
+        newStartTime: newNote.startTime,
+        durationMinutes: newNote.durationMinutes,
+        bufferActivityTag: newNote.activityTag,
+        bufferNotes: newNote.notes
+      }
+    });
+
+    playNotificationChime('success');
+    return newNote;
+  }, [logLifeEvent]);
+
+  const updateBufferNote = useCallback((updated: BufferStatusNote) => {
+    setBufferNotes(prev => prev.map(n => n.id === updated.id ? updated : n));
+  }, []);
+
+  const deleteBufferNote = useCallback((noteId: string) => {
+    setBufferNotes(prev => {
+      const target = prev.find(n => n.id === noteId);
+      if (target) {
+        logLifeEvent({
+          eventType: 'BUFFER_NOTE_DELETED',
+          taskId: target.relatedTaskId,
+          taskTitle: target.relatedTaskTitle,
+          category: 'Buffer / Rest',
+          message: `Deleted buffer note [${target.activityTag}] (${target.startTime} - ${target.endTime})`
+        });
+      }
+      return prev.filter(n => n.id !== noteId);
+    });
+  }, [logLifeEvent]);
+
+  // Buffer Activity Categories CRUD (Fully Editable)
+  const addBufferCategory = useCallback((catData: Omit<BufferCategoryItem, 'id'> & { id?: string }) => {
+    const newCat: BufferCategoryItem = {
+      ...catData,
+      id: catData.id || `bcat-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+      tag: catData.tag || catData.label,
+      isSystem: false
+    };
+    setBufferCategories(prev => [...prev, newCat]);
+    playNotificationChime('success');
+  }, []);
+
+  const updateBufferCategory = useCallback((updated: BufferCategoryItem) => {
+    setBufferCategories(prev => prev.map(c => c.id === updated.id ? updated : c));
+  }, []);
+
+  const deleteBufferCategory = useCallback((catId: string) => {
+    setBufferCategories(prev => prev.filter(c => c.id !== catId));
+  }, []);
+
+  const resetBufferCategories = useCallback(() => {
+    setBufferCategories(INITIAL_BUFFER_CATEGORIES);
+  }, []);
+
+  // Emergency Categories CRUD (Fully Editable)
+  const addEmergencyCategory = useCallback((catData: Omit<EmergencyCategoryItem, 'id'> & { id?: string }) => {
+    const newCat: EmergencyCategoryItem = {
+      ...catData,
+      id: catData.id || `ecat-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+      isSystem: false
+    };
+    setEmergencyCategories(prev => [...prev, newCat]);
+    playNotificationChime('success');
+  }, []);
+
+  const updateEmergencyCategory = useCallback((updated: EmergencyCategoryItem) => {
+    setEmergencyCategories(prev => prev.map(c => c.id === updated.id ? updated : c));
+  }, []);
+
+  const deleteEmergencyCategory = useCallback((catId: string) => {
+    setEmergencyCategories(prev => prev.filter(c => c.id !== catId));
+  }, []);
+
+  const resetEmergencyCategories = useCallback(() => {
+    setEmergencyCategories(INITIAL_EMERGENCY_CATEGORIES);
+  }, []);
+
   // Settings
   const updateCapacitySettings = useCallback((settings: CapacitySettings) => {
     setCapacitySettings(settings);
@@ -1298,10 +1884,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       prioritySettings,
       reminders,
       knowledge,
+      bufferNotes,
+      auditLogs,
       theme
     };
     return JSON.stringify(bundle, null, 2);
-  }, [tasks, categories, capacitySettings, prioritySettings, reminders, knowledge, theme]);
+  }, [tasks, categories, capacitySettings, prioritySettings, reminders, knowledge, bufferNotes, auditLogs, theme]);
 
   const importStateJson = useCallback((jsonStr: string): boolean => {
     try {
@@ -1312,6 +1900,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (data.prioritySettings) setPrioritySettings(data.prioritySettings);
       if (data.reminders) setReminders(data.reminders);
       if (data.knowledge) setKnowledge(data.knowledge);
+      if (data.bufferNotes) setBufferNotes(data.bufferNotes);
+      if (data.auditLogs) setAuditLogs(data.auditLogs);
       if (data.theme) setTheme(data.theme);
       return true;
     } catch (e) {
@@ -1327,6 +1917,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setPrioritySettings(DEFAULT_PRIORITIES);
     setReminders(INITIAL_REMINDERS);
     setKnowledge(INITIAL_KNOWLEDGE);
+    setBufferNotes(INITIAL_BUFFER_NOTES);
     setTheme('light');
   }, [setTheme]);
 
@@ -1351,6 +1942,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         addTask,
         updateTask,
         deleteTask,
+        deleteRecurringInstance,
+        deleteRecurringSeries,
+        pauseRecurringSeries,
+        resumeRecurringSeries,
+        requestDeleteTask,
+        recurringDeletePrompt,
+        closeRecurringDeletePrompt,
         startTask,
         pauseTask,
         completeTask,
@@ -1361,8 +1959,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         cascadeShiftDownstream,
         linkSimultaneousTasks,
         addSubTask,
+        deleteSubTask,
         toggleSubTask,
-        escalateToProject,
         addCategory,
         updateCategory,
         deleteCategory,
@@ -1372,6 +1970,35 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         addKnowledgeItem,
         updateKnowledgeItem,
         deleteKnowledgeItem,
+        planProjects,
+        addPlanProject,
+        updatePlanProject,
+        deletePlanProject,
+        assignTaskToPlanProject,
+        bufferNotes,
+        bufferCategories,
+        addBufferNote,
+        updateBufferNote,
+        deleteBufferNote,
+        addBufferCategory,
+        updateBufferCategory,
+        deleteBufferCategory,
+        resetBufferCategories,
+        bufferNoteModalState,
+        openBufferNoteModal,
+        closeBufferNoteModal,
+        activeBufferPrompt,
+        setActiveBufferPrompt,
+        isEmergencyModalOpen,
+        emergencyModalParams,
+        openEmergencyModal,
+        closeEmergencyModal,
+        triggerEmergencyBuffer,
+        emergencyCategories,
+        addEmergencyCategory,
+        updateEmergencyCategory,
+        deleteEmergencyCategory,
+        resetEmergencyCategories,
         updateCapacitySettings,
         updatePrioritySettings,
         securitySettings,

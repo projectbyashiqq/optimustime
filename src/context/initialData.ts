@@ -1,4 +1,16 @@
-import { Category, PrioritySettings, CapacitySettings, Task, KnowledgeItem, Reminder, SecuritySettings, CloudSyncConfig } from '../types';
+import { 
+  Category, 
+  PrioritySettings, 
+  CapacitySettings, 
+  Task, 
+  KnowledgeItem, 
+  Reminder, 
+  SecuritySettings, 
+  CloudSyncConfig, 
+  BufferStatusNote, 
+  BufferCategoryItem,
+  PlanProjectFolder
+} from '../types';
 import { toISODateString, getDayOfWeekFromDate } from '../utils/timeUtils';
 
 const envSupabaseUrl = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_SUPABASE_URL) || '';
@@ -159,7 +171,7 @@ export const INITIAL_TASKS: Task[] = [
         completedAt: new Date(Date.now() - 3600000 * 3.5).toISOString(),
         actualDurationMinutes: 88,
         isLateFinish: false,
-        notes: 'Successfully audited buffer math and project escalation hooks.'
+        notes: 'Successfully audited buffer math and time calculation logic.'
       }
     ],
     totalActualMinutes: 88,
@@ -168,9 +180,9 @@ export const INITIAL_TASKS: Task[] = [
       { id: 'lnk-1', title: 'System Spec Doc', url: 'https://optimustime.local/docs/architecture', type: 'doc' }
     ],
     subtasks: [
-      { id: 'sub-1', title: 'Verify P1-P5 duration mapping', isCompleted: true, depthLevel: 1 },
-      { id: 'sub-2', title: 'Test buffer reduction from 15m to 5m on late finish', isCompleted: true, depthLevel: 1 },
-      { id: 'sub-3', title: 'Audit overlap alert prompt flow', isCompleted: true, depthLevel: 1 }
+      { id: 'sub-1', title: 'Verify P1-P5 duration mapping', isCompleted: true, depthLevel: 1, assignedTimeMin: 30 },
+      { id: 'sub-2', title: 'Test buffer reduction from 15m to 5m on late finish', isCompleted: true, depthLevel: 1, assignedTimeMin: 30 },
+      { id: 'sub-3', title: 'Audit overlap alert prompt flow', isCompleted: true, depthLevel: 1, assignedTimeMin: 30 }
     ]
   },
   {
@@ -184,7 +196,7 @@ export const INITIAL_TASKS: Task[] = [
     priority: 'P1',
     category: 'VRTX',
     subCategory: 'Core Engine',
-    appointedMinutes: 90,
+    appointedMinutes: 180,
     startTime: '10:15 AM',
     endTime: '11:45 AM',
     status: 'Working',
@@ -203,12 +215,11 @@ export const INITIAL_TASKS: Task[] = [
       { id: 'lnk-2', title: 'VRTX Core Repository', url: 'https://github.com/optimus/vrtx-core', type: 'github' }
     ],
     subtasks: [
-      { id: 'sub-4', title: 'Write cascading displacement algorithm', isCompleted: true, depthLevel: 1 },
-      { id: 'sub-5', title: 'Add Red-Line capacity threshold check', isCompleted: true, depthLevel: 1 },
-      { id: 'sub-6', title: 'Connect audio notification bell for timer finish', isCompleted: false, depthLevel: 1 }
-    ],
-    isProject: true,
-    escalationReason: 'Escalated to Project: Contains multi-level submodules and high complexity.'
+      { id: 'sub-4', title: 'Write cascading displacement algorithm', isCompleted: true, depthLevel: 1, assignedTimeMin: 60 },
+      { id: 'sub-5', title: 'Add Red-Line capacity threshold check', isCompleted: true, depthLevel: 1, assignedTimeMin: 45 },
+      { id: 'sub-6', title: 'Connect audio notification bell for timer finish', isCompleted: false, depthLevel: 1, assignedTimeMin: 45 },
+      { id: 'sub-6b', title: 'Perform end-to-end load testing under high schedule density', isCompleted: false, depthLevel: 1, assignedTimeMin: 30 }
+    ]
   },
   {
     id: 'task-103',
@@ -221,7 +232,7 @@ export const INITIAL_TASKS: Task[] = [
     priority: 'P2',
     category: 'Ashiqq Online',
     subCategory: 'Content Strategy',
-    appointedMinutes: 60,
+    appointedMinutes: 120,
     startTime: '12:00 PM',
     endTime: '01:00 PM',
     status: 'Pending',
@@ -233,8 +244,9 @@ export const INITIAL_TASKS: Task[] = [
       { id: 'lnk-3', title: 'Media Master Sheet', url: 'https://docs.google.com/spreadsheets/d/ashiqq-online', type: 'doc' }
     ],
     subtasks: [
-      { id: 'sub-7', title: 'Write episode 4 outline', isCompleted: false, depthLevel: 1 },
-      { id: 'sub-8', title: 'Generate thumbnail graphic assets', isCompleted: false, depthLevel: 1 }
+      { id: 'sub-7', title: 'Write episode 4 outline', isCompleted: false, depthLevel: 1, assignedTimeMin: 45 },
+      { id: 'sub-8', title: 'Generate thumbnail graphic assets', isCompleted: false, depthLevel: 1, assignedTimeMin: 45 },
+      { id: 'sub-8b', title: 'Schedule distribution automation', isCompleted: false, depthLevel: 1, assignedTimeMin: 30 }
     ]
   },
   {
@@ -312,7 +324,7 @@ export const INITIAL_TASKS: Task[] = [
   {
     id: 'task-107',
     projectCode: 'OPT-2609-0419',
-    title: 'Filter Inbox & Clean Project Workspace Cache',
+    title: 'Filter Inbox & Clean Workspace Cache',
     description: 'Zero inbox sweep and archive temporary artifacts.',
     dateAdded: new Date().toISOString(),
     taskDate: todayDate,
@@ -336,6 +348,7 @@ export const INITIAL_TASKS: Task[] = [
 export const INITIAL_KNOWLEDGE: KnowledgeItem[] = [
   {
     id: 'kno-1',
+    projectCode: 'OPT-2609-8421',
     title: 'Time-Boxing & Scientific Capacity Red-Line Matrix',
     category: 'OptimusLAB',
     content: `# Time-Boxing Principles
@@ -359,6 +372,7 @@ Exceeding 14 scheduled hours triggers an immediate Red Alert in the dashboard.`,
   },
   {
     id: 'kno-2',
+    projectCode: 'OPT-2609-9130',
     title: 'VRTX Automation & Cascading Displacement Protocol',
     category: 'VRTX',
     content: `# Cascading Auto-Shift Strategy
@@ -378,6 +392,7 @@ export const INITIAL_REMINDERS: Reminder[] = [
   {
     id: 'rem-1',
     taskId: 'task-102',
+    projectCode: 'OPT-2609-9130',
     title: 'VRTX Auto-Shift Engine Mid-way Review',
     date: todayDate,
     time: '11:00 AM',
@@ -389,6 +404,7 @@ export const INITIAL_REMINDERS: Reminder[] = [
   {
     id: 'rem-2',
     taskId: 'task-104',
+    projectCode: 'OPT-2609-3712',
     title: 'Send Monthly Invoice to Enterprise Partner',
     date: todayDate,
     time: '02:30 PM',
@@ -398,3 +414,110 @@ export const INITIAL_REMINDERS: Reminder[] = [
     isDismissed: false
   }
 ];
+
+export const INITIAL_BUFFER_NOTES: BufferStatusNote[] = [
+  {
+    id: 'buf-1',
+    date: todayDate,
+    startTime: '07:30 AM',
+    endTime: '08:00 AM',
+    durationMinutes: 30,
+    activityTag: 'Coffee / Tea',
+    notes: 'Morning espresso, hydration, and reviewed daily goals.',
+    energyLevel: 5,
+    createdAt: new Date().toISOString()
+  },
+  {
+    id: 'buf-2',
+    date: todayDate,
+    startTime: '10:30 AM',
+    endTime: '10:45 AM',
+    durationMinutes: 15,
+    activityTag: 'Walk / Exercise',
+    notes: 'Brisk 15-minute outdoor walk to refresh focus after audit session.',
+    energyLevel: 4,
+    relatedTaskId: 'task-101',
+    relatedTaskTitle: 'Deep Code Review & Architecture Audit',
+    createdAt: new Date().toISOString()
+  },
+  {
+    id: 'buf-3',
+    date: todayDate,
+    startTime: '01:00 PM',
+    endTime: '01:45 PM',
+    durationMinutes: 45,
+    activityTag: 'Meal / Snack',
+    notes: 'Healthy lunch and light reading on distributed systems.',
+    energyLevel: 4,
+    createdAt: new Date().toISOString()
+  }
+];
+
+export const INITIAL_BUFFER_CATEGORIES: BufferCategoryItem[] = [
+  { id: 'bcat-1', tag: 'Coffee / Tea', label: 'Coffee / Tea', icon: '☕', desc: 'Hydration, espresso, tea ritual', color: '#D97706', bgColor: '#FEF3C7', isSystem: true },
+  { id: 'bcat-2', tag: 'Walk / Exercise', label: 'Walk / Exercise', icon: '🚶', desc: 'Outdoor walk, stretching, workout', color: '#059669', bgColor: '#D1FAE5', isSystem: true },
+  { id: 'bcat-3', tag: 'Meal / Snack', label: 'Meal / Snack', icon: '🥪', desc: 'Breakfast, lunch, dinner, nutrition', color: '#D97706', bgColor: '#FEF3C7', isSystem: true },
+  { id: 'bcat-4', tag: 'Break / Rest', label: 'Break / Rest', icon: '🧘', desc: 'Eye rest, breathing, mental reset', color: '#7C3AED', bgColor: '#EDE9FE', isSystem: true },
+  { id: 'bcat-5', tag: 'Reading / Learning', label: 'Reading / Learning', icon: '📚', desc: 'Articles, books, research, news', color: '#2563EB', bgColor: '#DBEAFE', isSystem: true },
+  { id: 'bcat-6', tag: 'Power Nap', label: 'Power Nap', icon: '💤', desc: '15-25 min restorative sleep', color: '#7C3AED', bgColor: '#EDE9FE', isSystem: true },
+  { id: 'bcat-7', tag: 'Meditation', label: 'Meditation', icon: '✨', desc: 'Mindfulness, reflection, breathing', color: '#7C3AED', bgColor: '#EDE9FE', isSystem: true },
+  { id: 'bcat-8', tag: 'Quick Chores', label: 'Quick Chores', icon: '🧹', desc: 'Desk tidy, quick errands, tasks', color: '#4B5563', bgColor: '#F3F4F6', isSystem: true },
+  { id: 'bcat-9', tag: 'Social / Chat', label: 'Social / Chat', icon: '💬', desc: 'Call, team chat, family connection', color: '#DB2777', bgColor: '#FCE7F3', isSystem: true },
+  { id: 'bcat-10', tag: 'Planning', label: 'Planning', icon: '🎯', desc: 'Next task prep, roadmap reflection', color: '#0891B2', bgColor: '#CFFAFE', isSystem: true },
+  { id: 'bcat-11', tag: 'Entertainment', label: 'Entertainment', icon: '🎮', desc: 'Music, light gaming, casual media', color: '#8B5CF6', bgColor: '#EDE9FE', isSystem: true },
+  { id: 'bcat-12', tag: 'Other Activity', label: 'Other Activity', icon: '📝', desc: 'Custom free-time log', color: '#D97706', bgColor: '#FEF3C7', isSystem: true },
+];
+
+export const INITIAL_EMERGENCY_CATEGORIES: import('../types').EmergencyCategoryItem[] = [
+  { id: 'ecat-1', name: 'Loadshedding / Power Outage', emoji: '⚡', defaultDuration: 120, description: 'Power grid cut or inverter failure', color: '#D97706', isSystem: true },
+  { id: 'ecat-2', name: 'Medical Sickness / Health', emoji: '🩺', defaultDuration: 180, description: 'Sudden illness, headache, medical clinic', color: '#E11D48', isSystem: true },
+  { id: 'ecat-3', name: 'Family Emergency / Crisis', emoji: '🚨', defaultDuration: 120, description: 'Urgent family situation or call', color: '#DC2626', isSystem: true },
+  { id: 'ecat-4', name: 'Device / Internet Failure', emoji: '🌐', defaultDuration: 60, description: 'Broadband outage or laptop crash', color: '#EA580C', isSystem: true },
+  { id: 'ecat-5', name: 'Traffic / Transit Jam', emoji: '🚗', defaultDuration: 60, description: 'Unplanned transit delay or gridlock', color: '#2563EB', isSystem: false },
+  { id: 'ecat-6', name: 'Urgent Crisis / Other', emoji: '⚠️', defaultDuration: 90, description: 'Other uncontrollable life disruption', color: '#7C3AED', isSystem: true },
+];
+
+export const INITIAL_PLAN_PROJECTS: PlanProjectFolder[] = [
+  {
+    id: 'plan-1',
+    type: 'plan',
+    title: 'Q3 Deep Work & Health Optimization',
+    code: 'PLN-Q3-OPT',
+    description: 'Structured sprint to complete critical system architectures while maintaining circadian rhythm balance and daily fitness.',
+    color: '#3B82F6',
+    iconName: 'Target',
+    category: 'VRTX',
+    startDate: todayDate,
+    endDate: (() => {
+      const d = new Date();
+      d.setDate(d.getDate() + 30);
+      return toISODateString(d);
+    })(),
+    targetMinutes: 2400,
+    status: 'active',
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString()
+  },
+  {
+    id: 'proj-1',
+    type: 'project',
+    title: 'OptimusLAB Unified Architecture V2',
+    code: 'PRJ-VRTX-01',
+    description: 'Core product engineering, real-time sync engine, 24-hour accountability metrics, and emergency cascading algorithms.',
+    color: '#8B5CF6',
+    iconName: 'Briefcase',
+    category: 'VRTX',
+    startDate: todayDate,
+    endDate: (() => {
+      const d = new Date();
+      d.setDate(d.getDate() + 14);
+      return toISODateString(d);
+    })(),
+    targetMinutes: 1800,
+    status: 'active',
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString()
+  }
+];
+
+

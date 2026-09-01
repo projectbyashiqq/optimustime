@@ -1,14 +1,16 @@
 import React from 'react';
 import { Task } from '../types';
-import { addMinutesToTime } from '../utils/timeUtils';
-import { AlertTriangle, ArrowRight, Layers, Clock, X, Coffee, Sparkles } from 'lucide-react';
+import { addMinutesToTime, RecommendedSlot } from '../utils/timeUtils';
+import { AlertTriangle, ArrowRight, Layers, Clock, X, Coffee, Sparkles, Lock, CheckCircle2 } from 'lucide-react';
 
 interface ConflictModalProps {
   conflictingTasks: Task[];
   pendingTaskTitle: string;
   appointedMinutes: number;
+  candidateSlots?: RecommendedSlot[];
   onAutoShift: (newCalculatedStartTime: string) => void;
   onSimultaneous: () => void;
+  onSelectSlot?: (startTime: string) => void;
   onCancel: () => void;
 }
 
@@ -16,8 +18,10 @@ export const ConflictModal: React.FC<ConflictModalProps> = ({
   conflictingTasks,
   pendingTaskTitle,
   appointedMinutes,
+  candidateSlots = [],
   onAutoShift,
   onSimultaneous,
+  onSelectSlot,
   onCancel
 }) => {
   // Find the latest end time + buffer among all conflicting tasks
@@ -56,8 +60,14 @@ export const ConflictModal: React.FC<ConflictModalProps> = ({
         {/* Conflict Details Card */}
         <div className="p-4 rounded-xl bg-red-50/60 dark:bg-red-950/25 border border-red-200 dark:border-red-900/50 space-y-2.5">
           <div className="flex items-center justify-between text-xs">
-            <span className="font-bold text-red-700 dark:text-red-300">
-              Active Conflicting Task:
+            <span className="font-bold text-red-700 dark:text-red-300 flex items-center gap-1.5">
+              <span>Active Conflicting Task:</span>
+              {primaryConflict?.isMandatorySchedule && (
+                <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-amber-200 dark:bg-amber-900 text-amber-900 dark:text-amber-200 flex items-center gap-1">
+                  <Lock className="w-3 h-3" />
+                  MANDATORY LOCKED
+                </span>
+              )}
             </span>
             <span className="font-mono font-bold text-red-600 dark:text-red-400">
               [{primaryConflict?.projectCode}]
@@ -67,6 +77,13 @@ export const ConflictModal: React.FC<ConflictModalProps> = ({
           <div className="font-semibold text-sm text-theme-text">
             "{primaryConflict ? primaryConflict.title : 'Existing Task'}"
           </div>
+
+          {primaryConflict?.isMandatorySchedule && (
+            <div className="p-2 rounded-lg bg-amber-100/70 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-800 text-[11px] text-amber-900 dark:text-amber-200 font-semibold flex items-center gap-1.5">
+              <Lock className="w-3.5 h-3.5 shrink-0 text-amber-600 dark:text-amber-400" />
+              <span>This task has a Mandatory Fixed Schedule and cannot be shifted. The pending task must be placed after it.</span>
+            </div>
+          )}
 
           <div className="grid grid-cols-2 gap-2 pt-1 border-t border-red-200/60 dark:border-red-900/40 text-xs">
             <div>
@@ -126,6 +143,32 @@ export const ConflictModal: React.FC<ConflictModalProps> = ({
             </span>
           </button>
         </div>
+
+        {/* Candidate Available Free Slots on this Day */}
+        {candidateSlots.length > 0 && onSelectSlot && (
+          <div className="space-y-1.5 p-3 rounded-xl bg-theme-card-hover border border-theme-border">
+            <span className="text-[10px] font-bold text-theme-muted uppercase tracking-wider block">
+              Or Pick An Available Free Slot on this Day:
+            </span>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+              {candidateSlots.map((slot, idx) => (
+                <button
+                  key={idx}
+                  type="button"
+                  onClick={() => onSelectSlot(slot.startTime)}
+                  className="flex items-center justify-between p-2 rounded-lg bg-theme-card border border-theme-border hover:border-blue-500 text-xs font-semibold text-theme-text transition-colors group"
+                >
+                  <span className="text-[11px] text-blue-600 dark:text-blue-400 font-bold">
+                    {slot.label}
+                  </span>
+                  <span className="font-mono text-[10px] text-theme-muted group-hover:text-theme-text">
+                    {slot.startTime} - {slot.endTime}
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Secondary Cancel */}
         <div className="flex justify-end pt-1">

@@ -37,7 +37,8 @@ import {
   Sparkles,
   Coffee,
   Zap,
-  AlertTriangle
+  AlertTriangle,
+  ShieldAlert
 } from 'lucide-react';
 import { DEFAULT_SQL_SCHEMA, testSupabaseConnection } from '../services/supabase';
 
@@ -51,6 +52,14 @@ export const AdminSettingsView: React.FC = () => {
     addCategory,
     updateCategory,
     deleteCategory,
+    bufferCategories,
+    addBufferCategory,
+    updateBufferCategory,
+    deleteBufferCategory,
+    resetBufferCategories,
+    emergencyCategories,
+    deleteEmergencyCategory,
+    resetEmergencyCategories,
     exportStateJson,
     importStateJson,
     resetToDefaultData,
@@ -707,6 +716,111 @@ export const AdminSettingsView: React.FC = () => {
                 onUpdate={updateCategory}
                 onDelete={() => deleteCategory(c.id)}
               />
+            ))}
+          </div>
+        </div>
+
+        {/* Buffer Status & Free-Time Activity Menu Management */}
+        <div className="glass-panel p-6 rounded-2xl border border-theme-border space-y-4">
+          <div className="flex items-center justify-between border-b border-theme-border pb-3">
+            <div>
+              <h3 className="text-sm font-bold text-theme-text uppercase tracking-wider flex items-center gap-2">
+                <Coffee className="w-4 h-4 text-amber-500" />
+                <span>Buffer Status & Free-Time Activity Menu ({bufferCategories.length})</span>
+              </h3>
+              <p className="text-xs text-theme-muted mt-0.5">
+                Customize activity categories and emoji tags shown in the 24H Buffer Status Note popup.
+              </p>
+            </div>
+            <button
+              onClick={resetBufferCategories}
+              className="text-xs font-bold text-theme-muted hover:text-amber-600 flex items-center gap-1"
+              title="Reset buffer menu categories to defaults"
+            >
+              <RotateCcw className="w-3.5 h-3.5" />
+              <span>Restore Defaults</span>
+            </button>
+          </div>
+
+          {/* Buffer Category Cards Grid */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5 max-h-80 overflow-y-auto pr-1">
+            {bufferCategories.map((bCat) => (
+              <div
+                key={bCat.id}
+                className="p-3 rounded-xl bg-theme-card-hover border border-theme-border flex items-start justify-between gap-2 group"
+              >
+                <div className="flex items-start gap-2.5 min-w-0">
+                  <span className="text-xl shrink-0 p-1.5 rounded-lg bg-theme-card border border-theme-border/60">
+                    {bCat.icon}
+                  </span>
+                  <div className="min-w-0">
+                    <div className="text-xs font-bold text-theme-text truncate">{bCat.label}</div>
+                    <div className="text-[11px] text-theme-muted truncate">{bCat.desc}</div>
+                  </div>
+                </div>
+
+                {bufferCategories.length > 1 && (
+                  <button
+                    onClick={() => deleteBufferCategory(bCat.id)}
+                    className="p-1 text-theme-muted hover:text-red-500 opacity-60 group-hover:opacity-100 transition-opacity"
+                    title="Delete activity tag"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Emergency Buffer Presets & Categories Management */}
+        <div className="glass-panel p-6 rounded-2xl border border-theme-border space-y-4">
+          <div className="flex items-center justify-between border-b border-theme-border pb-3">
+            <div>
+              <h3 className="text-sm font-bold text-theme-text uppercase tracking-wider flex items-center gap-2">
+                <ShieldAlert className="w-4 h-4 text-red-500" />
+                <span>Emergency Buffer Presets & Categories ({emergencyCategories.length})</span>
+              </h3>
+              <p className="text-xs text-theme-muted mt-0.5">
+                Customize emergency event types, icons, and default durations shown in the Emergency BUFFER menu.
+              </p>
+            </div>
+            <button
+              onClick={resetEmergencyCategories}
+              className="text-xs font-bold text-theme-muted hover:text-red-600 flex items-center gap-1"
+              title="Reset emergency presets to system defaults"
+            >
+              <RotateCcw className="w-3.5 h-3.5" />
+              <span>Restore Defaults</span>
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5 max-h-80 overflow-y-auto pr-1">
+            {emergencyCategories.map((eCat) => (
+              <div
+                key={eCat.id}
+                className="p-3 rounded-xl bg-theme-card-hover border border-theme-border flex items-start justify-between gap-2 group"
+              >
+                <div className="flex items-start gap-2.5 min-w-0">
+                  <span className="text-xl shrink-0 p-1.5 rounded-lg bg-theme-card border border-theme-border/60">
+                    {eCat.emoji}
+                  </span>
+                  <div className="min-w-0">
+                    <div className="text-xs font-bold text-theme-text truncate">{eCat.name}</div>
+                    <div className="text-[11px] text-theme-muted font-mono">{eCat.defaultDuration} mins default</div>
+                  </div>
+                </div>
+
+                {!eCat.isSystem && (
+                  <button
+                    onClick={() => deleteEmergencyCategory(eCat.id)}
+                    className="p-1 text-theme-muted hover:text-red-500 opacity-60 group-hover:opacity-100 transition-opacity"
+                    title="Delete emergency preset"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
             ))}
           </div>
         </div>

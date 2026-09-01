@@ -33,6 +33,8 @@ export interface TaskExecutionLog {
   completedAt?: string;
   actualDurationMinutes: number;
   isLateFinish: boolean;
+  lateStartMinutes?: number; // Late start tracking vs scheduled start
+  scheduledStartTime?: string;
   notes?: string;
 }
 
@@ -62,6 +64,7 @@ export interface Task {
   bufferMinutes: number; // 15 or 5
   recurrence: RecurrenceType;
   selectedDays?: string[]; // e.g. ["Mon", "Wed", "Fri"]
+  excludedDates?: string[]; // Dates (YYYY-MM-DD) where this recurring instance was skipped/deleted
   
   // Trackers & Analytics
   executionLogs: TaskExecutionLog[];
@@ -72,12 +75,83 @@ export interface Task {
   links: TaskLink[];
   subtasks: SubTask[];
   
-  // Project Escalation
-  isProject?: boolean;
-  escalationReason?: string;
-  
   // Simultaneous execution tracking
   simultaneousWithIds?: string[];
+
+  // Emergency Buffer Flag
+  isEmergencyBuffer?: boolean;
+  emergencyType?: EmergencyType;
+
+  // Mandatory / Fixed Schedule Flag (Non-reschedulable, irreplaceable & protected from auto-shifts)
+  isMandatorySchedule?: boolean;
+
+  // Plan / Project Folder Association
+  planProjectId?: string;
+}
+
+export type PlanProjectType = 'plan' | 'project';
+export type PlanProjectStatus = 'active' | 'completed' | 'on_hold' | 'archived';
+
+export interface PlanProjectFolder {
+  id: string;
+  type: PlanProjectType;
+  title: string;
+  code: string; // e.g. "PLN-2026-01", "PRJ-VRTX"
+  description: string;
+  color: string;
+  iconName: string;
+  category: string;
+  startDate: string; // YYYY-MM-DD
+  endDate: string; // YYYY-MM-DD (Strict Deadline)
+  targetMinutes?: number; // Planned Time Budget (Minutes)
+  status: PlanProjectStatus;
+  createdAt: string; // ISO
+  updatedAt: string; // ISO
+}
+
+export type EmergencyType = 
+  | 'Loadshedding' 
+  | 'Sickness' 
+  | 'Family Emergency' 
+  | 'Device / Net Outage' 
+  | 'Urgent Crisis' 
+  | 'Other Emergency';
+
+export interface EmergencyBufferPlan {
+  id: string;
+  emergencyType: EmergencyType;
+  title: string;
+  date: string;
+  startTime: string;
+  endTime: string;
+  durationMinutes: number;
+  notes: string;
+  createdAt: string;
+}
+
+export interface EmergencyCategoryItem {
+  id: string;
+  name: string;
+  emoji: string;
+  defaultDuration: number;
+  description?: string;
+  color?: string;
+  isSystem?: boolean;
+}
+
+export interface TaskRescheduleProposal {
+  taskId: string;
+  taskTitle: string;
+  projectCode: string;
+  priority: PriorityLevel;
+  currentDate: string;
+  currentStartTime: string;
+  currentEndTime: string;
+  proposedDate: string;
+  proposedStartTime: string;
+  proposedEndTime: string;
+  action: 'shift_same_day' | 'defer_tomorrow' | 'hold' | 'keep';
+  delayMinutes?: number;
 }
 
 export interface Category {
@@ -108,6 +182,7 @@ export interface PrioritySettings {
 export interface Reminder {
   id: string;
   taskId?: string;
+  projectCode?: string;
   title: string;
   date: string; // YYYY-MM-DD
   time: string; // "10:00 AM"
@@ -119,6 +194,7 @@ export interface Reminder {
 
 export interface KnowledgeItem {
   id: string;
+  projectCode?: string;
   title: string;
   category: string;
   content: string;
@@ -139,9 +215,10 @@ export type ThemeName =
 
 export type ActiveTab = 
   | 'dashboard' 
+  | 'time-tracker'
   | 'all-tasks' 
+  | 'plans-projects'
   | 'categories' 
-  | 'projects' 
   | 'analytics' 
   | 'knowledge' 
   | 'reminders' 
@@ -165,6 +242,33 @@ export interface CloudSyncConfig {
   autoRealtimeSync: boolean;
 }
 
+export type BufferActivityTag = string;
+
+export interface BufferCategoryItem {
+  id: string;
+  tag: string;
+  label: string;
+  icon: string;
+  desc: string;
+  color?: string;
+  bgColor?: string;
+  isSystem?: boolean;
+}
+
+export interface BufferStatusNote {
+  id: string;
+  date: string; // YYYY-MM-DD
+  startTime: string; // "10:30 AM"
+  endTime: string; // "10:45 AM"
+  durationMinutes: number;
+  activityTag: BufferActivityTag | string;
+  notes: string; // "What did you do during this free time / buffer?"
+  energyLevel?: number; // 1 to 5
+  relatedTaskId?: string;
+  relatedTaskTitle?: string;
+  createdAt: string; // ISO string
+}
+
 export type LifeEventType = 
   | 'TASK_CREATED'
   | 'TASK_STARTED'
@@ -176,6 +280,14 @@ export type LifeEventType =
   | 'TASK_HOLD'
   | 'TASK_TERMINATED'
   | 'TASK_DELETED'
+  | 'TASK_INSTANCE_EXCLUDED'
+  | 'TASK_SERIES_DELETED'
+  | 'PLAN_PROJECT_CREATED'
+  | 'PLAN_PROJECT_UPDATED'
+  | 'PLAN_PROJECT_DELETED'
+  | 'EMERGENCY_BUFFER_TRIGGERED'
+  | 'BUFFER_NOTE_LOGGED'
+  | 'BUFFER_NOTE_DELETED'
   | 'CAPACITY_WARNING'
   | 'SETTINGS_UPDATED';
 
@@ -200,7 +312,44 @@ export interface LifeEventLog {
     delayMinutes?: number;
     isLate?: boolean;
     reason?: string;
+    emergencyType?: string;
+    proposalsCount?: number;
+    bufferActivityTag?: string;
+    bufferNotes?: string;
+    scheduledStartTime?: string;
+    actualStartTime?: string;
+    lateStartMinutes?: number;
+    isLateStart?: boolean;
   };
 }
+
+export interface DaySlice24 {
+  id: string;
+  type: 'work_completed' | 'work_active' | 'work_pending' | 'work_hold' | 'task_buffer' | 'buffer_note' | 'sleep' | 'unaccounted_gap';
+  title: string;
+  startTime: string;
+  endTime: string;
+  startMinute: number; // 0 to 1439
+  endMinute: number; // 1 to 1440
+  durationMinutes: number;
+  category?: string;
+  priority?: PriorityLevel;
+  task?: Task;
+  bufferNote?: BufferStatusNote;
+  color?: string;
+  bgColor?: string;
+}
+
+export interface DayBreakdown24Metrics {
+  totalMinutes: 1440;
+  workMinutes: number;
+  completedWorkMinutes: number;
+  sleepMinutes: number;
+  bufferLoggedMinutes: number;
+  scheduledBufferMinutes: number;
+  unaccountedMinutes: number;
+  accountabilityScore: number; // 0 - 100%
+}
+
 
 

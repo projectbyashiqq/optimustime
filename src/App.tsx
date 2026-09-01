@@ -4,10 +4,15 @@ import { Header } from './components/Header';
 import { Navbar } from './components/Navbar';
 import { ActiveTaskBanner } from './components/ActiveTaskBanner';
 import { TaskModal } from './components/TaskModal';
+import { BufferNoteModal } from './components/BufferNoteModal';
+import { RecurringDeleteModal } from './components/RecurringDeleteModal';
+import { RecurringManagerModal } from './components/RecurringManagerModal';
+import { EmergencyBufferModal } from './components/EmergencyBufferModal';
 import { DashboardView } from './views/DashboardView';
+import { TimeTracker24View } from './views/TimeTracker24View';
 import { AllTasksView } from './views/AllTasksView';
+import { PlansProjectsView } from './views/PlansProjectsView';
 import { CategoryView } from './views/CategoryView';
-import { ProjectManagementView } from './views/ProjectManagementView';
 import { AnalyticsView } from './views/AnalyticsView';
 import { KnowledgeHubView } from './views/KnowledgeHubView';
 import { ReminderCenterView } from './views/ReminderCenterView';
@@ -28,11 +33,22 @@ export const AppContent: React.FC = () => {
   const [taskToEdit, setTaskToEdit] = useState<Task | null>(null);
   const [modalInitialDate, setModalInitialDate] = useState<string | undefined>(undefined);
   const [modalInitialStartTime, setModalInitialStartTime] = useState<string | undefined>(undefined);
+  const [modalInitialProjectCode, setModalInitialProjectCode] = useState<string | undefined>(undefined);
+  const [modalInitialCategory, setModalInitialCategory] = useState<string | undefined>(undefined);
+  const [isRecurringManagerOpen, setIsRecurringManagerOpen] = useState(false);
 
-  const handleOpenTaskModal = (task?: Task, date?: string, startTime?: string) => {
+  const handleOpenTaskModal = (
+    task?: Task, 
+    date?: string, 
+    startTime?: string,
+    projectCode?: string,
+    category?: string
+  ) => {
     setTaskToEdit(task || null);
     setModalInitialDate(date);
     setModalInitialStartTime(startTime);
+    setModalInitialProjectCode(projectCode);
+    setModalInitialCategory(category);
     setIsTaskModalOpen(true);
   };
 
@@ -41,6 +57,8 @@ export const AppContent: React.FC = () => {
     setTaskToEdit(null);
     setModalInitialDate(undefined);
     setModalInitialStartTime(undefined);
+    setModalInitialProjectCode(undefined);
+    setModalInitialCategory(undefined);
   };
 
   return (
@@ -56,18 +74,21 @@ export const AppContent: React.FC = () => {
       <ActiveTaskBanner />
 
       {/* Main Content Area */}
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6">
+      <main className="flex-1 max-w-7xl w-full mx-auto px-3 sm:px-6 lg:px-8 pt-3 pb-6">
         {activeTab === 'dashboard' && (
           <DashboardView onOpenTaskModal={handleOpenTaskModal} />
+        )}
+        {activeTab === 'time-tracker' && (
+          <TimeTracker24View onOpenTaskModal={handleOpenTaskModal} />
         )}
         {activeTab === 'all-tasks' && (
           <AllTasksView onOpenTaskModal={handleOpenTaskModal} />
         )}
+        {activeTab === 'plans-projects' && (
+          <PlansProjectsView onOpenTaskModal={handleOpenTaskModal} />
+        )}
         {activeTab === 'categories' && (
           <CategoryView onOpenTaskModal={handleOpenTaskModal} />
-        )}
-        {activeTab === 'projects' && (
-          <ProjectManagementView />
         )}
         {activeTab === 'analytics' && (
           <AnalyticsView />
@@ -89,7 +110,27 @@ export const AppContent: React.FC = () => {
           taskToEdit={taskToEdit}
           initialDate={modalInitialDate}
           initialStartTime={modalInitialStartTime}
+          initialProjectCode={modalInitialProjectCode}
+          initialCategory={modalInitialCategory}
           onClose={handleCloseTaskModal}
+        />
+      )}
+
+      {/* Buffer Status & Free-Time Note Modal */}
+      <BufferNoteModal />
+
+      {/* Emergency Buffer & Cascading Day Reschedule Modal */}
+      <EmergencyBufferModal />
+
+      {/* Recurring Task Deletion Choice Modal */}
+      <RecurringDeleteModal />
+
+      {/* Recurring Tasks & Schedules Manager Hub Modal */}
+      {isRecurringManagerOpen && (
+        <RecurringManagerModal
+          isOpen={isRecurringManagerOpen}
+          onClose={() => setIsRecurringManagerOpen(false)}
+          onOpenTaskModal={handleOpenTaskModal}
         />
       )}
 

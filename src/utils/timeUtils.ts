@@ -2,6 +2,8 @@
  * Time utility functions for OptimusTime Time-Boxing and Automation Engines
  */
 
+import { Task, BufferStatusNote, CapacitySettings, DaySlice24, DayBreakdown24Metrics } from '../types';
+
 export const DAYS_OF_WEEK = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 export const SHORT_DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
@@ -158,16 +160,37 @@ export interface TimeGap {
   durationMinutes: number;
 }
 
-// Find empty gaps between scheduled tasks for a day
+// Find empty gaps between scheduled tasks, post-task buffers, and logged buffer notes for a day
 export function findScheduleGaps(
-  tasks: Array<{ startTime: string; endTime: string; status: string }>,
+  tasks: Array<{ startTime: string; endTime: string; status: string; bufferMinutes?: number }>,
   dayStartTime = '06:00 AM',
-  dayEndTime = '11:00 PM'
+  dayEndTime = '11:00 PM',
+  bufferNotes: Array<{ startTime: string; endTime: string; date?: string }> = []
 ): TimeGap[] {
-  const activeTasks = tasks.filter(t => t.status !== 'Terminated' && t.startTime && t.endTime);
-  if (activeTasks.length === 0) {
+  const activeTasks = tasks.filter(t => t.status !== 'Terminated' && t.startTime && t.endTime && t.startTime !== 'All Day');
+  
+  // Combine task intervals (including task + bufferMinutes) and logged bufferNotes intervals
+  const taskIntervals = activeTasks.map(t => {
+    const s = parse12HourToMinutes(t.startTime);
+    let e = parse12HourToMinutes(t.endTime);
+    if (e < s) e += 1440;
+    const buf = t.bufferMinutes || 0;
+    return { start: s, end: e + buf };
+  });
+
+  const bufferIntervals = (bufferNotes || []).map(b => {
+    const s = parse12HourToMinutes(b.startTime);
+    let e = parse12HourToMinutes(b.endTime);
+    if (e < s) e += 1440;
+    return { start: s, end: e };
+  });
+
+  const intervals = [...taskIntervals, ...bufferIntervals].sort((a, b) => a.start - b.start);
+
+  if (intervals.length === 0) {
     const startMin = parse12HourToMinutes(dayStartTime);
-    const endMin = parse12HourToMinutes(dayEndTime);
+    let endMin = parse12HourToMinutes(dayEndTime);
+    if (endMin <= startMin) endMin += 1440;
     if (endMin > startMin) {
       return [{
         startTime: dayStartTime,
@@ -177,14 +200,6 @@ export function findScheduleGaps(
     }
     return [];
   }
-
-  // Sort intervals by start time
-  const intervals = activeTasks.map(t => {
-    const s = parse12HourToMinutes(t.startTime);
-    let e = parse12HourToMinutes(t.endTime);
-    if (e < s) e += 1440;
-    return { start: s, end: e };
-  }).sort((a, b) => a.start - b.start);
 
   // Merge overlapping intervals
   const merged: { start: number; end: number }[] = [];
@@ -202,18 +217,21 @@ export function findScheduleGaps(
   }
 
   const dayStartMin = parse12HourToMinutes(dayStartTime);
-  const dayEndMin = parse12HourToMinutes(dayEndTime);
+  let dayEndMin = parse12HourToMinutes(dayEndTime);
+  if (dayEndMin <= dayStartMin) dayEndMin += 1440;
   const gaps: TimeGap[] = [];
 
   let cursor = dayStartMin;
 
   for (const block of merged) {
     if (block.start > cursor) {
-      const gapDuration = block.start - cursor;
-      if (gapDuration >= 10) { // Highlight gaps >= 10 mins
+      const gapStart = Math.max(cursor, dayStartMin);
+      const gapEnd = Math.min(block.start, dayEndMin);
+      const gapDuration = gapEnd - gapStart;
+      if (gapDuration >= 5) { // Highlight gaps >= 5 mins
         gaps.push({
-          startTime: formatMinutesTo12Hour(cursor),
-          endTime: formatMinutesTo12Hour(block.start),
+          startTime: formatMinutesTo12Hour(gapStart),
+          endTime: formatMinutesTo12Hour(gapEnd),
           durationMinutes: gapDuration
         });
       }
@@ -223,7 +241,7 @@ export function findScheduleGaps(
 
   if (cursor < dayEndMin) {
     const gapDuration = dayEndMin - cursor;
-    if (gapDuration >= 10) {
+    if (gapDuration >= 5) {
       gaps.push({
         startTime: formatMinutesTo12Hour(cursor),
         endTime: formatMinutesTo12Hour(dayEndMin),
@@ -303,8 +321,14 @@ export function isTaskScheduledForDate(task: {
   taskDate: string;
   recurrence?: string;
   selectedDays?: string[];
+  excludedDates?: string[];
 }, targetDateStr: string): boolean {
   if (!task.taskDate || !targetDateStr) return false;
+
+  // Check if this date is explicitly excluded / deleted for this recurring series
+  if (task.excludedDates && task.excludedDates.includes(targetDateStr)) {
+    return false;
+  }
 
   // Exact match always matches
   if (task.taskDate === targetDateStr) return true;
@@ -633,4 +657,675 @@ export function isTaskAutoIncompleteExpired(
   return diffMs >= expireThresholdMinutes * 60 * 1000;
 }
 
+export interface WeekDayInfo {
+  date: Date;
+  dateStr: string;
+  dayName: string;
+  shortDayName: string;
+  dayNumber: number;
+  isToday: boolean;
+}
+
+export function getWeekDays(referenceDate: Date = new Date(), startOnMonday = true): WeekDayInfo[] {
+  const curr = new Date(referenceDate);
+  curr.setHours(0, 0, 0, 0);
+  const day = curr.getDay(); // 0 = Sunday
+  const diff = startOnMonday ? (day === 0 ? -6 : 1 - day) : -day;
+  const startOfWeek = new Date(curr);
+  startOfWeek.setDate(curr.getDate() + diff);
+
+  const todayStr = toISODateString(new Date());
+  const days: WeekDayInfo[] = [];
+
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(startOfWeek);
+    d.setDate(startOfWeek.getDate() + i);
+    const dateStr = toISODateString(d);
+    days.push({
+      date: d,
+      dateStr,
+      dayName: DAYS_OF_WEEK[d.getDay()],
+      shortDayName: SHORT_DAYS[d.getDay()],
+      dayNumber: d.getDate(),
+      isToday: dateStr === todayStr
+    });
+  }
+
+  return days;
+}
+
+export interface MonthDayInfo {
+  date: Date;
+  dateStr: string;
+  dayNumber: number;
+  isCurrentMonth: boolean;
+  isToday: boolean;
+}
+
+export function getMonthDays(year: number, monthIndex: number): MonthDayInfo[] {
+  const todayStr = toISODateString(new Date());
+  const firstDayOfMonth = new Date(year, monthIndex, 1);
+  const lastDayOfMonth = new Date(year, monthIndex + 1, 0);
+
+  // Determine starting weekday (0 = Sun, 1 = Mon ... with Mon as first column)
+  let startDay = firstDayOfMonth.getDay(); // 0 = Sun
+  startDay = startDay === 0 ? 6 : startDay - 1; // 0 = Mon, 6 = Sun
+
+  const days: MonthDayInfo[] = [];
+
+  // Previous month trailing days
+  for (let i = startDay - 1; i >= 0; i--) {
+    const d = new Date(year, monthIndex, 1 - (i + 1));
+    const dateStr = toISODateString(d);
+    days.push({
+      date: d,
+      dateStr,
+      dayNumber: d.getDate(),
+      isCurrentMonth: false,
+      isToday: dateStr === todayStr
+    });
+  }
+
+  // Current month days
+  for (let i = 1; i <= lastDayOfMonth.getDate(); i++) {
+    const d = new Date(year, monthIndex, i);
+    const dateStr = toISODateString(d);
+    days.push({
+      date: d,
+      dateStr,
+      dayNumber: i,
+      isCurrentMonth: true,
+      isToday: dateStr === todayStr
+    });
+  }
+
+  // Next month leading days to fill grid to multiple of 7
+  const remaining = (7 - (days.length % 7)) % 7;
+  for (let i = 1; i <= remaining; i++) {
+    const d = new Date(year, monthIndex + 1, i);
+    const dateStr = toISODateString(d);
+    days.push({
+      date: d,
+      dateStr,
+      dayNumber: d.getDate(),
+      isCurrentMonth: false,
+      isToday: dateStr === todayStr
+    });
+  }
+
+  return days;
+}
+
+export function formatMonthYear(year: number, monthIndex: number): string {
+  const monthNames = [
+    'January', 'February', 'March', 'April', 'May', 'June',
+    'July', 'August', 'September', 'October', 'November', 'December'
+  ];
+  return `${monthNames[monthIndex]} ${year}`;
+}
+
+/**
+ * Dynamic typography scaling for task titles:
+ * - Short title (<= 25 chars): larger, bold typography for maximum focus
+ * - Medium title (26 - 55 chars): standard medium font size
+ * - Long title (> 55 chars): auto-scaled slightly smaller with graceful line clamping
+ */
+export function getTaskTitleClasses(title: string, isDone = false): string {
+  const len = (title || '').trim().length;
+  const strike = isDone ? 'line-through text-theme-muted opacity-75' : 'text-theme-text';
+  
+  if (len <= 25) {
+    return `text-lg sm:text-xl font-black font-openSans tracking-tight leading-snug ${strike}`;
+  }
+  if (len <= 55) {
+    return `text-base sm:text-lg font-bold font-openSans tracking-normal leading-snug ${strike}`;
+  }
+  return `text-xs sm:text-sm font-semibold font-openSans leading-snug line-clamp-2 ${strike}`;
+}
+
+export function getBufferActivityEmoji(tag: string): string {
+  switch (tag) {
+    case 'Break / Rest': return '🧘';
+    case 'Coffee / Tea': return '☕';
+    case 'Meal / Snack': return '🥪';
+    case 'Walk / Exercise': return '🚶';
+    case 'Reading / Learning': return '📚';
+    case 'Power Nap': return '💤';
+    case 'Quick Chores': return '🧹';
+    case 'Social / Chat': return '💬';
+    case 'Meditation': return '✨';
+    case 'Entertainment': return '🎮';
+    case 'Planning': return '🎯';
+    default: return '📝';
+  }
+}
+
+export function getBufferActivityColor(tag: string): { color: string; bgColor: string; borderColor: string } {
+  switch (tag) {
+    case 'Coffee / Tea':
+    case 'Meal / Snack':
+      return { color: '#D97706', bgColor: '#FEF3C7', borderColor: '#FDE68A' };
+    case 'Walk / Exercise':
+      return { color: '#059669', bgColor: '#D1FAE5', borderColor: '#A7F3D0' };
+    case 'Reading / Learning':
+      return { color: '#2563EB', bgColor: '#DBEAFE', borderColor: '#BFDBFE' };
+    case 'Power Nap':
+    case 'Meditation':
+    case 'Break / Rest':
+      return { color: '#7C3AED', bgColor: '#EDE9FE', borderColor: '#DDD6FE' };
+    case 'Quick Chores':
+      return { color: '#4B5563', bgColor: '#F3F4F6', borderColor: '#E5E7EB' };
+    case 'Social / Chat':
+      return { color: '#DB2777', bgColor: '#FCE7F3', borderColor: '#FBCFE8' };
+    case 'Planning':
+      return { color: '#0891B2', bgColor: '#CFFAFE', borderColor: '#A5F3FC' };
+    default:
+      return { color: '#D97706', bgColor: '#FEF3C7', borderColor: '#FDE68A' };
+  }
+}
+
+/**
+ * Computes a continuous 1,440-minute (24 Hours: 00:00 to 24:00) segmentation of the day.
+ * Accounts for every single minute of the circadian cycle:
+ * - Sleep Cycle (e.g. 11:00 PM to 06:00 AM)
+ * - Work Tasks (Completed, Working, Pending, Hold)
+ * - Post-Task Buffers
+ * - Logged Buffer / Free Time Notes
+ * - Unaccounted Free Time Gaps
+ */
+export function get24HourContinuousTimeline(
+  dateStr: string,
+  allTasks: Task[],
+  bufferNotes: BufferStatusNote[],
+  capacitySettings: CapacitySettings
+): { slices: DaySlice24[]; metrics: DayBreakdown24Metrics } {
+  const dayStartMin = parse12HourToMinutes(capacitySettings.dayStartTime);
+  let dayEndMin = parse12HourToMinutes(capacitySettings.dayEndTime);
+  if (dayEndMin <= dayStartMin) dayEndMin += 1440;
+
+  // Filter tasks for this date (timed tasks only)
+  const dayTasks = allTasks.filter(t => 
+    isTaskScheduledForDate(t, dateStr) && 
+    t.status !== 'Terminated' && 
+    t.startTime && 
+    t.endTime && 
+    t.startTime !== 'All Day'
+  );
+
+  // Filter buffer notes for this date
+  const dayBufferNotes = bufferNotes.filter(n => n.date === dateStr);
+
+  // Build raw occupied intervals (0 to 1440 mins)
+  interface RawInterval {
+    start: number;
+    end: number;
+    type: DaySlice24['type'];
+    title: string;
+    task?: Task;
+    bufferNote?: BufferStatusNote;
+    category?: string;
+    priority?: Task['priority'];
+  }
+
+  const rawIntervals: RawInterval[] = [];
+
+  // 1. Sleep intervals:
+  // Before dayStartTime (0 to dayStartMin)
+  if (dayStartMin > 0) {
+    rawIntervals.push({
+      start: 0,
+      end: dayStartMin,
+      type: 'sleep',
+      title: 'Sleep Cycle & Rest'
+    });
+  }
+  // After dayEndTime (dayEndMin % 1440 to 1440)
+  if (dayEndMin >= 1440) {
+    // End was > midnight
+    // Any remaining gap up to 1440 was part of the day
+  } else if (dayEndMin < 1440) {
+    rawIntervals.push({
+      start: dayEndMin,
+      end: 1440,
+      type: 'sleep',
+      title: 'Sleep Cycle & Rest'
+    });
+  }
+
+  // 2. Tasks
+  for (const t of dayTasks) {
+    let s = parse12HourToMinutes(t.startTime);
+    let e = parse12HourToMinutes(t.endTime);
+    if (e <= s) e += 1440;
+
+    let sliceType: DaySlice24['type'] = 'work_pending';
+    if (t.status === 'Done') sliceType = 'work_completed';
+    else if (t.status === 'Working') sliceType = 'work_active';
+    else if (t.status === 'Hold') sliceType = 'work_hold';
+
+    // Normalize within 0..1440
+    const clampedStart = Math.min(1440, Math.max(0, s));
+    const clampedEnd = Math.min(1440, Math.max(clampedStart, e));
+
+    if (clampedEnd > clampedStart) {
+      rawIntervals.push({
+        start: clampedStart,
+        end: clampedEnd,
+        type: sliceType,
+        title: t.title,
+        task: t,
+        category: t.category,
+        priority: t.priority
+      });
+    }
+
+    // Post-task buffer if specified and task is active or done
+    const buf = t.bufferMinutes || 0;
+    if (buf > 0) {
+      const bufStart = clampedEnd;
+      const bufEnd = Math.min(1440, bufStart + buf);
+      if (bufEnd > bufStart) {
+        rawIntervals.push({
+          start: bufStart,
+          end: bufEnd,
+          type: 'task_buffer',
+          title: `Buffer (${t.projectCode})`,
+          task: t
+        });
+      }
+    }
+  }
+
+  // 3. Buffer Status Notes logged by the user
+  for (const note of dayBufferNotes) {
+    let s = parse12HourToMinutes(note.startTime);
+    let e = parse12HourToMinutes(note.endTime);
+    if (e <= s) e += 1440;
+
+    const clampedStart = Math.min(1440, Math.max(0, s));
+    const clampedEnd = Math.min(1440, Math.max(clampedStart, e));
+
+    if (clampedEnd > clampedStart) {
+      rawIntervals.push({
+        start: clampedStart,
+        end: clampedEnd,
+        type: 'buffer_note',
+        title: `${getBufferActivityEmoji(note.activityTag)} ${note.activityTag}: ${note.notes || 'Free Time'}`,
+        bufferNote: note
+      });
+    }
+  }
+
+  // Sort all intervals chronologically by start time
+  rawIntervals.sort((a, b) => a.start - b.start || (b.end - a.end));
+
+  // Stitch into continuous 1,440-minute slices
+  const slices: DaySlice24[] = [];
+  let cursor = 0;
+
+  for (let i = 0; i < rawIntervals.length; i++) {
+    const item = rawIntervals[i];
+
+    // If there is an unoccupied gap between cursor and item.start
+    if (item.start > cursor) {
+      const gapDuration = item.start - cursor;
+      slices.push({
+        id: `gap_${cursor}_${item.start}`,
+        type: 'unaccounted_gap',
+        title: 'Unaccounted Free Time',
+        startTime: formatMinutesTo12Hour(cursor),
+        endTime: formatMinutesTo12Hour(item.start),
+        startMinute: cursor,
+        endMinute: item.start,
+        durationMinutes: gapDuration
+      });
+      cursor = item.start;
+    }
+
+    // If item extends beyond current cursor
+    if (item.end > cursor) {
+      const sliceStart = Math.max(cursor, item.start);
+      const sliceEnd = item.end;
+      const duration = sliceEnd - sliceStart;
+
+      slices.push({
+        id: `slice_${item.type}_${sliceStart}_${sliceEnd}_${Math.random().toString(36).substring(2, 6)}`,
+        type: item.type,
+        title: item.title,
+        startTime: formatMinutesTo12Hour(sliceStart),
+        endTime: formatMinutesTo12Hour(sliceEnd),
+        startMinute: sliceStart,
+        endMinute: sliceEnd,
+        durationMinutes: duration,
+        category: item.category,
+        priority: item.priority,
+        task: item.task,
+        bufferNote: item.bufferNote
+      });
+
+      cursor = sliceEnd;
+    }
+  }
+
+  // Trailing gap to complete the full 1,440-minute day
+  if (cursor < 1440) {
+    slices.push({
+      id: `gap_${cursor}_1440`,
+      type: 'unaccounted_gap',
+      title: 'Unaccounted Free Time',
+      startTime: formatMinutesTo12Hour(cursor),
+      endTime: formatMinutesTo12Hour(1440),
+      startMinute: cursor,
+      endMinute: 1440,
+      durationMinutes: 1440 - cursor
+    });
+  }
+
+  // Calculate 24h Metrics
+  let workMinutes = 0;
+  let completedWorkMinutes = 0;
+  let sleepMinutes = 0;
+  let bufferLoggedMinutes = 0;
+  let scheduledBufferMinutes = 0;
+  let unaccountedMinutes = 0;
+
+  for (const s of slices) {
+    if (s.type === 'work_completed') {
+      workMinutes += s.durationMinutes;
+      completedWorkMinutes += s.durationMinutes;
+    } else if (s.type === 'work_active' || s.type === 'work_pending' || s.type === 'work_hold') {
+      workMinutes += s.durationMinutes;
+    } else if (s.type === 'sleep') {
+      sleepMinutes += s.durationMinutes;
+    } else if (s.type === 'buffer_note') {
+      bufferLoggedMinutes += s.durationMinutes;
+    } else if (s.type === 'task_buffer') {
+      scheduledBufferMinutes += s.durationMinutes;
+    } else if (s.type === 'unaccounted_gap') {
+      unaccountedMinutes += s.durationMinutes;
+    }
+  }
+
+  const accountedMinutes = Math.min(1440, 1440 - unaccountedMinutes);
+  const accountabilityScore = Math.min(100, Math.round((accountedMinutes / 1440) * 100));
+
+  const metrics: DayBreakdown24Metrics = {
+    totalMinutes: 1440,
+    workMinutes,
+    completedWorkMinutes,
+    sleepMinutes,
+    bufferLoggedMinutes,
+    scheduledBufferMinutes,
+    unaccountedMinutes,
+    accountabilityScore
+  };
+
+  return { slices, metrics };
+}
+
+/**
+ * Intelligent Emergency Cascading Reschedule Engine
+ * Calculates optimal shift times or tomorrow-deferrals for all downstream tasks
+ * when an uncontrollable emergency buffer occurs.
+ */
+export function calculateEmergencyReschedule(
+  emergencyStart: string,
+  emergencyDuration: number,
+  dateStr: string,
+  allDayTasks: any[],
+  capacitySettings: { dayStartTime: string; dayEndTime: string }
+): import('../types').TaskRescheduleProposal[] {
+  const emergencyStartMin = parse12HourToMinutes(emergencyStart);
+  const emergencyEndMin = emergencyStartMin + emergencyDuration;
+  const dayEndMin = parse12HourToMinutes(capacitySettings.dayEndTime);
+
+  // Tomorrow's date string
+  const [y, m, d] = dateStr.split('-').map(Number);
+  const tomDate = new Date(y, m - 1, d);
+  tomDate.setDate(tomDate.getDate() + 1);
+  const tomorrowDateStr = toISODateString(tomDate);
+
+  // Filter tasks on this date that are affected
+  const affected = allDayTasks.filter(t => {
+    if (t.status === 'Done' || t.status === 'Terminated' || t.isEmergencyBuffer) return false;
+    const taskStartMin = parse12HourToMinutes(t.startTime);
+    const taskEndMin = parse12HourToMinutes(t.endTime);
+    // Overlaps with emergency or starts after emergency start
+    return taskEndMin > emergencyStartMin;
+  });
+
+  // Sort chronologically by original start time
+  affected.sort((a, b) => parse12HourToMinutes(a.startTime) - parse12HourToMinutes(b.startTime));
+
+  const proposals: import('../types').TaskRescheduleProposal[] = [];
+  let currentCascadeMin = emergencyEndMin;
+  let tomorrowSlotCursor = parse12HourToMinutes(capacitySettings.dayStartTime);
+
+  for (const task of affected) {
+    // If task is locked with a Mandatory Schedule, keep it fixed in its original time slot
+    if (task.isMandatorySchedule) {
+      proposals.push({
+        taskId: task.id,
+        taskTitle: task.title,
+        projectCode: task.projectCode,
+        priority: task.priority,
+        currentDate: dateStr,
+        currentStartTime: task.startTime,
+        currentEndTime: task.endTime,
+        proposedDate: dateStr,
+        proposedStartTime: task.startTime,
+        proposedEndTime: task.endTime,
+        action: 'keep'
+      });
+      continue;
+    }
+
+    const taskDuration = task.appointedMinutes || (parse12HourToMinutes(task.endTime) - parse12HourToMinutes(task.startTime));
+    const buffer = task.bufferMinutes || 5;
+
+    // Check if we can fit on same day before dayEndTime
+    if (currentCascadeMin + taskDuration <= dayEndMin) {
+      const proposedStartMin = currentCascadeMin;
+      const proposedEndMin = proposedStartMin + taskDuration;
+
+      proposals.push({
+        taskId: task.id,
+        taskTitle: task.title,
+        projectCode: task.projectCode,
+        priority: task.priority,
+        currentDate: dateStr,
+        currentStartTime: task.startTime,
+        currentEndTime: task.endTime,
+        proposedDate: dateStr,
+        proposedStartTime: formatMinutesTo12Hour(proposedStartMin),
+        proposedEndTime: formatMinutesTo12Hour(proposedEndMin),
+        action: 'shift_same_day'
+      });
+
+      currentCascadeMin = proposedEndMin + buffer;
+    } else {
+      // Overflows past dayEndMin -> defer to tomorrow morning
+      const tomStartMin = tomorrowSlotCursor;
+      const tomEndMin = tomStartMin + taskDuration;
+
+      proposals.push({
+        taskId: task.id,
+        taskTitle: task.title,
+        projectCode: task.projectCode,
+        priority: task.priority,
+        currentDate: dateStr,
+        currentStartTime: task.startTime,
+        currentEndTime: task.endTime,
+        proposedDate: tomorrowDateStr,
+        proposedStartTime: formatMinutesTo12Hour(tomStartMin),
+        proposedEndTime: formatMinutesTo12Hour(tomEndMin),
+        action: 'defer_tomorrow'
+      });
+
+      tomorrowSlotCursor = tomEndMin + buffer;
+    }
+  }
+
+  return proposals;
+}
+
+export interface RecommendedSlot {
+  startTime: string;
+  endTime: string;
+  label: string;
+  durationMinutes: number;
+  isContiguousNext?: boolean;
+}
+
+/**
+ * Calculates the next available free time slot on a given date for a given task duration,
+ * accounting for existing tasks (including recurring instances), their post-task buffer time (15 mins),
+ * and buffer status notes.
+ */
+export function getSmartNextFreeSlot(
+  dateStr: string,
+  durationMinutes: number,
+  tasks: Array<{ taskDate: string; startTime: string; endTime: string; status: string; bufferMinutes?: number; recurrence?: string; selectedDays?: string[]; excludedDates?: string[]; id?: string }>,
+  bufferNotes: Array<{ date?: string; startTime: string; endTime: string }> = [],
+  ignoreTaskId?: string,
+  bufferGap = 15
+): { startTime: string; endTime: string } {
+  const todayStr = toISODateString(new Date());
+  const isToday = dateStr === todayStr;
+
+  // Filter tasks that occur on dateStr (excluding terminated and ignored)
+  const activeTasks = tasks.filter(t => 
+    t.id !== ignoreTaskId &&
+    t.status !== 'Terminated' && 
+    t.startTime && 
+    t.endTime && 
+    t.startTime !== 'All Day' &&
+    isTaskScheduledForDate(t, dateStr)
+  );
+
+  // Active buffer notes on this date
+  const dayBufferNotes = bufferNotes.filter(b => !b.date || b.date === dateStr);
+
+  // Gaps on this day from 06:00 AM to 11:30 PM
+  const gaps = findScheduleGaps(activeTasks, '06:00 AM', '11:30 PM', dayBufferNotes);
+
+  // If today, determine earliest usable minute (now + 5 rounded to 15 min)
+  let earliestMin = parse12HourToMinutes('06:00 AM');
+  if (isToday) {
+    const now = new Date();
+    const curMin = now.getHours() * 60 + now.getMinutes() + 5;
+    const roundedMin = Math.ceil(curMin / 15) * 15;
+    earliestMin = Math.max(earliestMin, roundedMin);
+  }
+
+  // Look for first gap that can fit durationMinutes + bufferGap
+  for (const gap of gaps) {
+    const gapStartMin = parse12HourToMinutes(gap.startTime);
+    let gapEndMin = parse12HourToMinutes(gap.endTime);
+    if (gapEndMin <= gapStartMin) gapEndMin += 1440;
+
+    const usableStart = Math.max(gapStartMin, earliestMin);
+    if (usableStart + durationMinutes <= gapEndMin) {
+      const slotStart = formatMinutesTo12Hour(usableStart);
+      const slotEnd = formatMinutesTo12Hour(usableStart + durationMinutes);
+      return { startTime: slotStart, endTime: slotEnd };
+    }
+  }
+
+  // If no internal gap fits, place after the latest scheduled task + buffer
+  if (activeTasks.length > 0) {
+    let latestEndMin = 0;
+    for (const t of activeTasks) {
+      const s = parse12HourToMinutes(t.startTime);
+      let e = parse12HourToMinutes(t.endTime);
+      if (e < s) e += 1440;
+      const totalBlockEnd = e + (t.bufferMinutes ?? bufferGap);
+      if (totalBlockEnd > latestEndMin) {
+        latestEndMin = totalBlockEnd;
+      }
+    }
+    const finalStart = Math.max(latestEndMin, earliestMin);
+    return {
+      startTime: formatMinutesTo12Hour(finalStart),
+      endTime: formatMinutesTo12Hour(finalStart + durationMinutes)
+    };
+  }
+
+  // If day is completely empty
+  const defaultStartMin = isToday ? earliestMin : parse12HourToMinutes('09:00 AM');
+  return {
+    startTime: formatMinutesTo12Hour(defaultStartMin),
+    endTime: formatMinutesTo12Hour(defaultStartMin + durationMinutes)
+  };
+}
+
+/**
+ * Returns candidate recommended free slots across the day (Next Contiguous, Morning, Afternoon, Evening)
+ */
+export function getRecommendedDayFreeSlots(
+  dateStr: string,
+  durationMinutes: number,
+  tasks: Array<{ taskDate: string; startTime: string; endTime: string; status: string; bufferMinutes?: number; recurrence?: string; selectedDays?: string[]; excludedDates?: string[]; id?: string }>,
+  bufferNotes: Array<{ date?: string; startTime: string; endTime: string }> = [],
+  ignoreTaskId?: string,
+  limit = 4
+): RecommendedSlot[] {
+  const smartNext = getSmartNextFreeSlot(dateStr, durationMinutes, tasks, bufferNotes, ignoreTaskId);
+  const slots: RecommendedSlot[] = [
+    {
+      startTime: smartNext.startTime,
+      endTime: smartNext.endTime,
+      label: '⚡ Next Available',
+      durationMinutes,
+      isContiguousNext: true
+    }
+  ];
+
+  const activeTasks = tasks.filter(t => 
+    t.id !== ignoreTaskId &&
+    t.status !== 'Terminated' && 
+    t.startTime && 
+    t.endTime && 
+    t.startTime !== 'All Day' &&
+    isTaskScheduledForDate(t, dateStr)
+  );
+  const dayBufferNotes = bufferNotes.filter(b => !b.date || b.date === dateStr);
+  const gaps = findScheduleGaps(activeTasks, '06:00 AM', '11:00 PM', dayBufferNotes);
+
+  const todayStr = toISODateString(new Date());
+  const isToday = dateStr === todayStr;
+  let nowMin = 0;
+  if (isToday) {
+    const now = new Date();
+    nowMin = now.getHours() * 60 + now.getMinutes();
+  }
+
+  for (const gap of gaps) {
+    const gStart = parse12HourToMinutes(gap.startTime);
+    let gEnd = parse12HourToMinutes(gap.endTime);
+    if (gEnd <= gStart) gEnd += 1440;
+
+    const usableStart = Math.max(gStart, nowMin > 0 ? Math.ceil((nowMin + 5) / 15) * 15 : gStart);
+    if (usableStart + durationMinutes <= gEnd) {
+      const candidateStart = formatMinutesTo12Hour(usableStart);
+      const candidateEnd = formatMinutesTo12Hour(usableStart + durationMinutes);
+
+      if (candidateStart !== smartNext.startTime && slots.length < limit) {
+        let label = 'Free Gap';
+        if (usableStart < 720) label = '🌅 Morning Slot';
+        else if (usableStart < 1020) label = '☀️ Afternoon Slot';
+        else label = '🌙 Evening Slot';
+
+        slots.push({
+          startTime: candidateStart,
+          endTime: candidateEnd,
+          label,
+          durationMinutes
+        });
+      }
+    }
+  }
+
+  return slots;
+}
 

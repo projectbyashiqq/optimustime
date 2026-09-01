@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useApp } from '../context/AppContext';
 import { 
   Task, 
@@ -15,7 +15,10 @@ import {
   toISODateString, 
   getDayOfWeekFromDate,
   getCurrentRoundedTime12Hour,
-  SHORT_DAYS
+  SHORT_DAYS,
+  getSmartNextFreeSlot,
+  getRecommendedDayFreeSlots,
+  RecommendedSlot
 } from '../utils/timeUtils';
 import { ConflictModal } from './ConflictModal';
 import { TimePicker } from './TimePicker';
@@ -33,13 +36,18 @@ import {
   CheckCircle2, 
   AlertTriangle,
   FileText,
-  CornerDownRight
+  CornerDownRight,
+  Lock,
+  Zap,
+  RotateCcw
 } from 'lucide-react';
 
 interface TaskModalProps {
   taskToEdit?: Task | null;
   initialDate?: string;
   initialStartTime?: string;
+  initialProjectCode?: string;
+  initialCategory?: string;
   onClose: () => void;
 }
 
@@ -47,11 +55,16 @@ export const TaskModal: React.FC<TaskModalProps> = ({
   taskToEdit,
   initialDate,
   initialStartTime,
+  initialProjectCode,
+  initialCategory,
   onClose
 }) => {
   const { 
+    tasks,
     categories, 
     prioritySettings, 
+    planProjects,
+    bufferNotes,
     addTask, 
     updateTask, 
     detectConflicts, 
@@ -62,26 +75,47 @@ export const TaskModal: React.FC<TaskModalProps> = ({
   const isEditing = !!taskToEdit;
 
   // Form State
-  const [projectCode, setProjectCode] = useState(taskToEdit?.projectCode || generateProjectCode());
+  const [projectCode, setProjectCode] = useState(
+    taskToEdit?.projectCode || initialProjectCode || generateProjectCode()
+  );
   const [title, setTitle] = useState(taskToEdit?.title || '');
   const [description, setDescription] = useState(taskToEdit?.description || '');
   const [taskDate, setTaskDate] = useState(taskToEdit?.taskDate || initialDate || toISODateString(new Date()));
   const [priority, setPriority] = useState<PriorityLevel>(taskToEdit?.priority || 'P1');
-  const [category, setCategory] = useState(taskToEdit?.category || categories[0]?.name || 'VRTX');
+  const [category, setCategory] = useState(taskToEdit?.category || initialCategory || categories[0]?.name || 'VRTX');
   const [subCategory, setSubCategory] = useState(taskToEdit?.subCategory || '');
   
   // Mandatory Manual Confirmation tracking for new tasks
   const [hasConfirmedPriority, setHasConfirmedPriority] = useState<boolean>(isEditing);
-  const [hasConfirmedCategory, setHasConfirmedCategory] = useState<boolean>(isEditing);
+  const [hasConfirmedCategory, setHasConfirmedCategory] = useState<boolean>(isEditing || !!initialCategory);
+  
+  // Mandatory Schedule (Fixed/Locked non-reschedulable time slot)
+  const [isMandatorySchedule, setIsMandatorySchedule] = useState<boolean>(taskToEdit?.isMandatorySchedule || false);
+  
+  // Simultaneous execution option (Co-working / Parallel Slot)
+  const [isSimultaneous, setIsSimultaneous] = useState<boolean>(
+    Boolean(taskToEdit?.simultaneousWithIds && taskToEdit.simultaneousWithIds.length > 0)
+  );
+
+  // Plan / Project Folder Grouping
+  const [planProjectId, setPlanProjectId] = useState<string | undefined>(taskToEdit?.planProjectId);
   
   const defaultMin = prioritySettings[taskToEdit?.priority || 'P1']?.defaultMinutes ?? 90;
   const [appointedMinutes, setAppointedMinutes] = useState<number>(taskToEdit?.appointedMinutes ?? defaultMin);
   
-  const defaultStartTime = initialStartTime || getCurrentRoundedTime12Hour(15);
-  const [startTime, setStartTime] = useState<string>(taskToEdit?.startTime || defaultStartTime);
-  const [endTime, setEndTime] = useState<string>(
-    taskToEdit?.endTime || addMinutesToTime(taskToEdit?.startTime || defaultStartTime, taskToEdit?.appointedMinutes ?? defaultMin)
-  );
+  // Smart Next Free Slot Computation on Creation
+  const initialSmartSlot = useMemo(() => {
+    if (taskToEdit) {
+      return { startTime: taskToEdit.startTime, endTime: taskToEdit.endTime };
+    }
+    if (initialStartTime) {
+      return { startTime: initialStartTime, endTime: addMinutesToTime(initialStartTime, defaultMin) };
+    }
+    return getSmartNextFreeSlot(initialDate || toISODateString(new Date()), defaultMin, tasks, bufferNotes);
+  }, [taskToEdit, initialStartTime, initialDate, defaultMin, tasks, bufferNotes]);
+
+  const [startTime, setStartTime] = useState<string>(initialSmartSlot.startTime);
+  const [endTime, setEndTime] = useState<string>(initialSmartSlot.endTime);
   
   const [status, setStatus] = useState<TaskStatus>(taskToEdit?.status || 'Pending');
   const [recurrence, setRecurrence] = useState<RecurrenceType>(taskToEdit?.recurrence || 'None');
@@ -89,13 +123,14 @@ export const TaskModal: React.FC<TaskModalProps> = ({
   const [notes, setNotes] = useState(taskToEdit?.notes || '');
   const [links, setLinks] = useState<TaskLink[]>(taskToEdit?.links || []);
   const [subtasks, setSubtasks] = useState<SubTask[]>(taskToEdit?.subtasks || []);
-  
+
   // Link Input fields
   const [newLinkTitle, setNewLinkTitle] = useState('');
   const [newLinkUrl, setNewLinkUrl] = useState('');
   
   // Subtask Input fields
   const [newSubtaskTitle, setNewSubtaskTitle] = useState('');
+  const [newSubtaskMinutes, setNewSubtaskMinutes] = useState<number>(30);
   
   // Validation state
   const [validationError, setValidationError] = useState<string | null>(null);
@@ -106,6 +141,16 @@ export const TaskModal: React.FC<TaskModalProps> = ({
 
   // Auto calculate day of week
   const dayOfWeek = getDayOfWeekFromDate(taskDate);
+
+  // Recommended candidate free slots across the day
+  const recommendedSlots = useMemo(() => {
+    return getRecommendedDayFreeSlots(taskDate, appointedMinutes, tasks, bufferNotes, taskToEdit?.id);
+  }, [taskDate, appointedMinutes, tasks, bufferNotes, taskToEdit?.id]);
+
+  // Live Overlap / Conflict Intelligence calculation
+  const liveOverlaps = useMemo(() => {
+    return detectConflicts(taskDate, startTime, endTime, taskToEdit?.id);
+  }, [taskDate, startTime, endTime, taskToEdit?.id, detectConflicts]);
 
   // Update subcategories when category changes
   const currentCategoryObj = categories.find(c => c.name === category);
@@ -178,6 +223,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
       title: newSubtaskTitle.trim(),
       isCompleted: false,
       depthLevel: 1,
+      assignedTimeMin: newSubtaskMinutes,
       subtasks: []
     };
     setSubtasks([...subtasks, newSub]);
@@ -204,7 +250,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
       return;
     }
     if (!hasConfirmedCategory) {
-      setValidationError('Please manually click your Category to confirm domain alignment.');
+      setValidationError('Please manually select a Category from the list.');
       return;
     }
     if (!taskDate) {
@@ -217,7 +263,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
     }
     setValidationError(null);
 
-    if (!forceNoConflictCheck) {
+    if (!forceNoConflictCheck && !isSimultaneous) {
       const conflicts = detectConflicts(taskDate, startTime, endTime, taskToEdit?.id);
       if (conflicts.length > 0) {
         setConflictingTasks(conflicts);
@@ -242,11 +288,12 @@ export const TaskModal: React.FC<TaskModalProps> = ({
       bufferMinutes: 15,
       recurrence,
       selectedDays: recurrence === 'Selected Days' ? selectedDays : [],
+      isMandatorySchedule,
+      simultaneousWithIds: isSimultaneous ? liveOverlaps.map(t => t.id) : [],
+      planProjectId: planProjectId || undefined,
       notes,
       links,
-      subtasks,
-      isProject: subtasks.length >= 4 || taskToEdit?.isProject,
-      escalationReason: subtasks.length >= 4 ? 'Auto-Escalated to Project: Contains multiple subtasks' : taskToEdit?.escalationReason
+      subtasks
     };
 
     if (isEditing && taskToEdit) {
@@ -267,6 +314,8 @@ export const TaskModal: React.FC<TaskModalProps> = ({
     // Cascade shift any downstream tasks starting at or after the new start time forward
     cascadeShiftDownstream(taskDate, newCalculatedStartTime, appointedMinutes + 15, taskToEdit?.id);
     setShowConflictModal(false);
+    setStartTime(newCalculatedStartTime);
+    setEndTime(newEnd);
 
     const payload = {
       projectCode: projectCode.trim() || generateProjectCode(),
@@ -284,11 +333,12 @@ export const TaskModal: React.FC<TaskModalProps> = ({
       bufferMinutes: 15,
       recurrence,
       selectedDays: recurrence === 'Selected Days' ? selectedDays : [],
+      isMandatorySchedule,
+      simultaneousWithIds: [],
+      planProjectId: planProjectId || undefined,
       notes,
       links,
-      subtasks,
-      isProject: subtasks.length >= 4 || taskToEdit?.isProject,
-      escalationReason: subtasks.length >= 4 ? 'Auto-Escalated to Project: Contains multiple subtasks' : taskToEdit?.escalationReason
+      subtasks
     };
 
     if (isEditing && taskToEdit) {
@@ -303,13 +353,88 @@ export const TaskModal: React.FC<TaskModalProps> = ({
     onClose();
   };
 
-  // Resolve conflict via Simultaneous
+  // Resolve conflict by enabling Simultaneous mode
   const handleResolveWithSimultaneous = () => {
+    setIsSimultaneous(true);
     setShowConflictModal(false);
-    const saved = handleSave(true);
-    if (conflictingTasks.length > 0 && taskToEdit) {
-      linkSimultaneousTasks(taskToEdit.id, conflictingTasks[0].id);
+
+    const payload = {
+      projectCode: projectCode.trim() || generateProjectCode(),
+      title: title.trim(),
+      description: description.trim(),
+      taskDate,
+      dayOfWeek,
+      priority,
+      category,
+      subCategory,
+      appointedMinutes,
+      startTime,
+      endTime,
+      status,
+      bufferMinutes: 15,
+      recurrence,
+      selectedDays: recurrence === 'Selected Days' ? selectedDays : [],
+      isMandatorySchedule,
+      simultaneousWithIds: conflictingTasks.map(t => t.id),
+      planProjectId: planProjectId || undefined,
+      notes,
+      links,
+      subtasks
+    };
+
+    if (isEditing && taskToEdit) {
+      updateTask({
+        ...taskToEdit,
+        ...payload
+      });
+    } else {
+      addTask(payload);
     }
+
+    onClose();
+  };
+
+  // Resolve conflict by selecting candidate slot
+  const handleResolveWithSelectedSlot = (chosenStart: string) => {
+    const chosenEnd = addMinutesToTime(chosenStart, appointedMinutes);
+    setShowConflictModal(false);
+    setStartTime(chosenStart);
+    setEndTime(chosenEnd);
+
+    const payload = {
+      projectCode: projectCode.trim() || generateProjectCode(),
+      title: title.trim(),
+      description: description.trim(),
+      taskDate,
+      dayOfWeek,
+      priority,
+      category,
+      subCategory,
+      appointedMinutes,
+      startTime: chosenStart,
+      endTime: chosenEnd,
+      status,
+      bufferMinutes: 15,
+      recurrence,
+      selectedDays: recurrence === 'Selected Days' ? selectedDays : [],
+      isMandatorySchedule,
+      simultaneousWithIds: [],
+      planProjectId: planProjectId || undefined,
+      notes,
+      links,
+      subtasks
+    };
+
+    if (isEditing && taskToEdit) {
+      updateTask({
+        ...taskToEdit,
+        ...payload
+      });
+    } else {
+      addTask(payload);
+    }
+
+    onClose();
   };
 
   const priorityMeta = prioritySettings[priority];
@@ -596,9 +721,41 @@ export const TaskModal: React.FC<TaskModalProps> = ({
               )}
             </div>
 
+            {/* Plan / Project Folder Assignment (Task Group) */}
+            <div className="space-y-1.5 p-3.5 rounded-xl bg-theme-card-hover border border-theme-border">
+              <label className="text-[11px] font-bold text-theme-text flex items-center justify-between">
+                <span className="flex items-center gap-1.5">
+                  <Layers className="w-3.5 h-3.5 text-purple-500" />
+                  <span>Plan / Project Folder (Optional Grouping)</span>
+                </span>
+                {planProjectId && (
+                  <button
+                    type="button"
+                    onClick={() => setPlanProjectId(undefined)}
+                    className="text-[10px] text-red-500 hover:underline font-normal"
+                  >
+                    Clear Assignment
+                  </button>
+                )}
+              </label>
+
+              <select
+                value={planProjectId || ''}
+                onChange={(e) => setPlanProjectId(e.target.value || undefined)}
+                className="w-full text-xs px-3 py-2 rounded-xl bg-theme-card border border-theme-border text-theme-text font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="">-- No Plan / Project (Stand-alone Task) --</option>
+                {planProjects.map((folder) => (
+                  <option key={folder.id} value={folder.id}>
+                    {folder.type === 'plan' ? '🎯 [PLAN]' : '💼 [PROJECT]'} {folder.code} • {folder.title} (Deadline: {folder.endDate})
+                  </option>
+                ))}
+              </select>
+            </div>
+
             {/* Date & Time Settings */}
             <div className="space-y-2 p-3.5 rounded-xl bg-theme-card-hover border border-theme-border">
-              {/* Quick Date Click Buttons */}
+              {/* Quick Date Click Buttons & Auto Free Slot Button */}
               <div className="flex items-center justify-between">
                 <label className="text-[11px] font-bold text-theme-text flex items-center gap-1">
                   <Calendar className="w-3.5 h-3.5 text-blue-500" />
@@ -633,6 +790,92 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                   </button>
                 </div>
               </div>
+
+              {/* Recommended Free Time Slot Chips Tray */}
+              <div className="space-y-1.5 p-2 rounded-xl bg-theme-card border border-theme-border/70">
+                <div className="flex items-center justify-between text-[10px] font-bold">
+                  <span className="text-theme-muted flex items-center gap-1 font-sans">
+                    <Sparkles className="w-3 h-3 text-blue-500" />
+                    <span>Free Time Slots on {taskDate}:</span>
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const smart = getSmartNextFreeSlot(taskDate, appointedMinutes, tasks, bufferNotes, taskToEdit?.id);
+                      setStartTime(smart.startTime);
+                      setEndTime(smart.endTime);
+                      setValidationError(null);
+                    }}
+                    className="text-[10px] font-bold text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-1"
+                    title="Auto-calculate next non-overlapping free slot"
+                  >
+                    <RotateCcw className="w-2.5 h-2.5" />
+                    <span>Auto-Fit Next Free Slot</span>
+                  </button>
+                </div>
+
+                <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5">
+                  {recommendedSlots.map((slot, idx) => {
+                    const isSelected = startTime === slot.startTime;
+                    return (
+                      <button
+                        key={idx}
+                        type="button"
+                        onClick={() => {
+                          setStartTime(slot.startTime);
+                          setEndTime(slot.endTime);
+                          setValidationError(null);
+                        }}
+                        className={`px-2.5 py-1 rounded-lg text-[10px] font-bold whitespace-nowrap transition-all border flex items-center gap-1 shrink-0 ${
+                          isSelected
+                            ? 'bg-blue-600 text-white border-blue-600 shadow-sm'
+                            : 'bg-theme-card-hover text-theme-muted hover:text-theme-text border-theme-border hover:border-blue-400'
+                        }`}
+                      >
+                        <span>{slot.label}</span>
+                        <span className="font-mono text-[9px] opacity-80">({slot.startTime} - {slot.endTime})</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Live Slot Conflict / Synchronized Status Banner */}
+              {liveOverlaps.length > 0 && (
+                <div className={`p-2.5 rounded-xl border text-xs font-semibold flex items-center justify-between gap-2 animate-fadeIn ${
+                  isSimultaneous
+                    ? 'bg-purple-50 dark:bg-purple-950/40 border-purple-300 dark:border-purple-800 text-purple-900 dark:text-purple-200'
+                    : 'bg-red-50 dark:bg-red-950/40 border-red-300 dark:border-red-800 text-red-700 dark:text-red-300'
+                }`}>
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    {isSimultaneous ? (
+                      <Zap className="w-4 h-4 text-purple-500 shrink-0" />
+                    ) : (
+                      <AlertTriangle className="w-4 h-4 text-red-500 shrink-0 animate-pulse" />
+                    )}
+                    <span className="truncate text-[11px]">
+                      {isSimultaneous
+                        ? `🔀 Co-running simultaneously with [${liveOverlaps[0].projectCode}] "${liveOverlaps[0].title}" (${liveOverlaps[0].startTime} - ${liveOverlaps[0].endTime})`
+                        : `🚨 Time Overlap with [${liveOverlaps[0].projectCode}] "${liveOverlaps[0].title}" (${liveOverlaps[0].startTime} - ${liveOverlaps[0].endTime}). Enable Simultaneous Mode or pick a Free Slot.`
+                      }
+                    </span>
+                  </div>
+
+                  {!isSimultaneous && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const smart = getSmartNextFreeSlot(taskDate, appointedMinutes, tasks, bufferNotes, taskToEdit?.id);
+                        setStartTime(smart.startTime);
+                        setEndTime(smart.endTime);
+                      }}
+                      className="text-[10px] font-bold px-2 py-0.5 bg-red-600 hover:bg-red-700 text-white rounded-lg shrink-0 shadow-xs whitespace-nowrap"
+                    >
+                      Pick Free Slot
+                    </button>
+                  )}
+                </div>
+              )}
 
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1">
                 <div>
@@ -669,6 +912,78 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                     className="w-full text-xs px-2.5 py-1.5 rounded-lg bg-theme-card border border-theme-border text-theme-text focus:outline-none focus:ring-1 focus:ring-blue-500 font-mono font-bold"
                   />
                 </div>
+              </div>
+
+              {/* Mandatory Schedule Checkbox & Irreplaceable Lock */}
+              <div className={`mt-3 p-3 rounded-xl border transition-all ${
+                isMandatorySchedule
+                  ? 'bg-amber-500/10 border-amber-500/50 dark:border-amber-400/40 shadow-sm ring-1 ring-amber-500/30'
+                  : 'bg-theme-card border-theme-border/80 hover:border-theme-border'
+              }`}>
+                <label className="flex items-start gap-3 cursor-pointer select-none">
+                  <div className="pt-0.5">
+                    <input
+                      type="checkbox"
+                      checked={isMandatorySchedule}
+                      onChange={(e) => setIsMandatorySchedule(e.target.checked)}
+                      className="w-4 h-4 rounded border-amber-400 text-amber-600 focus:ring-amber-500 focus:ring-offset-0 cursor-pointer"
+                    />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-xs font-black text-theme-text flex items-center gap-1.5 font-display">
+                        <Lock className={`w-3.5 h-3.5 ${isMandatorySchedule ? 'text-amber-600 dark:text-amber-400' : 'text-theme-muted'}`} />
+                        Mandatory Schedule (Fixed Time Protocol)
+                      </span>
+                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                        isMandatorySchedule
+                          ? 'bg-amber-100 text-amber-900 dark:bg-amber-950 dark:text-amber-200 border border-amber-300 dark:border-amber-800 font-mono'
+                          : 'bg-theme-card-hover text-theme-muted border border-theme-border font-mono'
+                      }`}>
+                        {isMandatorySchedule ? '🔒 Locked • Irreplaceable' : 'Flexible / Shiftable'}
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-theme-muted mt-1 leading-snug">
+                      Guarantees this event cannot be replaced, rescheduled, auto-shifted by cascading downstream delays, or displaced by emergency buffers.
+                    </p>
+                  </div>
+                </label>
+              </div>
+
+              {/* Simultaneous Execution Checkbox (Parallel Execution Slot) */}
+              <div className={`mt-2 p-3 rounded-xl border transition-all ${
+                isSimultaneous
+                  ? 'bg-purple-500/10 border-purple-500/50 dark:border-purple-400/40 shadow-sm ring-1 ring-purple-500/30'
+                  : 'bg-theme-card border-theme-border/80 hover:border-theme-border'
+              }`}>
+                <label className="flex items-start gap-3 cursor-pointer select-none">
+                  <div className="pt-0.5">
+                    <input
+                      type="checkbox"
+                      checked={isSimultaneous}
+                      onChange={(e) => setIsSimultaneous(e.target.checked)}
+                      className="w-4 h-4 rounded border-purple-400 text-purple-600 focus:ring-purple-500 focus:ring-offset-0 cursor-pointer"
+                    />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-xs font-black text-theme-text flex items-center gap-1.5 font-display">
+                        <Zap className={`w-3.5 h-3.5 ${isSimultaneous ? 'text-purple-600 dark:text-purple-400' : 'text-theme-muted'}`} />
+                        Run Simultaneously (Co-Working / Parallel Slot)
+                      </span>
+                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                        isSimultaneous
+                          ? 'bg-purple-100 text-purple-900 dark:bg-purple-950 dark:text-purple-200 border border-purple-300 dark:border-purple-800 font-mono'
+                          : 'bg-theme-card-hover text-theme-muted border border-theme-border font-mono'
+                      }`}>
+                        {isSimultaneous ? '🔀 Simultaneous Active' : 'Sequential Strict Sync'}
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-theme-muted mt-1 leading-snug">
+                      Allows this task to run concurrently alongside other scheduled tasks during the same time window. If unselected, overlapping tasks cannot be scheduled without conflict resolution.
+                    </p>
+                  </div>
+                </label>
               </div>
             </div>
 
@@ -737,29 +1052,41 @@ export const TaskModal: React.FC<TaskModalProps> = ({
               </div>
             )}
 
-            {/* Sub-tasks & Multi-level Escalation */}
-            <div className="space-y-2 pt-1 border-t border-theme-border">
+            {/* Sub-tasks & Checklist Breakdown */}
+            <div className="space-y-3 pt-2 border-t border-theme-border">
               <div className="flex items-center justify-between">
                 <label className="text-xs font-bold text-theme-text flex items-center gap-1.5">
-                  <Layers className="w-3.5 h-3.5 text-purple-500" />
-                  Sub-tasks & Multi-Level Project Escalation
+                  <Layers className="w-3.5 h-3.5 text-blue-500" />
+                  Sub-tasks & Checklist
                 </label>
-                {subtasks.length >= 4 && (
-                  <span className="text-[10px] font-bold px-2 py-0.5 bg-purple-100 dark:bg-purple-950 text-purple-700 dark:text-purple-300 rounded-full flex items-center gap-1">
-                    <Sparkles className="w-3 h-3" /> Auto-Escalating to Project
+                {subtasks.length > 0 && (
+                  <span className="text-[10px] font-bold px-2 py-0.5 bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-300 rounded-full">
+                    {subtasks.length} {subtasks.length === 1 ? 'item' : 'items'}
                   </span>
                 )}
               </div>
 
+              {/* Sub-tasks entry bar with duration selector */}
               <div className="flex gap-2">
                 <input
                   type="text"
-                  placeholder="Add sub-task..."
+                  placeholder="Add deliverable or sub-task..."
                   value={newSubtaskTitle}
                   onChange={(e) => setNewSubtaskTitle(e.target.value)}
                   onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleAddSubtask(); } }}
                   className="flex-1 text-xs px-3 py-1.5 rounded-lg bg-theme-card-hover border border-theme-border text-theme-text focus:outline-none focus:ring-1 focus:ring-blue-500"
                 />
+                <select
+                  value={newSubtaskMinutes}
+                  onChange={(e) => setNewSubtaskMinutes(Number(e.target.value))}
+                  className="text-xs px-2 py-1.5 rounded-lg bg-theme-card-hover border border-theme-border text-theme-text font-bold"
+                >
+                  <option value={15}>15m</option>
+                  <option value={30}>30m</option>
+                  <option value={45}>45m</option>
+                  <option value={60}>60m</option>
+                  <option value={90}>90m</option>
+                </select>
                 <button
                   type="button"
                   onClick={handleAddSubtask}
@@ -771,20 +1098,25 @@ export const TaskModal: React.FC<TaskModalProps> = ({
               </div>
 
               {subtasks.length > 0 && (
-                <div className="space-y-1.5 mt-2 bg-theme-card-hover p-2.5 rounded-xl border border-theme-border max-h-32 overflow-y-auto">
+                <div className="space-y-1.5 mt-2 bg-theme-card-hover p-2.5 rounded-xl border border-theme-border max-h-36 overflow-y-auto">
                   {subtasks.map((st, idx) => (
-                    <div key={st.id || idx} className="flex items-center justify-between text-xs py-1 px-2 rounded-lg bg-theme-card border border-theme-border">
+                    <div key={st.id || idx} className="flex items-center justify-between text-xs py-1.5 px-2.5 rounded-lg bg-theme-card border border-theme-border">
                       <span className="text-theme-text font-medium flex items-center gap-1.5">
                         <CornerDownRight className="w-3 h-3 text-purple-500" />
                         {st.title}
                       </span>
-                      <button
-                        type="button"
-                        onClick={() => setSubtasks(subtasks.filter((_, i) => i !== idx))}
-                        className="text-red-500 hover:text-red-700 p-0.5"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] font-mono font-bold text-theme-muted bg-theme-card-hover px-1.5 py-0.5 rounded border border-theme-border">
+                          {st.assignedTimeMin || 30}m
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => setSubtasks(subtasks.filter((_, i) => i !== idx))}
+                          className="text-rose-500 hover:text-rose-700 p-0.5"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -888,8 +1220,10 @@ export const TaskModal: React.FC<TaskModalProps> = ({
           conflictingTasks={conflictingTasks}
           pendingTaskTitle={title || 'New Task'}
           appointedMinutes={appointedMinutes}
+          candidateSlots={recommendedSlots}
           onAutoShift={handleResolveWithAutoShift}
           onSimultaneous={handleResolveWithSimultaneous}
+          onSelectSlot={handleResolveWithSelectedSlot}
           onCancel={() => setShowConflictModal(false)}
         />
       )}

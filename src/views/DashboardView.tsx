@@ -5,13 +5,16 @@ import {
   findScheduleGaps, 
   toISODateString, 
   getDayOfWeekFromDate, 
-  parse12HourToMinutes,
-  addMinutesToTime,
-  isTaskScheduledForDate,
-  TimeGap,
-  isTaskInRunningSlot,
-  isTaskPastDue,
-  findSimultaneousTasks
+  parse12HourToMinutes, 
+  addMinutesToTime, 
+  isTaskScheduledForDate, 
+  TimeGap, 
+  isTaskInRunningSlot, 
+  isTaskPastDue, 
+  findSimultaneousTasks, 
+  getTaskTitleClasses,
+  getBufferActivityEmoji,
+  getBufferActivityColor
 } from '../utils/timeUtils';
 import { 
   Play, 
@@ -24,27 +27,35 @@ import {
   Calendar, 
   Flame, 
   Sparkles, 
-  ArrowRight,
-  ExternalLink,
-  Edit2,
-  Trash2,
-  Check,
-  ChevronDown,
-  ChevronUp,
-  Info,
-  Timer,
-  Hourglass,
-  Activity,
-  X,
-  Bell,
-  RotateCcw,
-  Zap
+  ArrowRight, 
+  ExternalLink, 
+  Edit2, 
+  Trash2, 
+  Check, 
+  ChevronDown, 
+  ChevronUp, 
+  Info, 
+  Timer, 
+  Hourglass, 
+  Activity, 
+  X, 
+  Bell, 
+  RotateCcw, 
+  Zap,
+  Coffee,
+  Repeat,
+  ShieldAlert,
+  Lock
 } from 'lucide-react';
 import { RescheduleModal } from '../components/RescheduleModal';
+import { RecurringManagerModal } from '../components/RecurringManagerModal';
+import { ListTodo, CalendarDays, Grid3X3, Table as TableIcon } from 'lucide-react';
 
 interface DashboardViewProps {
   onOpenTaskModal: (task?: Task, date?: string, startTime?: string) => void;
 }
+
+export type DashboardMode = 'time' | 'priority';
 
 export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal }) => {
   const { 
@@ -57,25 +68,37 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
     completeTask, 
     updateTask,
     deleteTask,
+    requestDeleteTask,
     detectConflicts,
     searchQuery,
     selectedCategoryFilter,
     setSelectedCategoryFilter,
     dailyScheduledMinutes,
-    isCapacityRedLineExceeded
+    isCapacityRedLineExceeded,
+    bufferNotes,
+    openBufferNoteModal,
+    deleteBufferNote,
+    activeBufferPrompt,
+    setActiveBufferPrompt,
+    openEmergencyModal,
+    setActiveTab
   } = useApp();
 
+  const [dashboardMode, setDashboardMode] = useState<DashboardMode>('time');
   const [selectedDate, setSelectedDate] = useState<string>(toISODateString(new Date()));
-  const [priorityFilter, setPriorityFilter] = useState<PriorityLevel | 'ALL'>('ALL');
-  const [statusFilter, setStatusFilter] = useState<TaskStatus | 'ALL'>('ALL');
   const [showPriorityBacklog, setShowPriorityBacklog] = useState(false);
   const [showCompletedSection, setShowCompletedSection] = useState(true);
   const [reschedulingTask, setReschedulingTask] = useState<Task | null>(null);
+  const [isRecurringHubOpen, setIsRecurringHubOpen] = useState(false);
   const [nowTime, setNowTime] = useState<Date>(new Date());
 
   // Status Change Handler with Smart Reschedule interceptor
   const handleStatusChange = (task: Task, newStatus: TaskStatus) => {
     if (newStatus === 'Reschedule') {
+      if (task.isMandatorySchedule) {
+        alert(`🔒 Mandatory Schedule: "${task.title}" is a locked fixed event and cannot be rescheduled.`);
+        return;
+      }
       setReschedulingTask(task);
       return;
     }
@@ -150,8 +173,6 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
   // Filter tasks for selected date (including Daily, Selected Days, Weekly, Monthly, Yearly recurrence)
   const dateTasks = tasks.filter(t => {
     if (!isTaskScheduledForDate(t, selectedDate)) return false;
-    if (priorityFilter !== 'ALL' && t.priority !== priorityFilter) return false;
-    if (statusFilter !== 'ALL' && t.status !== statusFilter) return false;
     if (selectedCategoryFilter && t.category !== selectedCategoryFilter) return false;
     if (searchQuery) {
       const q = searchQuery.toLowerCase();
@@ -170,8 +191,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
       return aIncomplete ? 1 : -1;
     }
 
-    // 2. When both are Incompleted, auto sort Priority-based (P1 -> P2 -> P3 -> P4 -> P5)
-    if (aIncomplete && bIncomplete) {
+    // 2. Priority-Based Mode: Strictly order by Priority (P1 -> P2 -> P3 -> P4 -> P5), then by time
+    if (dashboardMode === 'priority') {
       const pWeight: Record<PriorityLevel, number> = { P1: 1, P2: 2, P3: 3, P4: 4, P5: 5 };
       if (pWeight[a.priority] !== pWeight[b.priority]) {
         return pWeight[a.priority] - pWeight[b.priority];
@@ -179,103 +200,210 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
       return parse12HourToMinutes(a.startTime) - parse12HourToMinutes(b.startTime);
     }
 
-    // 3. Active scheduled tasks: Naturally sorted Time-wise (by startTime)
+    // 3. Time-Based Mode (Default): Strictly order chronologically by startTime
     return parse12HourToMinutes(a.startTime) - parse12HourToMinutes(b.startTime);
   });
 
-  // Find Gaps in today's schedule
+  // Find Gaps in today's schedule (automatically adjusted when buffer notes & post-task buffers are present)
   const gaps: TimeGap[] = findScheduleGaps(
     tasks.filter(t => isTaskScheduledForDate(t, selectedDate)),
     capacitySettings.dayStartTime,
-    capacitySettings.dayEndTime
+    capacitySettings.dayEndTime,
+    bufferNotes.filter(n => n.date === selectedDate)
   );
 
   return (
-    <div className="space-y-6 animate-fade-in">
+    <div className="space-y-4 animate-fade-in">
       
-      {/* Date Bar & High-Level Metrics */}
-      <div className="glass-panel p-4 sm:p-5 rounded-2xl flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+      {/* Sleek Compact Top Bar: Single-Row Optimized */}
+      <div className="glass-panel px-3 py-2 rounded-2xl flex items-center justify-between gap-2 border border-theme-border shadow-sm overflow-x-auto no-scrollbar">
         
-        {/* Date Selector */}
-        <div className="flex items-center gap-3">
-          <div className="p-2.5 rounded-xl bg-blue-100 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400">
-            <Calendar className="w-5 h-5" />
+        {/* Left Side: Date Selector, Quick Chips & Action */}
+        <div className="flex items-center gap-1.5 shrink-0">
+          <div className="flex items-center gap-1.5 bg-theme-card-hover px-2 py-1 rounded-xl border border-theme-border">
+            <Calendar className="w-3.5 h-3.5 text-blue-500 shrink-0" />
+            <input
+              type="date"
+              value={selectedDate}
+              onChange={(e) => setSelectedDate(e.target.value)}
+              className="font-bold text-xs text-theme-text bg-transparent focus:outline-none cursor-pointer"
+            />
+            <span className="text-[9px] font-bold px-1 py-0.2 rounded bg-theme-card text-theme-muted border border-theme-border font-mono">
+              {dayOfWeek.slice(0, 3)}
+            </span>
           </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <input
-                type="date"
-                value={selectedDate}
-                onChange={(e) => setSelectedDate(e.target.value)}
-                className="font-bold text-sm sm:text-base text-theme-text bg-transparent focus:outline-none cursor-pointer"
-              />
-              <span className="text-xs px-2 py-0.5 rounded-full bg-theme-card-hover font-semibold text-theme-muted border border-theme-border">
-                {dayOfWeek}
-              </span>
-            </div>
-            <p className="text-xs text-theme-muted">
-              {dateTasks.length} Scheduled Tasks • {Math.floor(scheduledMinutes / 60)}h {scheduledMinutes % 60}m Allocated
-            </p>
-          </div>
-        </div>
 
-        {/* Action & Toggle Buttons */}
-        <div className="flex items-center gap-2 flex-wrap">
-          
+          <div className="flex items-center gap-0.5">
+            <button
+              onClick={() => {
+                const d = new Date();
+                setSelectedDate(toISODateString(d));
+              }}
+              className={`px-2 py-1 rounded-xl text-xs font-bold transition-all ${
+                selectedDate === toISODateString(new Date())
+                  ? 'bg-blue-600 text-white shadow-sm'
+                  : 'bg-theme-card-hover text-theme-muted hover:text-theme-text border border-theme-border'
+              }`}
+            >
+              Today
+            </button>
+
+            <button
+              onClick={() => {
+                const d = new Date();
+                d.setDate(d.getDate() + 1);
+                setSelectedDate(toISODateString(d));
+              }}
+              className="px-2 py-1 rounded-xl text-xs font-semibold bg-theme-card-hover text-theme-muted hover:text-theme-text border border-theme-border transition-colors"
+            >
+              Tomorrow
+            </button>
+          </div>
+
           {/* Priority Backlog Toggle Button */}
           <button
             onClick={() => setShowPriorityBacklog(!showPriorityBacklog)}
-            className={`flex items-center gap-2 px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all shadow-sm ${
+            className={`flex items-center gap-1 px-2 py-1 rounded-xl text-xs font-bold transition-all shadow-sm ${
               showPriorityBacklog
-                ? 'bg-gradient-to-r from-red-500 to-amber-500 text-white ring-2 ring-red-400/40'
+                ? 'bg-gradient-to-r from-red-500 to-amber-500 text-white ring-1 ring-red-400/40'
                 : 'bg-theme-card-hover text-theme-text hover:bg-theme-border border border-theme-border'
             }`}
-            title="Toggle Priority-Based Incomplete / Hold Tasks"
+            title="Toggle Priority Queue"
           >
-            <Flame className={`w-4 h-4 ${showPriorityBacklog ? 'text-white' : 'text-red-500'}`} />
-            <span>Priority Queue (Incomplete / Hold)</span>
-            <span className={`text-[10px] font-black px-1.5 py-0.2 rounded-full ${
+            <Flame className={`w-3.5 h-3.5 ${showPriorityBacklog ? 'text-white' : 'text-red-500'}`} />
+            <span className="hidden md:inline">Priority Queue</span>
+            <span className={`text-[9px] font-black px-1.5 py-0.2 rounded-full ${
               showPriorityBacklog ? 'bg-white/25 text-white' : 'bg-red-100 dark:bg-red-950 text-red-800 dark:text-red-300'
             }`}>
               {priorityBacklogTasks.length}
             </span>
           </button>
 
+          {/* Recurring Hub Button */}
           <button
-            onClick={() => {
-              const d = new Date();
-              setSelectedDate(toISODateString(d));
-            }}
-            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
-              selectedDate === toISODateString(new Date())
-                ? 'bg-blue-600 text-white shadow-sm'
-                : 'bg-theme-card-hover text-theme-muted hover:bg-theme-border border border-theme-border'
-            }`}
+            onClick={() => setIsRecurringHubOpen(true)}
+            className="flex items-center gap-1 px-2 py-1 rounded-xl text-xs font-bold bg-theme-card-hover text-theme-muted hover:text-theme-text border border-theme-border transition-colors"
+            title="Manage All Recurring Tasks & Schedules"
           >
-            Today
+            <Repeat className="w-3.5 h-3.5 text-indigo-500" />
+            <span className="hidden md:inline">Recurring Hub</span>
+            <span className="text-[9px] font-black px-1.5 py-0.2 rounded-full bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-300">
+              {tasks.filter(t => t.recurrence && t.recurrence !== 'None').length}
+            </span>
           </button>
 
+          {/* + Buffer Note Button */}
           <button
-            onClick={() => {
-              const d = new Date();
-              d.setDate(d.getDate() + 1);
-              setSelectedDate(toISODateString(d));
-            }}
-            className="px-3 py-1.5 rounded-xl text-xs font-semibold bg-theme-card-hover text-theme-muted hover:bg-theme-border border border-theme-border transition-colors"
+            onClick={() => openBufferNoteModal({ date: selectedDate })}
+            className="flex items-center gap-1 px-2 py-1 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white rounded-xl shadow-sm transition-all transform active:scale-95 shrink-0"
+            title="Log Buffer Note / Free Time"
           >
-            Tomorrow
+            <Plus className="w-3 h-3 stroke-[3]" />
+            <Coffee className="w-3.5 h-3.5" />
           </button>
+
+          {/* + Emergency Sign Button */}
+          <button
+            onClick={() => openEmergencyModal({ date: selectedDate })}
+            className="flex items-center gap-1 px-2 py-1 bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-700 hover:to-rose-700 text-white rounded-xl shadow-sm shadow-red-500/25 transition-all transform active:scale-95 shrink-0"
+            title="🚨 Emergency BUFFER (Loadshedding, Illness, Crisis) & Reschedule Day"
+          >
+            <Plus className="w-3 h-3 stroke-[3]" />
+            <ShieldAlert className="w-3.5 h-3.5 stroke-[2.5]" />
+          </button>
+        </div>
+
+        {/* Right Side: Mode Switcher & Primary Schedule CTA */}
+        <div className="flex items-center gap-2 shrink-0">
+          <div className="flex items-center gap-0.5 p-0.5 bg-theme-card-hover rounded-xl border border-theme-border shadow-inner">
+            <button
+              onClick={() => setDashboardMode('time')}
+              className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold transition-all ${
+                dashboardMode === 'time'
+                  ? 'bg-blue-600 text-white shadow-sm shadow-blue-500/30'
+                  : 'text-theme-muted hover:text-theme-text hover:bg-theme-card/50'
+              }`}
+              title="Time-Based Chronological Sequence (Default)"
+            >
+              <Clock className="w-3.5 h-3.5" />
+              <span>Time based</span>
+            </button>
+
+            <button
+              onClick={() => setDashboardMode('priority')}
+              className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold transition-all ${
+                dashboardMode === 'priority'
+                  ? 'bg-blue-600 text-white shadow-sm shadow-blue-500/30'
+                  : 'text-theme-muted hover:text-theme-text hover:bg-theme-card/50'
+              }`}
+              title="Priority-Based Ordering (P1 Must-Do to P5 Noise)"
+            >
+              <Flame className="w-3.5 h-3.5" />
+              <span>Priority Based</span>
+            </button>
+          </div>
 
           <button
             onClick={() => onOpenTaskModal(undefined, selectedDate)}
-            className="flex items-center gap-1 px-3.5 py-1.5 bg-gradient-to-r from-blue-600 to-sky-500 hover:from-blue-700 hover:to-sky-600 text-white text-xs font-bold rounded-xl shadow-sm transition-all"
+            className="flex items-center gap-1 px-3 py-1.5 bg-gradient-to-r from-blue-600 to-sky-500 hover:from-blue-700 hover:to-sky-600 text-white text-xs font-bold rounded-xl shadow-sm transition-all transform active:scale-95 whitespace-nowrap"
           >
-            <Plus className="w-4 h-4" />
-            <span>Schedule Task</span>
+            <Plus className="w-3.5 h-3.5 stroke-[3]" />
+            <span>Schedule</span>
           </button>
         </div>
 
       </div>
+
+      {/* Active Post-Task Buffer Prompt Banner */}
+      {activeBufferPrompt && (
+        <div className="glass-panel p-4 rounded-2xl border-2 border-amber-400 dark:border-amber-600 bg-amber-50/90 dark:bg-amber-950/50 shadow-xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 animate-slide-up">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-2xl bg-amber-500 text-white flex items-center justify-center text-lg shadow-md shadow-amber-500/25 shrink-0">
+              ☕
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h4 className="text-sm font-black text-amber-950 dark:text-amber-100 font-display">
+                  ⚡ Free-Time Buffer Active ({activeBufferPrompt.startTime} - {activeBufferPrompt.endTime} • {activeBufferPrompt.durationMinutes}m)
+                </h4>
+                <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-amber-200 dark:bg-amber-900 text-amber-900 dark:text-amber-200 animate-pulse">
+                  24H Tracker
+                </span>
+              </div>
+              <p className="text-xs text-amber-800/90 dark:text-amber-300/90 font-medium">
+                What did you do during this free buffer time? Log notes to keep your 24 hours 100% on track.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 self-end sm:self-auto">
+            <button
+              onClick={() => {
+                openBufferNoteModal({
+                  date: activeBufferPrompt.date,
+                  startTime: activeBufferPrompt.startTime,
+                  endTime: activeBufferPrompt.endTime,
+                  durationMinutes: activeBufferPrompt.durationMinutes,
+                  relatedTaskId: activeBufferPrompt.relatedTaskId,
+                  relatedTaskTitle: activeBufferPrompt.relatedTaskTitle
+                });
+                setActiveBufferPrompt(null);
+              }}
+              className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-black shadow-md shadow-amber-600/25 transition-all transform active:scale-95"
+            >
+              <Coffee className="w-3.5 h-3.5" />
+              <span>Log Buffer Note</span>
+            </button>
+            <button
+              onClick={() => setActiveBufferPrompt(null)}
+              className="p-2 rounded-xl hover:bg-amber-200/50 dark:hover:bg-amber-900/50 text-amber-800 dark:text-amber-300 text-xs font-bold"
+              title="Dismiss Prompt"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Priority-Based Backlog & Queue Panel */}
       {showPriorityBacklog && (
@@ -420,67 +548,6 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
           )}
         </div>
       )}
-
-      {/* Priority & Category Filtering Bar */}
-      <div className="flex items-center justify-between gap-3 overflow-x-auto pb-1 no-scrollbar">
-        <div className="flex items-center gap-1.5">
-          <span className="text-xs font-bold text-theme-muted uppercase tracking-wider mr-1">
-            Priority:
-          </span>
-          <button
-            onClick={() => setPriorityFilter('ALL')}
-            className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-colors ${
-              priorityFilter === 'ALL'
-                ? 'bg-theme-text text-theme-bg shadow-sm'
-                : 'bg-theme-card text-theme-muted hover:bg-theme-card-hover border border-theme-border'
-            }`}
-          >
-            All
-          </button>
-          {(['P1', 'P2', 'P3', 'P4', 'P5'] as PriorityLevel[]).map((p) => {
-            const meta = prioritySettings[p];
-            const isSel = priorityFilter === p;
-            return (
-              <button
-                key={p}
-                onClick={() => setPriorityFilter(isSel ? 'ALL' : p)}
-                className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all border ${
-                  isSel
-                    ? 'shadow-sm'
-                    : 'border-theme-border bg-theme-card text-theme-muted hover:bg-theme-card-hover'
-                }`}
-                style={{
-                  backgroundColor: isSel ? meta.bgColor : undefined,
-                  borderColor: isSel ? meta.color : undefined,
-                  color: isSel ? meta.color : undefined
-                }}
-              >
-                {p}
-              </button>
-            );
-          })}
-        </div>
-
-        {/* Status Filter */}
-        <div className="flex items-center gap-1.5">
-          <span className="text-xs font-bold text-theme-muted uppercase tracking-wider mr-1">
-            Status:
-          </span>
-          {(['ALL', 'Pending', 'Working', 'Done', 'Incomplete'] as const).map((st) => (
-            <button
-              key={st}
-              onClick={() => setStatusFilter(st)}
-              className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-colors ${
-                statusFilter === st
-                  ? 'bg-blue-600 text-white'
-                  : 'bg-theme-card text-theme-muted hover:bg-theme-card-hover border border-theme-border'
-              }`}
-            >
-              {st}
-            </button>
-          ))}
-        </div>
-      </div>
 
       {/* Main Grid: Tasks Timeline & Gap Finder */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -645,10 +712,21 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
                               
                               {/* Priority Badge */}
                               <div
-                                className="px-2 py-1 rounded-lg text-center font-black text-xs min-w-[42px] shrink-0"
-                                style={{ backgroundColor: priorityMeta?.bgColor, color: priorityMeta?.color }}
+                                className={`px-2.5 py-1.5 rounded-xl text-center font-black text-xs sm:text-sm min-w-[48px] shrink-0 flex items-center justify-center transition-all ${
+                                  task.priority === 'P1'
+                                    ? 'bg-gradient-to-tr from-rose-600 via-red-500 to-amber-400 text-white shadow-lg shadow-red-500/50 ring-2 ring-red-400/80 border border-red-300 dark:border-red-400 animate-pulse font-display'
+                                    : 'font-mono'
+                                }`}
+                                style={task.priority === 'P1' ? undefined : { backgroundColor: priorityMeta?.bgColor, color: priorityMeta?.color }}
                               >
-                                {task.priority}
+                                {task.priority === 'P1' ? (
+                                  <span className="flex items-center gap-0.5 tracking-tight font-black">
+                                    <Sparkles className="w-3 h-3 text-yellow-200 fill-yellow-200" />
+                                    <span>P1</span>
+                                  </span>
+                                ) : (
+                                  <span>{task.priority}</span>
+                                )}
                               </div>
 
                               <div className="space-y-1 flex-1">
@@ -668,9 +746,14 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
                                     {task.subCategory ? ` / ${task.subCategory}` : ''}
                                   </span>
 
-                                  {task.isProject && (
-                                    <span className="text-[10px] font-bold px-1.5 py-0.5 bg-purple-100 dark:bg-purple-950 text-purple-700 dark:text-purple-300 rounded flex items-center gap-1">
-                                      <Sparkles className="w-2.5 h-2.5" /> Project
+                                  {/* Mandatory / Fixed Schedule Badge */}
+                                  {task.isMandatorySchedule && (
+                                    <span 
+                                      className="text-[10px] font-black px-2 py-0.5 bg-amber-100 dark:bg-amber-950/80 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-700/80 rounded-full flex items-center gap-1 shadow-sm"
+                                      title="Mandatory Fixed Schedule: Cannot be rescheduled, auto-shifted, or displaced"
+                                    >
+                                      <Lock className="w-2.5 h-2.5 text-amber-600 dark:text-amber-400" />
+                                      <span>MANDATORY FIXED</span>
                                     </span>
                                   )}
 
@@ -708,10 +791,15 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
                                   )}
                                 </div>
 
-                                {/* Task Title (Google Open Sans Bold) */}
-                                <h4 className="text-base sm:text-lg font-bold tracking-tight text-theme-text font-openSans leading-snug">
-                                  {task.title}
-                                </h4>
+                                {/* Task Title (Auto-scaled dynamic typography) + Appointed Duration */}
+                                <div className="flex items-baseline gap-2 flex-wrap">
+                                  <h4 className={getTaskTitleClasses(task.title, task.status === 'Done')}>
+                                    {task.title}
+                                  </h4>
+                                  <span className="font-mono text-xs font-bold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/60 px-2 py-0.5 rounded-md border border-blue-200 dark:border-blue-900/60 shadow-2xs">
+                                    ~{task.appointedMinutes}m
+                                  </span>
+                                </div>
 
                                 {/* Simultaneous Co-Running Twin Details */}
                                 {isSimultaneous && (
@@ -846,13 +934,23 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
                                 </button>
                               )}
 
-                              <button
-                                onClick={() => setReschedulingTask(task)}
-                                className="p-1.5 rounded-lg hover:bg-purple-50 dark:hover:bg-purple-950/40 text-theme-muted hover:text-purple-600 transition-colors"
-                                title="Reschedule Task / Find Slot"
-                              >
-                                <RotateCcw className="w-3.5 h-3.5" />
-                              </button>
+                              {task.isMandatorySchedule ? (
+                                <button
+                                  disabled
+                                  className="p-1.5 rounded-lg opacity-40 text-theme-muted cursor-not-allowed"
+                                  title="🔒 Mandatory Schedule: Locked & Non-Reschedulable"
+                                >
+                                  <Lock className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
+                                </button>
+                              ) : (
+                                <button
+                                  onClick={() => setReschedulingTask(task)}
+                                  className="p-1.5 rounded-lg hover:bg-purple-50 dark:hover:bg-purple-950/40 text-theme-muted hover:text-purple-600 transition-colors"
+                                  title="Reschedule Task / Find Slot"
+                                >
+                                  <RotateCcw className="w-3.5 h-3.5" />
+                                </button>
+                              )}
 
                               <button
                                 onClick={() => onOpenTaskModal(task)}
@@ -863,9 +961,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
                               </button>
 
                               <button
-                                onClick={() => deleteTask(task.id)}
+                                onClick={() => requestDeleteTask(task, selectedDate)}
                                 className="p-1.5 rounded-lg hover:bg-red-50 dark:hover:bg-red-950/40 text-theme-muted hover:text-red-500 transition-colors"
-                                title="Delete Task"
+                                title="Delete Task / Occurrence"
                               >
                                 <Trash2 className="w-3.5 h-3.5" />
                               </button>
@@ -919,10 +1017,21 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
                               <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
                                 <div className="flex items-start gap-3 flex-1">
                                   <div
-                                    className="px-2 py-1 rounded-lg text-center font-black text-xs min-w-[42px] shrink-0"
-                                    style={{ backgroundColor: priorityMeta?.bgColor, color: priorityMeta?.color }}
+                                    className={`px-2.5 py-1.5 rounded-xl text-center font-black text-xs sm:text-sm min-w-[48px] shrink-0 flex items-center justify-center transition-all ${
+                                      task.priority === 'P1'
+                                        ? 'bg-gradient-to-tr from-rose-600 via-red-500 to-amber-400 text-white shadow-md shadow-red-500/40 ring-1 ring-red-400/60 font-display'
+                                        : 'font-mono'
+                                    }`}
+                                    style={task.priority === 'P1' ? undefined : { backgroundColor: priorityMeta?.bgColor, color: priorityMeta?.color }}
                                   >
-                                    {task.priority}
+                                    {task.priority === 'P1' ? (
+                                      <span className="flex items-center gap-0.5 tracking-tight font-black">
+                                        <Sparkles className="w-3 h-3 text-yellow-200 fill-yellow-200" />
+                                        <span>P1</span>
+                                      </span>
+                                    ) : (
+                                      <span>{task.priority}</span>
+                                    )}
                                   </div>
 
                                   <div className="space-y-1 flex-1">
@@ -946,9 +1055,14 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
                                       </span>
                                     </div>
 
-                                    <h4 className="text-base font-bold text-theme-muted line-through font-openSans leading-snug">
-                                      {task.title}
-                                    </h4>
+                                    <div className="flex items-baseline gap-2 flex-wrap">
+                                      <h4 className="text-base font-bold text-theme-muted line-through font-openSans leading-snug">
+                                        {task.title}
+                                      </h4>
+                                      <span className="font-mono text-xs font-semibold text-theme-muted bg-theme-card-hover px-2 py-0.5 rounded border border-theme-border">
+                                        ~{task.appointedMinutes}m
+                                      </span>
+                                    </div>
 
                                     {isDone ? (
                                       <div className="text-[11px] font-mono text-emerald-600 dark:text-emerald-400 font-semibold flex items-center gap-1">
@@ -980,9 +1094,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
                                     <Edit2 className="w-3.5 h-3.5" />
                                   </button>
                                   <button
-                                    onClick={() => deleteTask(task.id)}
+                                    onClick={() => requestDeleteTask(task, selectedDate)}
                                     className="p-1.5 rounded-lg hover:bg-red-50 dark:hover:bg-red-950/40 text-theme-muted hover:text-red-500"
-                                    title="Delete Task"
+                                    title="Delete Task / Occurrence"
                                   >
                                     <Trash2 className="w-3.5 h-3.5" />
                                   </button>
@@ -1026,10 +1140,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
             ) : (
               <div className="space-y-2">
                 {gaps.map((gap, idx) => (
-                  <button
+                  <div
                     key={idx}
-                    onClick={() => onOpenTaskModal(undefined, selectedDate, gap.startTime)}
-                    className="w-full p-3 rounded-xl border border-dashed border-blue-300 dark:border-blue-800 bg-blue-50/40 dark:bg-blue-950/20 hover:bg-blue-100/60 dark:hover:bg-blue-900/30 transition-all text-left group flex items-center justify-between"
+                    className="w-full p-3 rounded-xl border border-dashed border-blue-300 dark:border-blue-800 bg-blue-50/40 dark:bg-blue-950/20 hover:bg-blue-100/60 dark:hover:bg-blue-900/30 transition-all flex items-center justify-between gap-2"
                   >
                     <div>
                       <div className="flex items-center gap-2 font-mono text-xs font-bold text-blue-700 dark:text-blue-300">
@@ -1040,11 +1153,92 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
                         Available Duration: <strong>{gap.durationMinutes} min</strong>
                       </span>
                     </div>
-                    <div className="w-7 h-7 rounded-lg bg-blue-600 text-white flex items-center justify-center shadow-sm group-hover:scale-110 transition-transform">
-                      <Plus className="w-4 h-4" />
+
+                    <div className="flex items-center gap-1">
+                      <button
+                        onClick={() => openBufferNoteModal({
+                          date: selectedDate,
+                          startTime: gap.startTime,
+                          endTime: gap.endTime,
+                          durationMinutes: gap.durationMinutes
+                        })}
+                        className="p-1.5 rounded-lg bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold shadow-sm transition-transform active:scale-95 flex items-center gap-1"
+                        title="Log what you did during this free time"
+                      >
+                        <Coffee className="w-3.5 h-3.5" />
+                        <span className="text-[10px] hidden sm:inline">Buffer Note</span>
+                      </button>
+
+                      <button
+                        onClick={() => onOpenTaskModal(undefined, selectedDate, gap.startTime)}
+                        className="w-7 h-7 rounded-lg bg-blue-600 hover:bg-blue-700 text-white flex items-center justify-center shadow-sm transition-transform active:scale-95"
+                        title="Fill gap with new scheduled task"
+                      >
+                        <Plus className="w-4 h-4" />
+                      </button>
                     </div>
-                  </button>
+                  </div>
                 ))}
+              </div>
+            )}
+          </div>
+
+          {/* Buffer & Free-Time Notes Card for Selected Date */}
+          <div className="glass-panel p-5 rounded-2xl border border-theme-border space-y-3">
+            <div className="flex items-center justify-between">
+              <h3 className="text-xs font-bold text-theme-text uppercase tracking-wider flex items-center gap-1.5">
+                <Coffee className="w-4 h-4 text-amber-500" />
+                Buffer Status Notes
+              </h3>
+              <button
+                onClick={() => openBufferNoteModal({ date: selectedDate })}
+                className="text-[10px] font-bold text-amber-600 dark:text-amber-400 hover:underline flex items-center gap-0.5"
+              >
+                + Add Note
+              </button>
+            </div>
+
+            {bufferNotes.filter(n => n.date === selectedDate).length === 0 ? (
+              <div className="p-3 rounded-xl bg-theme-card-hover border border-theme-border text-center text-xs text-theme-muted">
+                No buffer notes logged for this date yet.
+              </div>
+            ) : (
+              <div className="space-y-2 max-h-[260px] overflow-y-auto pr-1">
+                {bufferNotes
+                  .filter(n => n.date === selectedDate)
+                  .map((n) => (
+                    <div
+                      key={n.id}
+                      className="p-2.5 rounded-xl border border-amber-200 dark:border-amber-900/60 bg-amber-50/50 dark:bg-amber-950/20 space-y-1 text-xs"
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="font-mono font-bold text-theme-text flex items-center gap-1">
+                          <span>{getBufferActivityEmoji(n.activityTag)}</span>
+                          <span>{n.startTime} - {n.endTime}</span>
+                          <span className="text-theme-muted font-normal">({n.durationMinutes}m)</span>
+                        </span>
+                        <div className="flex items-center gap-1">
+                          <button
+                            onClick={() => openBufferNoteModal({ existingNote: n })}
+                            className="p-1 rounded hover:bg-theme-card text-theme-muted hover:text-theme-text"
+                            title="Edit"
+                          >
+                            <Edit2 className="w-3 h-3" />
+                          </button>
+                          <button
+                            onClick={() => deleteBufferNote(n.id)}
+                            className="p-1 rounded hover:bg-red-50 text-theme-muted hover:text-red-500"
+                            title="Delete"
+                          >
+                            <Trash2 className="w-3 h-3" />
+                          </button>
+                        </div>
+                      </div>
+                      <p className="text-theme-text font-medium text-[11px] line-clamp-2">
+                        {n.notes || n.activityTag}
+                      </p>
+                    </div>
+                  ))}
               </div>
             )}
           </div>
@@ -1095,6 +1289,15 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
           capacitySettings={capacitySettings}
           onConfirmReschedule={handleConfirmReschedule}
           onClose={() => setReschedulingTask(null)}
+        />
+      )}
+
+      {/* Recurring Tasks & Schedules Hub Modal */}
+      {isRecurringHubOpen && (
+        <RecurringManagerModal
+          isOpen={isRecurringHubOpen}
+          onClose={() => setIsRecurringHubOpen(false)}
+          onOpenTaskModal={onOpenTaskModal}
         />
       )}
 

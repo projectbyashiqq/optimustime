@@ -29,8 +29,10 @@ import {
   ArrowRight,
   Activity,
   History,
-  Check
+  Check,
+  Coffee
 } from 'lucide-react';
+import { getBufferActivityEmoji } from '../utils/timeUtils';
 
 type TimeHorizon = '1D' | '7D' | '30D' | '365D' | 'ALL';
 
@@ -41,7 +43,8 @@ export const AnalyticsView: React.FC = () => {
     prioritySettings, 
     capacitySettings, 
     auditLogs, 
-    clearAuditLogs 
+    clearAuditLogs,
+    bufferNotes
   } = useApp();
 
   const [timeHorizon, setTimeHorizon] = useState<TimeHorizon>('7D');
@@ -186,6 +189,10 @@ export const AnalyticsView: React.FC = () => {
         return <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-red-100 dark:bg-red-950 text-red-700 dark:text-red-300 flex items-center gap-1"><XCircle className="w-3 h-3" /> TERMINATED</span>;
       case 'TASK_CREATED':
         return <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-sky-100 dark:bg-sky-950 text-sky-700 dark:text-sky-300 flex items-center gap-1"><Plus className="w-3 h-3" /> CREATED</span>;
+      case 'BUFFER_NOTE_LOGGED':
+        return <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-300 flex items-center gap-1"><Coffee className="w-3 h-3" /> BUFFER NOTE</span>;
+      case 'BUFFER_NOTE_DELETED':
+        return <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-red-100 dark:bg-red-950 text-red-700 dark:text-red-300 flex items-center gap-1"><Trash2 className="w-3 h-3" /> BUFFER DELETED</span>;
       default:
         return <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300">{type}</span>;
     }
@@ -623,6 +630,15 @@ export const AnalyticsView: React.FC = () => {
               }`}
             >
               Created
+            </button>
+            <button
+              onClick={() => setLogFilter('BUFFER_NOTE_LOGGED')}
+              className={`px-3 py-1 rounded-lg transition-all whitespace-nowrap flex items-center gap-1 ${
+                logFilter === 'BUFFER_NOTE_LOGGED' ? 'bg-amber-600 text-white shadow-sm' : 'bg-theme-card-hover text-theme-muted hover:text-theme-text'
+              }`}
+            >
+              <Coffee className="w-3 h-3" />
+              <span>Buffer Notes</span>
             </button>
           </div>
 

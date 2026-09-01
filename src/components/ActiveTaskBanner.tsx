@@ -9,7 +9,8 @@ import {
   FastForward, 
   Sparkles,
   ShieldAlert,
-  ChevronRight
+  ChevronRight,
+  Lock
 } from 'lucide-react';
 
 export const ActiveTaskBanner: React.FC = () => {
@@ -77,6 +78,12 @@ export const ActiveTaskBanner: React.FC = () => {
                 <span className="text-xs text-blue-100 font-medium">
                   {activeTask.category} {activeTask.subCategory ? `• ${activeTask.subCategory}` : ''}
                 </span>
+                {activeTask.isMandatorySchedule && (
+                  <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-amber-400 text-amber-950 flex items-center gap-1 shadow-sm">
+                    <Lock className="w-2.5 h-2.5" />
+                    MANDATORY
+                  </span>
+                )}
               </div>
               <h3 className="text-base sm:text-lg font-bold tracking-tight text-white truncate max-w-md font-openSans">
                 {activeTask.title}

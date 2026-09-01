@@ -8,7 +8,8 @@ import {
   isTaskInRunningSlot,
   isTaskPastDue,
   findSimultaneousTasks,
-  getDayOfWeekFromDate
+  getDayOfWeekFromDate,
+  getTaskTitleClasses
 } from '../utils/timeUtils';
 import { 
   Calendar, 
@@ -33,14 +34,24 @@ import {
   ChevronDown,
   RotateCcw,
   X,
-  Zap
+  Zap,
+  Lock,
+  Sparkles
 } from 'lucide-react';
 import { RescheduleModal } from '../components/RescheduleModal';
+import { RecurringManagerModal } from '../components/RecurringManagerModal';
+import { TableView } from '../components/views/TableView';
+import { TimelineView } from '../components/views/TimelineView';
+import { Day24HourView } from '../components/views/Day24HourView';
+import { WeeklyCalendarView } from '../components/views/WeeklyCalendarView';
+import { MonthlyCalendarView } from '../components/views/MonthlyCalendarView';
+import { ListTodo, Table as TableIcon, CalendarDays, Grid3X3, Repeat } from 'lucide-react';
 
 type TimeRangeFilter = 'ALL' | 'TODAY' | 'TOMORROW' | 'NEXT_WEEK' | 'NEXT_MONTH' | 'NEXT_YEAR';
+export type AllTasksViewMode = 'list' | 'table' | 'timeline' | '24hours' | 'weekly' | 'monthly';
 
 interface AllTasksViewProps {
-  onOpenTaskModal: (task?: Task) => void;
+  onOpenTaskModal: (task?: Task, date?: string, startTime?: string) => void;
 }
 
 export const AllTasksView: React.FC<AllTasksViewProps> = ({ onOpenTaskModal }) => {
@@ -52,8 +63,9 @@ export const AllTasksView: React.FC<AllTasksViewProps> = ({ onOpenTaskModal }) =
     startTask, 
     pauseTask, 
     completeTask, 
-    updateTask,
+    updateTask, 
     deleteTask,
+    requestDeleteTask,
     searchQuery,
     setSearchQuery 
   } = useApp();
@@ -62,13 +74,19 @@ export const AllTasksView: React.FC<AllTasksViewProps> = ({ onOpenTaskModal }) =
   const [selectedCategory, setSelectedCategory] = useState<string>('ALL');
   const [selectedPriority, setSelectedPriority] = useState<PriorityLevel | 'ALL'>('ALL');
   const [selectedStatus, setSelectedStatus] = useState<TaskStatus | 'ALL'>('ALL');
-  const [viewMode, setViewMode] = useState<'list' | 'grid'>('list');
+  const [viewMode, setViewMode] = useState<AllTasksViewMode>('list');
+  const [selectedCalendarDate, setSelectedCalendarDate] = useState<string>(toISODateString(new Date()));
   const [showCompletedArchive, setShowCompletedArchive] = useState(true);
   const [reschedulingTask, setReschedulingTask] = useState<Task | null>(null);
+  const [isRecurringHubOpen, setIsRecurringHubOpen] = useState(false);
   const [nowTime, setNowTime] = useState<Date>(new Date());
 
   const handleStatusChange = (task: Task, newStatus: TaskStatus) => {
     if (newStatus === 'Reschedule') {
+      if (task.isMandatorySchedule) {
+        alert(`🔒 Mandatory Schedule: "${task.title}" is a locked fixed event and cannot be rescheduled.`);
+        return;
+      }
       setReschedulingTask(task);
       return;
     }
@@ -207,20 +225,145 @@ export const AllTasksView: React.FC<AllTasksViewProps> = ({ onOpenTaskModal }) =
           ))}
         </div>
 
-        <div className="flex items-center gap-2">
-          <span className="text-xs font-mono font-bold text-theme-muted">
-            {filteredTasks.length} tasks match filter
-          </span>
+        {/* Right: View Switcher Box & Actions */}
+        <div className="flex items-center gap-2 flex-wrap">
+          <div className="flex items-center gap-1 p-1 bg-theme-card-hover rounded-xl border border-theme-border shadow-inner">
+            <button
+              onClick={() => setViewMode('list')}
+              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                viewMode === 'list'
+                  ? 'bg-blue-600 text-white shadow-sm'
+                  : 'text-theme-muted hover:text-theme-text'
+              }`}
+            >
+              <ListTodo className="w-3.5 h-3.5" />
+              <span>List</span>
+            </button>
+
+            <button
+              onClick={() => setViewMode('table')}
+              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                viewMode === 'table'
+                  ? 'bg-blue-600 text-white shadow-sm'
+                  : 'text-theme-muted hover:text-theme-text'
+              }`}
+            >
+              <TableIcon className="w-3.5 h-3.5" />
+              <span>Table</span>
+            </button>
+
+            <button
+              onClick={() => setViewMode('timeline')}
+              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                viewMode === 'timeline'
+                  ? 'bg-blue-600 text-white shadow-sm'
+                  : 'text-theme-muted hover:text-theme-text'
+              }`}
+            >
+              <Timer className="w-3.5 h-3.5" />
+              <span>Timeline</span>
+            </button>
+
+            <button
+              onClick={() => setViewMode('24hours')}
+              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                viewMode === '24hours'
+                  ? 'bg-blue-600 text-white shadow-sm'
+                  : 'text-theme-muted hover:text-theme-text'
+              }`}
+            >
+              <Clock className="w-3.5 h-3.5" />
+              <span>24h</span>
+            </button>
+
+            <button
+              onClick={() => setViewMode('weekly')}
+              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                viewMode === 'weekly'
+                  ? 'bg-blue-600 text-white shadow-sm'
+                  : 'text-theme-muted hover:text-theme-text'
+              }`}
+            >
+              <CalendarDays className="w-3.5 h-3.5" />
+              <span>Week</span>
+            </button>
+
+            <button
+              onClick={() => setViewMode('monthly')}
+              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                viewMode === 'monthly'
+                  ? 'bg-blue-600 text-white shadow-sm'
+                  : 'text-theme-muted hover:text-theme-text'
+              }`}
+            >
+              <Grid3X3 className="w-3.5 h-3.5" />
+              <span>Month</span>
+            </button>
+          </div>
+
+          {/* Action button */}
+        <div className="flex items-center gap-2 self-end lg:self-auto">
           <button
-            onClick={() => onOpenTaskModal()}
-            className="flex items-center gap-1 px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl shadow-sm transition-all"
+            onClick={() => setIsRecurringHubOpen(true)}
+            className="flex items-center gap-1.5 px-3 py-2 bg-indigo-50 dark:bg-indigo-950/60 hover:bg-indigo-100 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 rounded-xl text-xs font-bold transition-all shadow-sm"
+            title="Manage All Recurring Tasks"
           >
-            <Plus className="w-4 h-4" />
-            <span>Add Task</span>
+            <Repeat className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
+            <span>Recurring Hub ({tasks.filter(t => t.recurrence && t.recurrence !== 'None').length})</span>
           </button>
+
+          <button
+            onClick={() => onOpenTaskModal(undefined, selectedCalendarDate)}
+            className="flex items-center gap-1.5 px-4 py-2 bg-gradient-to-r from-blue-600 to-sky-500 hover:from-blue-700 hover:to-sky-600 text-white rounded-xl text-xs font-bold shadow-md shadow-blue-500/20 transition-all transform active:scale-95"
+          >
+            <Plus className="w-4 h-4 stroke-[3]" />
+            <span>New Task</span>
+          </button>
+        </div>
         </div>
       </div>
 
+      {/* Render Selected View Mode */}
+      {viewMode === 'table' && (
+        <TableView 
+          onOpenTaskModal={onOpenTaskModal} 
+          onOpenRescheduleModal={setReschedulingTask} 
+        />
+      )}
+
+      {viewMode === 'timeline' && (
+        <TimelineView 
+          selectedDate={selectedCalendarDate} 
+          onOpenTaskModal={onOpenTaskModal} 
+          onOpenRescheduleModal={setReschedulingTask} 
+        />
+      )}
+
+      {viewMode === '24hours' && (
+        <Day24HourView 
+          selectedDate={selectedCalendarDate} 
+          onOpenTaskModal={onOpenTaskModal} 
+        />
+      )}
+
+      {viewMode === 'weekly' && (
+        <WeeklyCalendarView 
+          selectedDate={selectedCalendarDate} 
+          onSelectDate={setSelectedCalendarDate} 
+          onOpenTaskModal={onOpenTaskModal} 
+        />
+      )}
+
+      {viewMode === 'monthly' && (
+        <MonthlyCalendarView 
+          selectedDate={selectedCalendarDate} 
+          onSelectDate={setSelectedCalendarDate} 
+          onOpenTaskModal={onOpenTaskModal} 
+        />
+      )}
+
+      {viewMode === 'list' && (
+        <>
       {/* Multi-Dimensional Filter Bar */}
       <div className="p-4 rounded-2xl bg-theme-card border border-theme-border shadow-sm space-y-3">
         <div className="flex items-center justify-between text-xs font-bold text-theme-muted uppercase tracking-wider">
@@ -367,10 +510,21 @@ export const AllTasksView: React.FC<AllTasksViewProps> = ({ onOpenTaskModal }) =
                           {/* Left Metadata & Details */}
                           <div className="flex items-start gap-3 flex-1">
                             <div
-                              className="px-2 py-1 rounded-lg text-center font-black text-xs min-w-[42px] shrink-0"
-                              style={{ backgroundColor: priorityMeta?.bgColor, color: priorityMeta?.color }}
+                              className={`px-2.5 py-1.5 rounded-xl text-center font-black text-xs sm:text-sm min-w-[48px] shrink-0 flex items-center justify-center transition-all ${
+                                task.priority === 'P1'
+                                  ? 'bg-gradient-to-tr from-rose-600 via-red-500 to-amber-400 text-white shadow-lg shadow-red-500/50 ring-2 ring-red-400/80 border border-red-300 dark:border-red-400 animate-pulse font-display'
+                                  : 'font-mono'
+                              }`}
+                              style={task.priority === 'P1' ? undefined : { backgroundColor: priorityMeta?.bgColor, color: priorityMeta?.color }}
                             >
-                              {task.priority}
+                              {task.priority === 'P1' ? (
+                                <span className="flex items-center gap-0.5 tracking-tight font-black">
+                                  <Sparkles className="w-3 h-3 text-yellow-200 fill-yellow-200" />
+                                  <span>P1</span>
+                                </span>
+                              ) : (
+                                <span>{task.priority}</span>
+                              )}
                             </div>
 
                             <div className="space-y-1 flex-1">
@@ -391,6 +545,17 @@ export const AllTasksView: React.FC<AllTasksViewProps> = ({ onOpenTaskModal }) =
                                 <span className="font-semibold text-theme-muted">
                                   {task.category}
                                 </span>
+
+                                {/* Mandatory Fixed Schedule Badge */}
+                                {task.isMandatorySchedule && (
+                                  <span 
+                                    className="text-[10px] font-black px-2 py-0.5 bg-amber-100 dark:bg-amber-950/80 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-700/80 rounded-full flex items-center gap-1 shadow-sm"
+                                    title="Mandatory Fixed Schedule: Cannot be rescheduled, auto-shifted, or displaced"
+                                  >
+                                    <Lock className="w-2.5 h-2.5 text-amber-600 dark:text-amber-400" />
+                                    <span>MANDATORY FIXED</span>
+                                  </span>
+                                )}
 
                                 {task.recurrence !== 'None' && (
                                   <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-300">
@@ -431,10 +596,15 @@ export const AllTasksView: React.FC<AllTasksViewProps> = ({ onOpenTaskModal }) =
                                 )}
                               </div>
 
-                              {/* Task Title (Google Open Sans Bold) */}
-                              <h4 className="text-base sm:text-lg font-bold tracking-tight text-theme-text font-openSans leading-snug">
-                                {task.title}
-                              </h4>
+                              {/* Task Title (Auto-scaled dynamic typography) + Appointed Duration */}
+                              <div className="flex items-baseline gap-2 flex-wrap">
+                                <h4 className={getTaskTitleClasses(task.title, task.status === 'Done')}>
+                                  {task.title}
+                                </h4>
+                                <span className="font-mono text-xs font-bold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/60 px-2 py-0.5 rounded-md border border-blue-200 dark:border-blue-900/60 shadow-2xs">
+                                  ~{task.appointedMinutes}m
+                                </span>
+                              </div>
 
                               {/* Simultaneous Co-Running Twin Details */}
                               {isSimultaneous && (
@@ -558,13 +728,23 @@ export const AllTasksView: React.FC<AllTasksViewProps> = ({ onOpenTaskModal }) =
                               </button>
                             )}
 
-                            <button
-                              onClick={() => setReschedulingTask(task)}
-                              className="p-1.5 rounded-lg hover:bg-purple-50 dark:hover:bg-purple-950/40 text-theme-muted hover:text-purple-600 transition-colors"
-                              title="Reschedule Task / Find Slot"
-                            >
-                              <RotateCcw className="w-3.5 h-3.5" />
-                            </button>
+                            {task.isMandatorySchedule ? (
+                              <button
+                                disabled
+                                className="p-1.5 rounded-lg opacity-40 text-theme-muted cursor-not-allowed"
+                                title="🔒 Mandatory Schedule: Locked & Non-Reschedulable"
+                              >
+                                <Lock className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
+                              </button>
+                            ) : (
+                              <button
+                                onClick={() => setReschedulingTask(task)}
+                                className="p-1.5 rounded-lg hover:bg-purple-50 dark:hover:bg-purple-950/40 text-theme-muted hover:text-purple-600 transition-colors"
+                                title="Reschedule Task / Find Slot"
+                              >
+                                <RotateCcw className="w-3.5 h-3.5" />
+                              </button>
+                            )}
 
                             <button
                               onClick={() => onOpenTaskModal(task)}
@@ -575,9 +755,9 @@ export const AllTasksView: React.FC<AllTasksViewProps> = ({ onOpenTaskModal }) =
                             </button>
 
                             <button
-                              onClick={() => deleteTask(task.id)}
+                              onClick={() => requestDeleteTask(task, selectedCalendarDate || task.taskDate)}
                               className="p-1.5 rounded-lg hover:bg-red-50 dark:hover:bg-red-950/40 text-theme-muted hover:text-red-500 transition-colors"
-                              title="Delete Task"
+                              title="Delete Task / Occurrence"
                             >
                               <Trash2 className="w-3.5 h-3.5" />
                             </button>
@@ -695,9 +875,9 @@ export const AllTasksView: React.FC<AllTasksViewProps> = ({ onOpenTaskModal }) =
                                   <Edit2 className="w-3.5 h-3.5" />
                                 </button>
                                 <button
-                                  onClick={() => deleteTask(task.id)}
+                                  onClick={() => requestDeleteTask(task, selectedCalendarDate || task.taskDate)}
                                   className="p-1.5 rounded-lg hover:bg-red-50 dark:hover:bg-red-950/40 text-theme-muted hover:text-red-500"
-                                  title="Delete Task"
+                                  title="Delete Task / Occurrence"
                                 >
                                   <Trash2 className="w-3.5 h-3.5" />
                                 </button>
@@ -714,6 +894,8 @@ export const AllTasksView: React.FC<AllTasksViewProps> = ({ onOpenTaskModal }) =
           </div>
         )}
       </div>
+      </>
+      )}
 
       {/* Intelligent Reschedule & Slot Finder Modal */}
       {reschedulingTask && (
@@ -723,6 +905,15 @@ export const AllTasksView: React.FC<AllTasksViewProps> = ({ onOpenTaskModal }) =
           capacitySettings={capacitySettings}
           onConfirmReschedule={handleConfirmReschedule}
           onClose={() => setReschedulingTask(null)}
+        />
+      )}
+
+      {/* Recurring Tasks & Schedules Hub Modal */}
+      {isRecurringHubOpen && (
+        <RecurringManagerModal
+          isOpen={isRecurringHubOpen}
+          onClose={() => setIsRecurringHubOpen(false)}
+          onOpenTaskModal={onOpenTaskModal}
         />
       )}
 
