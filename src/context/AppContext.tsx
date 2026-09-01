@@ -13,7 +13,9 @@ import {
   SubTask,
   SecuritySettings,
   CloudSyncConfig,
-  CloudSyncStatus
+  CloudSyncStatus,
+  LifeEventLog,
+  LifeEventType
 } from '../types';
 import { 
   DEFAULT_CAPACITY, 
@@ -129,6 +131,11 @@ interface AppContextType {
   importStateJson: (jsonStr: string) => boolean;
   resetToDefaultData: () => void;
   
+  // Life Event Audit & Chronological Logs
+  auditLogs: LifeEventLog[];
+  logLifeEvent: (event: Omit<LifeEventLog, 'id' | 'timestamp' | 'date'>) => void;
+  clearAuditLogs: () => void;
+  
   // Computed values
   dailyScheduledMinutes: (dateStr: string) => number;
   isCapacityRedLineExceeded: (dateStr: string) => boolean;
@@ -193,6 +200,35 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return INITIAL_KNOWLEDGE;
     }
   });
+
+  const [auditLogs, setAuditLogs] = useState<LifeEventLog[]>(() => {
+    try {
+      const saved = localStorage.getItem(`${STORAGE_KEY}_audit_logs`);
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  const logLifeEvent = useCallback((event: Omit<LifeEventLog, 'id' | 'timestamp' | 'date'>) => {
+    const now = new Date();
+    const newLog: LifeEventLog = {
+      id: `log_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+      timestamp: now.toISOString(),
+      date: toISODateString(now),
+      ...event
+    };
+    setAuditLogs(prev => [newLog, ...prev].slice(0, 5000));
+  }, []);
+
+  const clearAuditLogs = useCallback(() => {
+    setAuditLogs([]);
+    try {
+      localStorage.removeItem(`${STORAGE_KEY}_audit_logs`);
+    } catch (e) {
+      console.error('Failed to clear audit logs', e);
+    }
+  }, []);
 
   const [theme, setThemeState] = useState<ThemeName>(() => {
     try {
@@ -283,13 +319,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       localStorage.setItem(`${STORAGE_KEY}_priorities`, JSON.stringify(prioritySettings));
       localStorage.setItem(`${STORAGE_KEY}_reminders`, JSON.stringify(reminders));
       localStorage.setItem(`${STORAGE_KEY}_knowledge`, JSON.stringify(knowledge));
+      localStorage.setItem(`${STORAGE_KEY}_audit_logs`, JSON.stringify(auditLogs));
       localStorage.setItem(`${STORAGE_KEY}_theme`, theme);
       localStorage.setItem(`${STORAGE_KEY}_security`, JSON.stringify(securitySettings));
       localStorage.setItem(`${STORAGE_KEY}_cloud_sync`, JSON.stringify(cloudSyncConfig));
     } catch (e) {
       console.error('Failed to sync to LocalStorage', e);
     }
-  }, [tasks, categories, capacitySettings, prioritySettings, reminders, knowledge, theme, securitySettings, cloudSyncConfig]);
+  }, [tasks, categories, capacitySettings, prioritySettings, reminders, knowledge, auditLogs, theme, securitySettings, cloudSyncConfig]);
 
   const updateCloudSyncConfig = useCallback((config: CloudSyncConfig) => {
     setCloudSyncConfig(config);
@@ -584,6 +621,21 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
           if (isExpired) {
             hasChanges = true;
+            logLifeEvent({
+              eventType: 'TASK_INCOMPLETE',
+              taskId: task.id,
+              taskTitle: task.title,
+              projectCode: task.projectCode,
+              priority: task.priority,
+              category: task.category,
+              message: `⚠️ Task "${task.title}" (${task.projectCode}) marked Incomplete (6-hour window expired)`,
+              details: {
+                previousDate: task.taskDate,
+                previousStartTime: task.startTime,
+                appointedMinutes: task.appointedMinutes
+              }
+            });
+
             const isRecurring = task.recurrence && task.recurrence !== 'None';
 
             if (isRecurring) {
@@ -734,9 +786,24 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
 
     setTasks(prev => [newTask, ...prev]);
+    logLifeEvent({
+      eventType: 'TASK_CREATED',
+      taskId: newTask.id,
+      taskTitle: newTask.title,
+      projectCode: newTask.projectCode,
+      priority: newTask.priority,
+      category: newTask.category,
+      message: `Created task "${newTask.title}" [${newTask.priority}] scheduled for ${newTask.taskDate} @ ${newTask.startTime} (${newTask.appointedMinutes}m)`,
+      details: {
+        newDate: newTask.taskDate,
+        newStartTime: newTask.startTime,
+        appointedMinutes: newTask.appointedMinutes
+      }
+    });
+
     playNotificationChime('success');
     return newTask;
-  }, [prioritySettings]);
+  }, [prioritySettings, logLifeEvent]);
 
   const updateTask = useCallback((updated: Task) => {
     setTasks(prev => {
@@ -780,8 +847,22 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, []);
 
   const deleteTask = useCallback((taskId: string) => {
-    setTasks(prev => prev.filter(t => t.id !== taskId));
-  }, []);
+    setTasks(prev => {
+      const target = prev.find(t => t.id === taskId);
+      if (target) {
+        logLifeEvent({
+          eventType: 'TASK_DELETED',
+          taskId: target.id,
+          taskTitle: target.title,
+          projectCode: target.projectCode,
+          priority: target.priority,
+          category: target.category,
+          message: `Deleted task "${target.title}" (${target.projectCode})`
+        });
+      }
+      return prev.filter(t => t.id !== taskId);
+    });
+  }, [logLifeEvent]);
 
   // Execution Trackers: Start Task
   const startTask = useCallback((taskId: string) => {
@@ -793,6 +874,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           actualDurationMinutes: 0,
           isLateFinish: false
         }];
+        logLifeEvent({
+          eventType: 'TASK_STARTED',
+          taskId: t.id,
+          taskTitle: t.title,
+          projectCode: t.projectCode,
+          priority: t.priority,
+          category: t.category,
+          message: `⚡ Started working on task "${t.title}" (${t.projectCode})`
+        });
         return {
           ...t,
           status: 'Working' as TaskStatus,
@@ -805,7 +895,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return t;
     }));
     playNotificationChime('alert');
-  }, []);
+  }, [logLifeEvent]);
 
   // Pause Task
   const pauseTask = useCallback((taskId: string) => {
@@ -815,11 +905,20 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         if (lastLog && !lastLog.pausedAt) {
           lastLog.pausedAt = new Date().toISOString();
         }
+        logLifeEvent({
+          eventType: 'TASK_PAUSED',
+          taskId: t.id,
+          taskTitle: t.title,
+          projectCode: t.projectCode,
+          priority: t.priority,
+          category: t.category,
+          message: `⏸ Paused task "${t.title}"`
+        });
         return { ...t, status: 'Hold' as TaskStatus };
       }
       return t;
     }));
-  }, []);
+  }, [logLifeEvent]);
 
   // Complete Task + Auto Buffer Engine (15m normal, 5m late) + Recurring Rollover
   const completeTask = useCallback((taskId: string) => {
@@ -844,10 +943,43 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         currentLog.isLateFinish = isLate;
       }
 
-      // Buffer Duration Logic:
-      // Normal completion adds 15m Buffer Time; Late start/finish reduces buffer to 5m.
       const bufferMinutes = isLate ? 5 : 15;
       const isRecurring = target.recurrence && target.recurrence !== 'None';
+      const delayMins = Math.max(0, actualDuration - target.appointedMinutes);
+
+      logLifeEvent({
+        eventType: 'TASK_COMPLETED',
+        taskId: target.id,
+        taskTitle: target.title,
+        projectCode: target.projectCode,
+        priority: target.priority,
+        category: target.category,
+        message: `✓ Completed "${target.title}" [${target.priority}] in ${actualDuration}m (${isLate ? `Delayed by +${delayMins}m` : 'On-Time Precision'})`,
+        details: {
+          durationMinutes: actualDuration,
+          appointedMinutes: target.appointedMinutes,
+          delayMinutes: delayMins,
+          isLate
+        }
+      });
+
+      if (isLate) {
+        logLifeEvent({
+          eventType: 'TASK_DELAYED',
+          taskId: target.id,
+          taskTitle: target.title,
+          projectCode: target.projectCode,
+          priority: target.priority,
+          category: target.category,
+          message: `⚠️ Task "${target.title}" exceeded allocated slot by +${delayMins} mins`,
+          details: {
+            durationMinutes: actualDuration,
+            appointedMinutes: target.appointedMinutes,
+            delayMinutes: delayMins,
+            isLate: true
+          }
+        });
+      }
 
       if (isRecurring) {
         // 1. Snapshot today's completed instance as an immutable Done history record
@@ -910,16 +1042,46 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       // Ignored if confetti fails
     }
     playNotificationChime('timer');
-  }, []);
+  }, [logLifeEvent]);
 
   const holdTask = useCallback((taskId: string) => {
-    setTasks(prev => prev.map(t => t.id === taskId ? { ...t, status: 'Hold' as TaskStatus } : t));
-  }, []);
+    setTasks(prev => prev.map(t => {
+      if (t.id === taskId) {
+        logLifeEvent({
+          eventType: 'TASK_HOLD',
+          taskId: t.id,
+          taskTitle: t.title,
+          projectCode: t.projectCode,
+          priority: t.priority,
+          category: t.category,
+          message: `⏸ Put task "${t.title}" on Hold`
+        });
+        return { ...t, status: 'Hold' as TaskStatus };
+      }
+      return t;
+    }));
+  }, [logLifeEvent]);
 
   const rescheduleTask = useCallback((taskId: string, newDate: string, newStartTime: string) => {
     setTasks(prev => prev.map(t => {
       if (t.id === taskId) {
         const newEndTime = addMinutesToTime(newStartTime, t.appointedMinutes);
+        logLifeEvent({
+          eventType: 'TASK_RESCHEDULED',
+          taskId: t.id,
+          taskTitle: t.title,
+          projectCode: t.projectCode,
+          priority: t.priority,
+          category: t.category,
+          message: `↻ Rescheduled "${t.title}" [${t.priority}] from ${t.taskDate} (${t.startTime}) → ${newDate} (${newStartTime})`,
+          details: {
+            previousDate: t.taskDate,
+            previousStartTime: t.startTime,
+            newDate,
+            newStartTime,
+            appointedMinutes: t.appointedMinutes
+          }
+        });
         return {
           ...t,
           taskDate: newDate,
@@ -931,11 +1093,25 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
       return t;
     }));
-  }, []);
+  }, [logLifeEvent]);
 
   const terminateTask = useCallback((taskId: string) => {
-    setTasks(prev => prev.map(t => t.id === taskId ? { ...t, status: 'Terminated' as TaskStatus } : t));
-  }, []);
+    setTasks(prev => prev.map(t => {
+      if (t.id === taskId) {
+        logLifeEvent({
+          eventType: 'TASK_TERMINATED',
+          taskId: t.id,
+          taskTitle: t.title,
+          projectCode: t.projectCode,
+          priority: t.priority,
+          category: t.category,
+          message: `✕ Terminated task "${t.title}" (${t.projectCode})`
+        });
+        return { ...t, status: 'Terminated' as TaskStatus };
+      }
+      return t;
+    }));
+  }, [logLifeEvent]);
 
   // Simultaneous Task Linking
   const linkSimultaneousTasks = useCallback((task1Id: string, task2Id: string) => {
@@ -1213,6 +1389,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         exportStateJson,
         importStateJson,
         resetToDefaultData,
+        auditLogs,
+        logLifeEvent,
+        clearAuditLogs,
         dailyScheduledMinutes,
         isCapacityRedLineExceeded
       }}

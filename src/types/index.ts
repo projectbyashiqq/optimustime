@@ -165,4 +165,42 @@ export interface CloudSyncConfig {
   autoRealtimeSync: boolean;
 }
 
+export type LifeEventType = 
+  | 'TASK_CREATED'
+  | 'TASK_STARTED'
+  | 'TASK_PAUSED'
+  | 'TASK_COMPLETED'
+  | 'TASK_DELAYED'
+  | 'TASK_RESCHEDULED'
+  | 'TASK_INCOMPLETE'
+  | 'TASK_HOLD'
+  | 'TASK_TERMINATED'
+  | 'TASK_DELETED'
+  | 'CAPACITY_WARNING'
+  | 'SETTINGS_UPDATED';
+
+export interface LifeEventLog {
+  id: string;
+  timestamp: string; // ISO string
+  date: string; // YYYY-MM-DD
+  eventType: LifeEventType;
+  taskId?: string;
+  taskTitle?: string;
+  projectCode?: string;
+  priority?: PriorityLevel;
+  category?: string;
+  message: string;
+  details?: {
+    previousStartTime?: string;
+    newStartTime?: string;
+    previousDate?: string;
+    newDate?: string;
+    durationMinutes?: number;
+    appointedMinutes?: number;
+    delayMinutes?: number;
+    isLate?: boolean;
+    reason?: string;
+  };
+}
+
 
