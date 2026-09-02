@@ -225,16 +225,6 @@ export const AllTasksView: React.FC<AllTasksViewProps> = ({ onOpenTaskModal }) =
     return parse12HourToMinutes(a.startTime) - parse12HourToMinutes(b.startTime);
   });
 
-  const timeRangeTabs: { id: TimeRangeFilter; label: string; badgeColor: string }[] = [
-    { id: 'ALL', label: 'All Horizons', badgeColor: 'bg-slate-100 dark:bg-slate-800' },
-    { id: 'TODAY', label: 'Today', badgeColor: 'bg-blue-100 dark:bg-blue-950 text-blue-600' },
-    { id: 'TOMORROW', label: 'Tomorrow', badgeColor: 'bg-emerald-100 dark:bg-emerald-950 text-emerald-600' },
-    { id: 'THIS_WEEK', label: 'This Week', badgeColor: 'bg-indigo-100 dark:bg-indigo-950 text-indigo-600' },
-    { id: 'NEXT_WEEK', label: 'Next Week', badgeColor: 'bg-purple-100 dark:bg-purple-950 text-purple-600' },
-    { id: 'NEXT_MONTH', label: 'Next Month', badgeColor: 'bg-amber-100 dark:bg-amber-950 text-amber-600' },
-    { id: 'NEXT_YEAR', label: 'Next Year', badgeColor: 'bg-rose-100 dark:bg-rose-950 text-rose-600' },
-  ];
-
   // Dynamically group tasks into temporal horizon sections
   const horizonGroups = useMemo(() => {
     const now = new Date();
@@ -912,27 +902,9 @@ export const AllTasksView: React.FC<AllTasksViewProps> = ({ onOpenTaskModal }) =
   return (
     <div className="space-y-6 animate-fade-in">
       
-      {/* Time Horizon Navigation Banner */}
-      <div className="glass-panel p-4 rounded-2xl flex items-center justify-between gap-4 flex-wrap">
-        <div className="flex items-center gap-2 overflow-x-auto no-scrollbar py-1">
-          {timeRangeTabs.map(tab => (
-            <button
-              key={tab.id}
-              onClick={() => setTimeRange(tab.id)}
-              className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${
-                timeRange === tab.id
-                  ? 'bg-blue-600 text-white shadow-md shadow-blue-500/20'
-                  : 'bg-theme-card-hover text-theme-muted hover:text-theme-text border border-theme-border'
-              }`}
-            >
-              {tab.label}
-            </button>
-          ))}
-        </div>
-
-        {/* Right: View Switcher Box & Actions */}
-        <div className="flex items-center gap-2 flex-wrap w-full lg:w-auto justify-between lg:justify-end">
-          <div className="flex items-center gap-1 p-1 bg-theme-card-hover rounded-xl border border-theme-border shadow-inner max-w-full overflow-x-auto no-scrollbar">
+      {/* View Switcher Box & Actions Toolbar */}
+      <div className="glass-panel p-3 sm:p-4 rounded-2xl flex items-center justify-between gap-3 flex-wrap">
+        <div className="flex items-center gap-1 p-1 bg-theme-card-hover rounded-xl border border-theme-border shadow-inner max-w-full overflow-x-auto no-scrollbar">
             <button
               onClick={() => setViewMode('list')}
               className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all shrink-0 ${
@@ -1128,7 +1100,6 @@ export const AllTasksView: React.FC<AllTasksViewProps> = ({ onOpenTaskModal }) =
             <Plus className="w-4 h-4 stroke-[3]" />
             <span>New Task</span>
           </button>
-        </div>
         </div>
       </div>
 
