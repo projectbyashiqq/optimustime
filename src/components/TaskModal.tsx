@@ -560,8 +560,8 @@ export const TaskModal: React.FC<TaskModalProps> = ({
               </div>
             </div>
 
-            {/* Title & Description */}
-            <div className="space-y-2">
+            {/* Task Title */}
+            <div className="space-y-1.5">
               <label className="text-xs font-bold text-theme-text uppercase tracking-wider flex items-center justify-between">
                 <span>Task Title <span className="text-red-500">* (Mandatory)</span></span>
                 <span className="text-[10px] text-theme-muted">Keep actionable & concise</span>
@@ -574,87 +574,20 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                   setTitle(e.target.value);
                   if (validationError) setValidationError(null);
                 }}
-                className={`w-full text-sm px-3.5 py-2.5 rounded-xl bg-theme-card-hover border text-theme-text placeholder-theme-muted focus:outline-none focus:ring-2 focus:ring-blue-500 font-medium ${
+                className={`w-full text-sm px-3.5 py-2 rounded-xl bg-theme-card-hover border text-theme-text placeholder-theme-muted focus:outline-none focus:ring-2 focus:ring-blue-500 font-medium ${
                   validationError && !title.trim() ? 'border-red-500 ring-1 ring-red-500' : 'border-theme-border'
                 }`}
                 autoFocus
               />
             </div>
 
-            <div className="space-y-1.5">
-              <label className="text-xs font-bold text-theme-text uppercase tracking-wider">
-                Description & Custom Writing
-              </label>
-              <textarea
-                rows={2}
-                placeholder="Detailed objectives, expected outcomes, or context..."
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                className="w-full text-xs px-3.5 py-2 rounded-xl bg-theme-card-hover border border-theme-border text-theme-text placeholder-theme-muted focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
-            </div>
-
-            {/* Priority Level Matrix (P1-P5) */}
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <label className="text-xs font-bold text-theme-text uppercase tracking-wider flex items-center gap-1.5">
-                  <span>Priority Level Protocol (P1-P5)</span>
-                  <span className={`text-[10px] px-2 py-0.5 rounded font-black ${
-                    hasConfirmedPriority
-                      ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300'
-                      : 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300'
-                  }`}>
-                    {hasConfirmedPriority ? '✓ Confirmed' : '* Click to Confirm'}
-                  </span>
-                </label>
-                <span className="text-[11px] text-blue-600 dark:text-blue-400 font-semibold">
-                  Auto-Duration: {priorityMeta?.defaultMinutes ?? 0}m
-                </span>
-              </div>
-
-              <div className="grid grid-cols-5 gap-2">
-                {(['P1', 'P2', 'P3', 'P4', 'P5'] as PriorityLevel[]).map((p) => {
-                  const meta = prioritySettings[p];
-                  const isSelected = priority === p && hasConfirmedPriority;
-                  return (
-                    <button
-                      key={p}
-                      type="button"
-                      onClick={() => handlePriorityChange(p)}
-                      className={`p-2.5 rounded-xl border text-center transition-all flex flex-col items-center justify-center gap-0.5 transform active:scale-95 ${
-                        isSelected
-                          ? 'border-blue-500 shadow-md ring-2 ring-blue-500/30 font-black scale-[1.02]'
-                          : !hasConfirmedPriority
-                            ? 'border-dashed border-theme-border hover:border-blue-400 hover:bg-theme-card-hover'
-                            : 'border-theme-border hover:bg-theme-card-hover opacity-80 hover:opacity-100'
-                      }`}
-                      style={{
-                        backgroundColor: isSelected ? meta.bgColor : undefined,
-                        borderColor: isSelected ? meta.color : undefined
-                      }}
-                    >
-                      <span className="text-xs font-black" style={{ color: meta.color }}>
-                        {p}
-                      </span>
-                      <span className="text-[10px] font-bold text-theme-text truncate w-full">
-                        {meta.label}
-                      </span>
-                      <span className="text-[9px] text-theme-muted font-mono">
-                        {meta.defaultMinutes}m
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* Category & SubCategory (Fast-Click Pills + Selector) */}
-            <div className="space-y-2 p-3 rounded-xl bg-theme-card-hover border border-theme-border">
+            {/* Category & SubCategory (Moved UP: Small, compact & fast clicking) */}
+            <div className="space-y-1.5 p-2.5 rounded-xl bg-theme-card-hover border border-theme-border">
               <div className="flex items-center justify-between">
                 <label className="text-xs font-bold text-theme-text flex items-center gap-1.5">
                   <Folder className="w-3.5 h-3.5 text-blue-500" />
                   <span>Category Selection</span>
-                  <span className={`text-[10px] px-2 py-0.5 rounded font-black ${
+                  <span className={`text-[9px] px-1.5 py-0.2 rounded font-black ${
                     hasConfirmedCategory
                       ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300'
                       : 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300'
@@ -664,8 +597,8 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                 </label>
               </div>
 
-              {/* Fast-Click Category Pills */}
-              <div className="flex flex-wrap gap-1.5 pt-0.5">
+              {/* Fast-Click Category Pills (Compact) */}
+              <div className="flex flex-wrap gap-1">
                 {categories.map((c) => {
                   const isCatSelected = category === c.name && hasConfirmedCategory;
                   return (
@@ -679,26 +612,24 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                         const catObj = categories.find(cat => cat.name === c.name);
                         setSubCategory(catObj?.subCategories[0] || '');
                       }}
-                      className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all border flex items-center gap-1.5 transform active:scale-95 ${
+                      className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all border flex items-center gap-1 transform active:scale-95 ${
                         isCatSelected
-                          ? 'bg-blue-600 text-white border-blue-600 shadow-sm ring-2 ring-blue-500/20'
+                          ? 'bg-blue-600 text-white border-blue-600 shadow-sm ring-1 ring-blue-500/20'
                           : 'bg-theme-card text-theme-muted hover:text-theme-text border-theme-border hover:border-blue-400'
                       }`}
                     >
-                      <Tag className="w-3 h-3" />
+                      <Tag className="w-2.5 h-2.5" />
                       <span>{c.name}</span>
                     </button>
                   );
                 })}
               </div>
 
-              {/* SubCategory Selection */}
+              {/* SubCategory Selection (Small & Fast) */}
               {currentCategoryObj && currentCategoryObj.subCategories.length > 0 && (
-                <div className="pt-2 border-t border-theme-border/60">
-                  <label className="text-[11px] font-bold text-theme-muted mb-1 block">
-                    SubCategory (Optional):
-                  </label>
-                  <div className="flex flex-wrap gap-1.5">
+                <div className="pt-1.5 border-t border-theme-border/50">
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <span className="text-[10px] font-bold text-theme-muted shrink-0">Sub:</span>
                     {currentCategoryObj.subCategories.map((sub, idx) => {
                       const isSubSelected = subCategory === sub;
                       return (
@@ -706,7 +637,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                           key={idx}
                           type="button"
                           onClick={() => setSubCategory(sub)}
-                          className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold transition-all border ${
+                          className={`px-2 py-0.5 rounded-md text-[10px] font-semibold transition-all border ${
                             isSubSelected
                               ? 'bg-theme-card-hover border-blue-500 text-blue-600 dark:text-blue-400 font-bold'
                               : 'bg-theme-card text-theme-muted border-theme-border hover:text-theme-text'
@@ -721,8 +652,132 @@ export const TaskModal: React.FC<TaskModalProps> = ({
               )}
             </div>
 
+            {/* Priority Level Protocol (Left) + Duration Box (Right) */}
+            <div className="p-3 rounded-2xl bg-theme-card-hover border border-theme-border space-y-2">
+              <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-center">
+                
+                {/* Left Side: Priority Level Buttons (P1-P5) */}
+                <div className="md:col-span-7 space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-bold text-theme-text uppercase tracking-wider flex items-center gap-1.5">
+                      <span>Priority (P1-P5)</span>
+                      <span className={`text-[9px] px-1.5 py-0.2 rounded font-black ${
+                        hasConfirmedPriority
+                          ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300'
+                          : 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300'
+                      }`}>
+                        {hasConfirmedPriority ? '✓ Confirmed' : '* Click to Confirm'}
+                      </span>
+                    </label>
+                  </div>
+
+                  <div className="grid grid-cols-5 gap-1.5">
+                    {[
+                      { p: 'P1' as PriorityLevel, shortLabel: 'Must Do' },
+                      { p: 'P2' as PriorityLevel, shortLabel: 'High ROI' },
+                      { p: 'P3' as PriorityLevel, shortLabel: 'Delegate' },
+                      { p: 'P4' as PriorityLevel, shortLabel: 'Optional' },
+                      { p: 'P5' as PriorityLevel, shortLabel: 'Filter' }
+                    ].map(({ p, shortLabel }) => {
+                      const meta = prioritySettings[p];
+                      const isSelected = priority === p && hasConfirmedPriority;
+                      return (
+                        <button
+                          key={p}
+                          type="button"
+                          onClick={() => handlePriorityChange(p)}
+                          className={`py-1.5 px-1 rounded-xl border text-center transition-all flex flex-col items-center justify-center gap-0.5 transform active:scale-95 shadow-2xs ${
+                            isSelected
+                              ? 'border-blue-500 shadow-sm ring-2 ring-blue-500/30 font-black scale-[1.02]'
+                              : !hasConfirmedPriority
+                                ? 'border-dashed border-theme-border hover:border-blue-400 hover:bg-theme-card'
+                                : 'border-theme-border hover:bg-theme-card opacity-85 hover:opacity-100'
+                          }`}
+                          style={{
+                            backgroundColor: isSelected ? meta.bgColor : undefined,
+                            borderColor: isSelected ? meta.color : undefined
+                          }}
+                        >
+                          <span className="text-xs font-black tracking-tight" style={{ color: meta.color }}>
+                            {p}
+                          </span>
+                          <span className="text-[10px] font-bold text-theme-text leading-tight truncate w-full">
+                            {shortLabel}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Right Side: Duration Box & Quick Pills */}
+                <div className="md:col-span-5 space-y-1.5 md:pl-3 md:border-l border-theme-border/60">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-bold text-theme-text uppercase tracking-wider flex items-center gap-1.5">
+                      <Clock className="w-3.5 h-3.5 text-amber-500" />
+                      <span>Duration</span>
+                    </label>
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-theme-card border border-theme-border text-theme-muted font-mono font-bold">
+                      End: {endTime}
+                    </span>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    {/* Number input */}
+                    <div className="relative w-24 shrink-0">
+                      <input
+                        type="number"
+                        min="5"
+                        step="5"
+                        value={appointedMinutes}
+                        onChange={(e) => handleMinutesChange(parseInt(e.target.value, 10) || 0)}
+                        className="w-full text-xs pr-6 pl-2.5 py-1.5 rounded-xl bg-theme-card border border-theme-border text-theme-text font-mono font-black text-center focus:outline-none focus:ring-2 focus:ring-blue-500 shadow-2xs"
+                        placeholder="60"
+                      />
+                      <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-theme-muted font-bold pointer-events-none">
+                        m
+                      </span>
+                    </div>
+
+                    {/* Quick Duration Preset Pills */}
+                    <div className="flex items-center gap-1 flex-wrap flex-1">
+                      {[15, 30, 45, 60, 90, 120].map((m) => (
+                        <button
+                          key={m}
+                          type="button"
+                          onClick={() => handleMinutesChange(m)}
+                          className={`px-2 py-1 rounded-lg text-[10px] font-mono font-bold transition-all border shadow-2xs ${
+                            appointedMinutes === m
+                              ? 'bg-blue-600 text-white border-blue-600 shadow-sm ring-1 ring-blue-400'
+                              : 'bg-theme-card text-theme-muted hover:text-theme-text border-theme-border hover:border-blue-400 hover:bg-theme-card-hover'
+                          }`}
+                        >
+                          {m}m
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+              </div>
+            </div>
+
+            {/* Description & Custom Writing */}
+            <div className="space-y-1">
+              <label className="text-xs font-bold text-theme-text uppercase tracking-wider">
+                Description & Custom Writing
+              </label>
+              <textarea
+                rows={2}
+                placeholder="Detailed objectives, expected outcomes, or context..."
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                className="w-full text-xs px-3.5 py-1.5 rounded-xl bg-theme-card-hover border border-theme-border text-theme-text placeholder-theme-muted focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+
             {/* Plan / Project Folder Assignment (Task Group) */}
-            <div className="space-y-1.5 p-3.5 rounded-xl bg-theme-card-hover border border-theme-border">
+            <div className="space-y-1.5 p-3 rounded-xl bg-theme-card-hover border border-theme-border">
               <label className="text-[11px] font-bold text-theme-text flex items-center justify-between">
                 <span className="flex items-center gap-1.5">
                   <Layers className="w-3.5 h-3.5 text-purple-500" />
@@ -742,7 +797,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
               <select
                 value={planProjectId || ''}
                 onChange={(e) => setPlanProjectId(e.target.value || undefined)}
-                className="w-full text-xs px-3 py-2 rounded-xl bg-theme-card border border-theme-border text-theme-text font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full text-xs px-3 py-1.5 rounded-xl bg-theme-card border border-theme-border text-theme-text font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500"
               >
                 <option value="">-- No Plan / Project (Stand-alone Task) --</option>
                 {planProjects.map((folder) => (
