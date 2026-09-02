@@ -331,11 +331,11 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
 
                       {/* Title & Description */}
                       <div className="mt-2 space-y-1">
-                        <h4 className={getTaskTitleClasses(task.title, isDone)}>
+                        <h4 className={getTaskTitleClasses(task.title, isDone, isInSleep)}>
                           {task.title}
                         </h4>
                         {task.description && (
-                          <p className="text-xs text-theme-muted line-clamp-2 leading-relaxed">
+                          <p className={`text-xs line-clamp-2 leading-relaxed ${isInSleep ? 'text-slate-300' : 'text-theme-muted'}`}>
                             {task.description}
                           </p>
                         )}

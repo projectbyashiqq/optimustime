@@ -305,7 +305,8 @@ export const WeeklyCalendarView: React.FC<WeeklyCalendarViewProps> = ({
 
                         {/* Title */}
                         <h5 className={`font-bold leading-snug line-clamp-2 ${
-                          isDone ? 'line-through text-theme-muted' : 'text-theme-text'
+                          isDone ? 'line-through text-theme-muted' : 
+                          isInSleep ? 'text-white font-black drop-shadow-sm' : 'text-theme-text'
                         }`}>
                           {task.title}
                         </h5>

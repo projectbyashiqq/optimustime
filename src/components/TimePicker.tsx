@@ -121,12 +121,12 @@ export const TimePicker: React.FC<TimePickerProps> = ({
         type="button"
         disabled={disabled}
         onClick={() => setIsOpen(!isOpen)}
-        className="w-full text-xs px-3 py-2 rounded-xl bg-theme-card border border-theme-border text-theme-text hover:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 font-mono font-bold flex items-center justify-between shadow-sm transition-all text-left"
+        className="w-full text-xs px-3 py-2 rounded-xl bg-theme-card border border-theme-border text-theme-text hover:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 font-mono font-bold flex items-center justify-between gap-2 shadow-sm transition-all text-left cursor-pointer"
       >
-        <span className="text-sm tracking-wide text-blue-600 dark:text-blue-400">
+        <span className="text-xs sm:text-sm tracking-wide text-blue-600 dark:text-blue-400 whitespace-nowrap">
           {value || '09:00 AM'}
         </span>
-        <Clock className="w-4 h-4 text-theme-muted" />
+        <Clock className="w-4 h-4 text-theme-muted shrink-0" />
       </button>
 
       {/* Interactive Clock Popover Modal */}

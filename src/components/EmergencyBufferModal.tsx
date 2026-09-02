@@ -104,39 +104,337 @@ export const EmergencyBufferModal: React.FC = () => {
     return formatMinutesTo12Hour(startMin + durationMinutes);
   }, [startTime, durationMinutes]);
 
-  // Function to compute fresh auto-proposals for today by default
-  const computeFreshAutoProposals = useCallback(() => {
-    return calculateEmergencyReschedule(startTime, durationMinutes, date, tasks, capacitySettings);
-  }, [startTime, durationMinutes, date, tasks, capacitySettings]);
+  // Robust proposal generator for any batch strategy
+  const generateProposalsForStrategy = useCallback((
+    strat: StrategyType,
+    startT: string,
+    durM: number,
+    targetDate: string
+  ): TaskRescheduleProposal[] => {
+    const startMin = parse12HourToMinutes(startT);
+    const emergencyEndMin = startMin + durM;
+    const rawDayEnd = capacitySettings?.dayEndTime || '11:00 PM';
+    const dayEndMin = parse12HourToMinutes(rawDayEnd) || 1380;
+    const rawDayStart = capacitySettings?.dayStartTime || '06:00 AM';
+    const dayStartMin = parse12HourToMinutes(rawDayStart) || 360;
 
-  // Recompute proposals whenever time, duration, or date changes
+    const [y, m, d] = targetDate.split('-').map(Number);
+    const tomDate = new Date(y, m - 1, d);
+    tomDate.setDate(tomDate.getDate() + 1);
+    const tomorrowStr = toISODateString(tomDate);
+
+    const plus2Date = new Date(y, m - 1, d);
+    plus2Date.setDate(plus2Date.getDate() + 2);
+    const plus2DaysStr = toISODateString(plus2Date);
+
+    // Active tasks occurring on targetDate
+    const dayTasks = tasks.filter(t => 
+      isTaskScheduledForDate(t, targetDate) &&
+      t.status !== 'Done' && 
+      t.status !== 'Terminated' && 
+      !t.isEmergencyBuffer &&
+      t.startTime && 
+      t.endTime &&
+      t.startTime !== 'All Day'
+    ).sort((a, b) => parse12HourToMinutes(a.startTime) - parse12HourToMinutes(b.startTime));
+
+    // Filter tasks on or after emergency start or overlapping with emergency
+    const affectedTasks = dayTasks.filter(t => {
+      const eMin = parse12HourToMinutes(t.endTime);
+      return eMin > startMin;
+    });
+
+    const mandatoryTasks = dayTasks.filter(t => t.isMandatorySchedule);
+
+    let cascadeCursor = emergencyEndMin;
+    const simulatedTomorrowPool: any[] = tasks.filter(t => 
+      isTaskScheduledForDate(t, tomorrowStr) && 
+      t.status !== 'Done' && 
+      t.status !== 'Terminated' && 
+      !t.isEmergencyBuffer
+    );
+
+    const simulatedPlus2Pool: any[] = tasks.filter(t => 
+      isTaskScheduledForDate(t, plus2DaysStr) && 
+      t.status !== 'Done' && 
+      t.status !== 'Terminated' && 
+      !t.isEmergencyBuffer
+    );
+
+    return affectedTasks.map(task => {
+      const origStartMin = parse12HourToMinutes(task.startTime);
+      const origEndMin = parse12HourToMinutes(task.endTime);
+      const origDuration = task.appointedMinutes || Math.max(15, origEndMin - origStartMin);
+      const buffer = task.bufferMinutes ?? 5;
+      const isMandatory = Boolean(task.isMandatorySchedule);
+
+      if (isMandatory) {
+        // Do NOT advance cascadeCursor here — the per-task collision loop already
+        // jumps over mandatory blocks. Advancing here would push cascadeCursor past
+        // day-end even when mandatory is at 11 PM and flexible tasks could fit before it.
+        return {
+          taskId: task.id,
+          taskTitle: task.title,
+          projectCode: task.projectCode,
+          priority: task.priority,
+          currentDate: targetDate,
+          currentStartTime: task.startTime,
+          currentEndTime: task.endTime,
+          currentDurationMinutes: origDuration,
+          proposedDate: targetDate,
+          proposedStartTime: task.startTime,
+          proposedEndTime: task.endTime,
+          proposedDurationMinutes: origDuration,
+          action: 'keep' as TaskRescheduleAction,
+          approved: false,
+          isMandatory: true,
+          notes: '🔒 Mandatory Schedule (Anchored • Never Shifts)'
+        };
+      }
+
+      // 1. Defer Tomorrow (+24h)
+      if (strat === 'defer24h') {
+        const slot = getSmartNextFreeSlot(tomorrowStr, origDuration, simulatedTomorrowPool, [], task.id, buffer);
+        simulatedTomorrowPool.push({
+          ...task,
+          taskDate: tomorrowStr,
+          startTime: slot.startTime,
+          endTime: slot.endTime,
+          appointedMinutes: origDuration,
+          bufferMinutes: buffer,
+          status: 'Pending'
+        });
+        return {
+          taskId: task.id,
+          taskTitle: task.title,
+          projectCode: task.projectCode,
+          priority: task.priority,
+          currentDate: targetDate,
+          currentStartTime: task.startTime,
+          currentEndTime: task.endTime,
+          currentDurationMinutes: origDuration,
+          proposedDate: tomorrowStr,
+          proposedStartTime: slot.startTime,
+          proposedEndTime: slot.endTime,
+          proposedDurationMinutes: origDuration,
+          action: 'defer_tomorrow' as TaskRescheduleAction,
+          approved: true,
+          isMandatory: false,
+          notes: `Deferred to Tomorrow (${tomorrowStr})`
+        };
+      }
+
+      // 2. Defer +2 Days (+48h)
+      if (strat === 'defer48h') {
+        const slot = getSmartNextFreeSlot(plus2DaysStr, origDuration, simulatedPlus2Pool, [], task.id, buffer);
+        simulatedPlus2Pool.push({
+          ...task,
+          taskDate: plus2DaysStr,
+          startTime: slot.startTime,
+          endTime: slot.endTime,
+          appointedMinutes: origDuration,
+          bufferMinutes: buffer,
+          status: 'Pending'
+        });
+        return {
+          taskId: task.id,
+          taskTitle: task.title,
+          projectCode: task.projectCode,
+          priority: task.priority,
+          currentDate: targetDate,
+          currentStartTime: task.startTime,
+          currentEndTime: task.endTime,
+          currentDurationMinutes: origDuration,
+          proposedDate: plus2DaysStr,
+          proposedStartTime: slot.startTime,
+          proposedEndTime: slot.endTime,
+          proposedDurationMinutes: origDuration,
+          action: 'defer_tomorrow' as TaskRescheduleAction,
+          approved: true,
+          isMandatory: false,
+          notes: `Deferred to +2 Days (${plus2DaysStr})`
+        };
+      }
+
+      // 3. Hold All
+      if (strat === 'hold') {
+        return {
+          taskId: task.id,
+          taskTitle: task.title,
+          projectCode: task.projectCode,
+          priority: task.priority,
+          currentDate: targetDate,
+          currentStartTime: task.startTime,
+          currentEndTime: task.endTime,
+          currentDurationMinutes: origDuration,
+          proposedDate: targetDate,
+          proposedStartTime: task.startTime,
+          proposedEndTime: task.endTime,
+          proposedDurationMinutes: origDuration,
+          action: 'hold' as TaskRescheduleAction,
+          approved: true,
+          isMandatory: false,
+          notes: 'Placed on Hold (Backlog)'
+        };
+      }
+
+      // 4. Compress 50%
+      if (strat === 'compress') {
+        const compressedDur = Math.max(15, Math.round((origDuration * 0.5) / 5) * 5);
+        let candStart = Math.max(cascadeCursor, dayStartMin);
+        let collision = true;
+        while (collision) {
+          collision = false;
+          const candEnd = candStart + compressedDur;
+          for (const mand of mandatoryTasks) {
+            const mStart = parse12HourToMinutes(mand.startTime);
+            const mEnd = parse12HourToMinutes(mand.endTime);
+            if (candStart < mEnd && candEnd > mStart) {
+              candStart = mEnd + (mand.bufferMinutes ?? 5);
+              collision = true;
+              break;
+            }
+          }
+        }
+        const candEnd = candStart + compressedDur;
+        if (candEnd <= dayEndMin) {
+          cascadeCursor = candEnd + buffer;
+          return {
+            taskId: task.id,
+            taskTitle: task.title,
+            projectCode: task.projectCode,
+            priority: task.priority,
+            currentDate: targetDate,
+            currentStartTime: task.startTime,
+            currentEndTime: task.endTime,
+            currentDurationMinutes: origDuration,
+            proposedDate: targetDate,
+            proposedStartTime: formatMinutesTo12Hour(candStart),
+            proposedEndTime: formatMinutesTo12Hour(candEnd),
+            proposedDurationMinutes: compressedDur,
+            action: 'compress' as TaskRescheduleAction,
+            approved: true,
+            isMandatory: false,
+            notes: `Compressed: ${origDuration}m ➔ ${compressedDur}m`
+          };
+        } else {
+          // Overflow to tomorrow
+          const slot = getSmartNextFreeSlot(tomorrowStr, compressedDur, simulatedTomorrowPool, [], task.id, buffer);
+          simulatedTomorrowPool.push({
+            ...task,
+            taskDate: tomorrowStr,
+            startTime: slot.startTime,
+            endTime: slot.endTime,
+            appointedMinutes: compressedDur,
+            bufferMinutes: buffer,
+            status: 'Pending'
+          });
+          return {
+            taskId: task.id,
+            taskTitle: task.title,
+            projectCode: task.projectCode,
+            priority: task.priority,
+            currentDate: targetDate,
+            currentStartTime: task.startTime,
+            currentEndTime: task.endTime,
+            currentDurationMinutes: origDuration,
+            proposedDate: tomorrowStr,
+            proposedStartTime: slot.startTime,
+            proposedEndTime: slot.endTime,
+            proposedDurationMinutes: compressedDur,
+            action: 'defer_tomorrow' as TaskRescheduleAction,
+            approved: true,
+            isMandatory: false,
+            notes: `Overflow ➔ Tomorrow (${tomorrowStr})`
+          };
+        }
+      }
+
+      // 5. Auto-Cascade or Shift +1h, +2h, +4h
+      const shiftOffset = strat === 'shift1h' ? 60 : strat === 'shift2h' ? 120 : strat === 'shift4h' ? 240 : 0;
+      let candidateStart = Math.max(origStartMin + shiftOffset, cascadeCursor, dayStartMin);
+
+      let collision = true;
+      while (collision) {
+        collision = false;
+        const candidateEnd = candidateStart + origDuration;
+        for (const mand of mandatoryTasks) {
+          const mStart = parse12HourToMinutes(mand.startTime);
+          const mEnd = parse12HourToMinutes(mand.endTime);
+          if (candidateStart < mEnd && candidateEnd > mStart) {
+            candidateStart = mEnd + (mand.bufferMinutes ?? 5);
+            collision = true;
+            break;
+          }
+        }
+      }
+
+      const candidateEnd = candidateStart + origDuration;
+
+      if (candidateEnd <= dayEndMin) {
+        const isShifted = candidateStart !== origStartMin;
+        cascadeCursor = candidateEnd + buffer;
+        const shouldApprove = isShifted || strat !== 'auto';
+        return {
+          taskId: task.id,
+          taskTitle: task.title,
+          projectCode: task.projectCode,
+          priority: task.priority,
+          currentDate: targetDate,
+          currentStartTime: task.startTime,
+          currentEndTime: task.endTime,
+          currentDurationMinutes: origDuration,
+          proposedDate: targetDate,
+          proposedStartTime: formatMinutesTo12Hour(candidateStart),
+          proposedEndTime: formatMinutesTo12Hour(candidateEnd),
+          proposedDurationMinutes: origDuration,
+          action: (shouldApprove ? 'shift_same_day' : 'keep') as TaskRescheduleAction,
+          approved: shouldApprove,
+          delayMinutes: candidateStart - origStartMin,
+          isMandatory: false,
+          notes: isShifted ? `Shifted to ${formatMinutesTo12Hour(candidateStart)} today` : 'Slot unaffected'
+        };
+      } else {
+        // Overflow to tomorrow
+        const slot = getSmartNextFreeSlot(tomorrowStr, origDuration, simulatedTomorrowPool, [], task.id, buffer);
+        simulatedTomorrowPool.push({
+          ...task,
+          taskDate: tomorrowStr,
+          startTime: slot.startTime,
+          endTime: slot.endTime,
+          appointedMinutes: origDuration,
+          bufferMinutes: buffer,
+          status: 'Pending'
+        });
+        return {
+          taskId: task.id,
+          taskTitle: task.title,
+          projectCode: task.projectCode,
+          priority: task.priority,
+          currentDate: targetDate,
+          currentStartTime: task.startTime,
+          currentEndTime: task.endTime,
+          currentDurationMinutes: origDuration,
+          proposedDate: tomorrowStr,
+          proposedStartTime: slot.startTime,
+          proposedEndTime: slot.endTime,
+          proposedDurationMinutes: origDuration,
+          action: 'defer_tomorrow' as TaskRescheduleAction,
+          approved: true,
+          isMandatory: false,
+          notes: `Overflow ➔ Tomorrow (${tomorrowStr})`
+        };
+      }
+    });
+  }, [tasks, capacitySettings]);
+
+  // Recompute proposals whenever time, duration, date, or strategy changes
   useEffect(() => {
-    const fresh = computeFreshAutoProposals();
-    const startMin = parse12HourToMinutes(startTime);
-    const emergencyEndMin = startMin + durationMinutes;
-
-    if (selectedStrategy === 'defer24h') {
-      setProposals(calculateBatchDeferToTomorrowProposals(fresh, date, tasks, 1));
-    } else if (selectedStrategy === 'defer48h') {
-      setProposals(calculateBatchDeferToTomorrowProposals(fresh, date, tasks, 2));
-    } else if (selectedStrategy === 'shift1h') {
-      setProposals(calculateBatchShiftProposals(fresh, 60, emergencyEndMin, date, tasks, capacitySettings));
-    } else if (selectedStrategy === 'shift2h') {
-      setProposals(calculateBatchShiftProposals(fresh, 120, emergencyEndMin, date, tasks, capacitySettings));
-    } else if (selectedStrategy === 'shift4h') {
-      setProposals(calculateBatchShiftProposals(fresh, 240, emergencyEndMin, date, tasks, capacitySettings));
-    } else if (selectedStrategy === 'compress') {
-      setProposals(calculateBatchCompressProposals(fresh, emergencyEndMin, date, tasks, capacitySettings, 0.5));
-    } else if (selectedStrategy === 'hold') {
-      setProposals(fresh.map(p => p.isMandatory ? p : { ...p, action: 'hold', approved: true, notes: 'Placed on Hold (Backlog)' }));
-    } else if (selectedStrategy === 'custom') {
-      // Retain custom user adjustments unless date/time inputs changed drastically
-    } else {
-      // Default: auto-cascade on today
-      setProposals(fresh);
-      setSelectedStrategy('auto');
+    if (selectedStrategy !== 'custom') {
+      const generated = generateProposalsForStrategy(selectedStrategy, startTime, durationMinutes, date);
+      setProposals(generated);
     }
-  }, [startTime, durationMinutes, date, tasks, capacitySettings, selectedStrategy, computeFreshAutoProposals]);
+  }, [startTime, durationMinutes, date, selectedStrategy, generateProposalsForStrategy]);
 
   if (!isEmergencyModalOpen) return null;
 
@@ -191,42 +489,10 @@ export const EmergencyBufferModal: React.FC = () => {
   };
 
   // Strategy Handlers
-  const handleStrategyAutoCascade = () => {
-    setSelectedStrategy('auto');
-    setProposals(calculateEmergencyReschedule(startTime, durationMinutes, date, tasks, capacitySettings));
-  };
-
-  const handleStrategyShift = (mins: number, strategyName: StrategyType) => {
+  const handleStrategySelect = (strategyName: StrategyType) => {
     setSelectedStrategy(strategyName);
-    const startMin = parse12HourToMinutes(startTime);
-    const fresh = calculateEmergencyReschedule(startTime, durationMinutes, date, tasks, capacitySettings);
-    setProposals(calculateBatchShiftProposals(fresh, mins, startMin + durationMinutes, date, tasks, capacitySettings));
-  };
-
-  const handleStrategyDefer = (daysOffset: number, strategyName: StrategyType) => {
-    setSelectedStrategy(strategyName);
-    const fresh = calculateEmergencyReschedule(startTime, durationMinutes, date, tasks, capacitySettings);
-    setProposals(calculateBatchDeferToTomorrowProposals(fresh, date, tasks, daysOffset));
-  };
-
-  const handleStrategyCompressAll = (ratio = 0.5) => {
-    setSelectedStrategy('compress');
-    const startMin = parse12HourToMinutes(startTime);
-    const fresh = calculateEmergencyReschedule(startTime, durationMinutes, date, tasks, capacitySettings);
-    setProposals(calculateBatchCompressProposals(fresh, startMin + durationMinutes, date, tasks, capacitySettings, ratio));
-  };
-
-  const handleStrategyHoldAll = () => {
-    setSelectedStrategy('hold');
-    setProposals(prev => prev.map(p => {
-      if (p.isMandatory) return p;
-      return {
-        ...p,
-        action: 'hold',
-        approved: true,
-        notes: 'Placed on Hold (Backlog)'
-      };
-    }));
+    const generated = generateProposalsForStrategy(strategyName, startTime, durationMinutes, date);
+    setProposals(generated);
   };
 
   // Toggle Single Task Permission (Approved checkbox)
@@ -234,7 +500,12 @@ export const EmergencyBufferModal: React.FC = () => {
     setSelectedStrategy('custom');
     setProposals(prev => prev.map(p => {
       if (p.taskId === taskId) {
-        return { ...p, approved: !p.approved };
+        const nextApproved = !p.approved;
+        return { 
+          ...p, 
+          approved: nextApproved,
+          action: nextApproved ? (p.action === 'keep' ? 'shift_same_day' : p.action) : 'keep'
+        };
       }
       return p;
     }));
@@ -376,13 +647,13 @@ export const EmergencyBufferModal: React.FC = () => {
           };
         } else {
           // Overflow to tomorrow
-          const tomSlot = getSmartNextFreeSlot(targetDateStr, dur, tasks, [], p.taskId, taskBuffer);
+          const slot = getSmartNextFreeSlot(targetDateStr, dur, tasks, [], p.taskId, taskBuffer);
           return {
             ...p,
             action: 'defer_tomorrow' as TaskRescheduleAction,
             proposedDate: targetDateStr,
-            proposedStartTime: tomSlot.startTime,
-            proposedEndTime: tomSlot.endTime,
+            proposedStartTime: slot.startTime,
+            proposedEndTime: slot.endTime,
             proposedDurationMinutes: dur,
             notes: `Day overflow -> Tomorrow (${targetDateStr})`
           };
@@ -519,7 +790,7 @@ export const EmergencyBufferModal: React.FC = () => {
                     className="px-3 py-1 bg-red-600 hover:bg-red-700 text-white rounded-xl text-xs font-bold shadow-sm flex items-center gap-1"
                   >
                     <Plus className="w-3.5 h-3.5" />
-                    <span>+ Add Preset</span>
+                    <span>Add Preset</span>
                   </button>
                 </div>
 
@@ -789,10 +1060,10 @@ export const EmergencyBufferModal: React.FC = () => {
                 {/* 1. Auto-Fit Today */}
                 <button
                   type="button"
-                  onClick={handleStrategyAutoCascade}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all shadow-sm flex items-center gap-1 ${
+                  onClick={() => handleStrategySelect('auto')}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all shadow-sm flex items-center gap-1 cursor-pointer ${
                     selectedStrategy === 'auto'
-                      ? 'bg-gradient-to-r from-red-600 to-orange-600 text-white ring-2 ring-red-400 shadow-md'
+                      ? 'bg-gradient-to-r from-red-600 to-orange-600 text-white ring-2 ring-red-400 shadow-md scale-105'
                       : 'bg-theme-card hover:bg-theme-border text-theme-text border border-theme-border'
                   }`}
                   title="Schedule all flexible tasks on TODAY sequentially starting after emergency"
@@ -804,10 +1075,10 @@ export const EmergencyBufferModal: React.FC = () => {
                 {/* 2. +1h Shift */}
                 <button
                   type="button"
-                  onClick={() => handleStrategyShift(60, 'shift1h')}
-                  className={`px-2.5 py-1.5 rounded-xl text-xs font-bold transition-all shadow-sm flex items-center gap-1 ${
+                  onClick={() => handleStrategySelect('shift1h')}
+                  className={`px-2.5 py-1.5 rounded-xl text-xs font-bold transition-all shadow-sm flex items-center gap-1 cursor-pointer ${
                     selectedStrategy === 'shift1h'
-                      ? 'bg-blue-600 text-white ring-2 ring-blue-400 shadow-md'
+                      ? 'bg-blue-600 text-white ring-2 ring-blue-400 shadow-md scale-105'
                       : 'bg-theme-card hover:bg-theme-border text-theme-text border border-theme-border'
                   }`}
                   title="Shift all tasks forward by +1 Hour (+60m)"
@@ -819,10 +1090,10 @@ export const EmergencyBufferModal: React.FC = () => {
                 {/* 3. +2h Shift */}
                 <button
                   type="button"
-                  onClick={() => handleStrategyShift(120, 'shift2h')}
-                  className={`px-2.5 py-1.5 rounded-xl text-xs font-bold transition-all shadow-sm flex items-center gap-1 ${
+                  onClick={() => handleStrategySelect('shift2h')}
+                  className={`px-2.5 py-1.5 rounded-xl text-xs font-bold transition-all shadow-sm flex items-center gap-1 cursor-pointer ${
                     selectedStrategy === 'shift2h'
-                      ? 'bg-blue-600 text-white ring-2 ring-blue-400 shadow-md'
+                      ? 'bg-blue-600 text-white ring-2 ring-blue-400 shadow-md scale-105'
                       : 'bg-theme-card hover:bg-theme-border text-theme-text border border-theme-border'
                   }`}
                   title="Shift all tasks forward by +2 Hours (+120m)"
@@ -834,10 +1105,10 @@ export const EmergencyBufferModal: React.FC = () => {
                 {/* 4. +4h Shift */}
                 <button
                   type="button"
-                  onClick={() => handleStrategyShift(240, 'shift4h')}
-                  className={`px-2.5 py-1.5 rounded-xl text-xs font-bold transition-all shadow-sm flex items-center gap-1 ${
+                  onClick={() => handleStrategySelect('shift4h')}
+                  className={`px-2.5 py-1.5 rounded-xl text-xs font-bold transition-all shadow-sm flex items-center gap-1 cursor-pointer ${
                     selectedStrategy === 'shift4h'
-                      ? 'bg-blue-600 text-white ring-2 ring-blue-400 shadow-md'
+                      ? 'bg-blue-600 text-white ring-2 ring-blue-400 shadow-md scale-105'
                       : 'bg-theme-card hover:bg-theme-border text-theme-text border border-theme-border'
                   }`}
                   title="Shift all tasks forward by +4 Hours (+240m)"
@@ -849,10 +1120,10 @@ export const EmergencyBufferModal: React.FC = () => {
                 {/* 5. Tomorrow (+24h) */}
                 <button
                   type="button"
-                  onClick={() => handleStrategyDefer(1, 'defer24h')}
-                  className={`px-2.5 py-1.5 rounded-xl text-xs font-bold transition-all shadow-sm flex items-center gap-1 ${
+                  onClick={() => handleStrategySelect('defer24h')}
+                  className={`px-2.5 py-1.5 rounded-xl text-xs font-bold transition-all shadow-sm flex items-center gap-1 cursor-pointer ${
                     selectedStrategy === 'defer24h'
-                      ? 'bg-amber-500 text-white ring-2 ring-amber-300 shadow-md'
+                      ? 'bg-amber-500 text-white ring-2 ring-amber-300 shadow-md scale-105'
                       : 'bg-theme-card hover:bg-theme-border text-theme-text border border-theme-border'
                   }`}
                   title="Move all flexible tasks to tomorrow morning"
@@ -864,10 +1135,10 @@ export const EmergencyBufferModal: React.FC = () => {
                 {/* 6. +2 Days (+48h) */}
                 <button
                   type="button"
-                  onClick={() => handleStrategyDefer(2, 'defer48h')}
-                  className={`px-2.5 py-1.5 rounded-xl text-xs font-bold transition-all shadow-sm flex items-center gap-1 ${
+                  onClick={() => handleStrategySelect('defer48h')}
+                  className={`px-2.5 py-1.5 rounded-xl text-xs font-bold transition-all shadow-sm flex items-center gap-1 cursor-pointer ${
                     selectedStrategy === 'defer48h'
-                      ? 'bg-amber-600 text-white ring-2 ring-amber-300 shadow-md'
+                      ? 'bg-amber-600 text-white ring-2 ring-amber-300 shadow-md scale-105'
                       : 'bg-theme-card hover:bg-theme-border text-theme-text border border-theme-border'
                   }`}
                   title="Move all flexible tasks to 2 days later"
@@ -879,10 +1150,10 @@ export const EmergencyBufferModal: React.FC = () => {
                 {/* 7. Compress 50% */}
                 <button
                   type="button"
-                  onClick={() => handleStrategyCompressAll(0.5)}
-                  className={`px-2.5 py-1.5 rounded-xl text-xs font-bold transition-all shadow-sm flex items-center gap-1 ${
+                  onClick={() => handleStrategySelect('compress')}
+                  className={`px-2.5 py-1.5 rounded-xl text-xs font-bold transition-all shadow-sm flex items-center gap-1 cursor-pointer ${
                     selectedStrategy === 'compress'
-                      ? 'bg-purple-600 text-white ring-2 ring-purple-300 shadow-md'
+                      ? 'bg-purple-600 text-white ring-2 ring-purple-300 shadow-md scale-105'
                       : 'bg-theme-card hover:bg-theme-border text-theme-text border border-theme-border'
                   }`}
                   title="Compress flexible tasks by 50% to fit remaining today's hours"
@@ -894,10 +1165,10 @@ export const EmergencyBufferModal: React.FC = () => {
                 {/* 8. Hold All */}
                 <button
                   type="button"
-                  onClick={handleStrategyHoldAll}
-                  className={`px-2.5 py-1.5 rounded-xl text-xs font-semibold transition-all flex items-center gap-1 ${
+                  onClick={() => handleStrategySelect('hold')}
+                  className={`px-2.5 py-1.5 rounded-xl text-xs font-semibold transition-all flex items-center gap-1 cursor-pointer ${
                     selectedStrategy === 'hold'
-                      ? 'bg-zinc-700 text-white ring-2 ring-zinc-400 shadow-md'
+                      ? 'bg-zinc-700 text-white ring-2 ring-zinc-400 shadow-md scale-105'
                       : 'bg-theme-card hover:bg-theme-border text-theme-muted hover:text-theme-text border border-theme-border'
                   }`}
                   title="Put all flexible tasks on hold"
@@ -923,6 +1194,13 @@ export const EmergencyBufferModal: React.FC = () => {
               <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
                 {proposals.map((p) => {
                   const isMandatory = p.isMandatory;
+                  const [y, m, d] = date.split('-').map(Number);
+                  const tomObj = new Date(y, m - 1, d);
+                  tomObj.setDate(tomObj.getDate() + 1);
+                  const tomDateStr = toISODateString(tomObj);
+                  const p2Obj = new Date(y, m - 1, d);
+                  p2Obj.setDate(p2Obj.getDate() + 2);
+                  const p2DateStr = toISODateString(p2Obj);
 
                   return (
                     <div
@@ -944,7 +1222,7 @@ export const EmergencyBufferModal: React.FC = () => {
                             <button
                               type="button"
                               onClick={() => handleToggleTaskApproval(p.taskId)}
-                              className="text-theme-muted hover:text-theme-text transition-transform active:scale-90"
+                              className="text-theme-muted hover:text-theme-text transition-transform active:scale-90 cursor-pointer"
                               title={p.approved ? 'Approved for Reschedule (Click to exclude)' : 'Excluded (Click to approve)'}
                             >
                               {p.approved ? (
@@ -1035,9 +1313,9 @@ export const EmergencyBufferModal: React.FC = () => {
                             <button
                               type="button"
                               onClick={() => handleChangeTaskAction(p.taskId, 'shift_same_day', 0)}
-                              className={`px-2 py-1 rounded-lg text-[10px] font-bold transition-all ${
+                              className={`px-2 py-1 rounded-lg text-[10px] font-bold transition-all cursor-pointer ${
                                 p.approved && p.action === 'shift_same_day' && p.proposedDate === date
-                                  ? 'bg-blue-600 text-white shadow-sm ring-1 ring-blue-400'
+                                  ? 'bg-blue-600 text-white shadow-sm ring-1 ring-blue-400 font-black'
                                   : 'bg-theme-card-hover text-theme-muted hover:text-theme-text'
                               }`}
                               title="Schedule on Today"
@@ -1048,12 +1326,12 @@ export const EmergencyBufferModal: React.FC = () => {
                             <button
                               type="button"
                               onClick={() => handleChangeTaskAction(p.taskId, 'defer_tomorrow', 1)}
-                              className={`px-2 py-1 rounded-lg text-[10px] font-bold transition-all ${
-                                p.approved && p.action === 'defer_tomorrow' && p.proposedDate !== date
-                                  ? 'bg-amber-500 text-white shadow-sm ring-1 ring-amber-300'
+                              className={`px-2 py-1 rounded-lg text-[10px] font-bold transition-all cursor-pointer ${
+                                p.approved && p.action === 'defer_tomorrow' && p.proposedDate === tomDateStr
+                                  ? 'bg-amber-500 text-white shadow-sm ring-1 ring-amber-300 font-black'
                                   : 'bg-theme-card-hover text-theme-muted hover:text-theme-text'
                               }`}
-                              title="Move task to tomorrow"
+                              title="Move task to tomorrow (+24h)"
                             >
                               📅 +24h
                             </button>
@@ -1061,7 +1339,11 @@ export const EmergencyBufferModal: React.FC = () => {
                             <button
                               type="button"
                               onClick={() => handleChangeTaskAction(p.taskId, 'defer_tomorrow', 2)}
-                              className="px-2 py-1 rounded-lg text-[10px] font-bold bg-theme-card-hover text-theme-muted hover:text-theme-text transition-all"
+                              className={`px-2 py-1 rounded-lg text-[10px] font-bold transition-all cursor-pointer ${
+                                p.approved && p.action === 'defer_tomorrow' && p.proposedDate === p2DateStr
+                                  ? 'bg-amber-600 text-white shadow-sm ring-1 ring-amber-400 font-black'
+                                  : 'bg-theme-card-hover text-theme-muted hover:text-theme-text'
+                              }`}
                               title="Move task to 2 days later (+48h)"
                             >
                               📅 +48h
@@ -1070,9 +1352,9 @@ export const EmergencyBufferModal: React.FC = () => {
                             <button
                               type="button"
                               onClick={() => handleChangeTaskAction(p.taskId, 'compress')}
-                              className={`px-2 py-1 rounded-lg text-[10px] font-bold transition-all ${
+                              className={`px-2 py-1 rounded-lg text-[10px] font-bold transition-all cursor-pointer ${
                                 p.approved && p.action === 'compress'
-                                  ? 'bg-purple-600 text-white shadow-sm ring-1 ring-purple-300'
+                                  ? 'bg-purple-600 text-white shadow-sm ring-1 ring-purple-300 font-black'
                                   : 'bg-theme-card-hover text-theme-muted hover:text-theme-text'
                               }`}
                               title="Compress duration to fit today"
@@ -1083,9 +1365,9 @@ export const EmergencyBufferModal: React.FC = () => {
                             <button
                               type="button"
                               onClick={() => handleChangeTaskAction(p.taskId, 'hold')}
-                              className={`px-2 py-1 rounded-lg text-[10px] font-bold transition-all ${
+                              className={`px-2 py-1 rounded-lg text-[10px] font-bold transition-all cursor-pointer ${
                                 p.approved && p.action === 'hold'
-                                  ? 'bg-zinc-700 text-white shadow-sm ring-1 ring-zinc-400'
+                                  ? 'bg-zinc-700 text-white shadow-sm ring-1 ring-zinc-400 font-black'
                                   : 'bg-theme-card-hover text-theme-muted hover:text-theme-text'
                               }`}
                               title="Put task on hold in backlog"
@@ -1096,9 +1378,9 @@ export const EmergencyBufferModal: React.FC = () => {
                             <button
                               type="button"
                               onClick={() => handleChangeTaskAction(p.taskId, 'keep')}
-                              className={`px-2 py-1 rounded-lg text-[10px] font-bold transition-all ${
+                              className={`px-2 py-1 rounded-lg text-[10px] font-bold transition-all cursor-pointer ${
                                 !p.approved || p.action === 'keep'
-                                  ? 'bg-emerald-600 text-white shadow-sm ring-1 ring-emerald-400'
+                                  ? 'bg-emerald-600 text-white shadow-sm ring-1 ring-emerald-400 font-black'
                                   : 'bg-theme-card-hover text-theme-muted hover:text-theme-text'
                               }`}
                               title="Keep original scheduled slot"

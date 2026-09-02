@@ -34,7 +34,10 @@ export interface TaskExecutionLog {
   actualDurationMinutes: number;
   isLateFinish: boolean;
   lateStartMinutes?: number; // Late start tracking vs scheduled start
+  earlyStartMinutes?: number; // Early start tracking vs scheduled start
   scheduledStartTime?: string;
+  actualStartTime?: string;
+  originalEndTime?: string;
   notes?: string;
 }
 
@@ -82,12 +85,23 @@ export interface Task {
   isEmergencyBuffer?: boolean;
   emergencyType?: EmergencyType;
 
+  // Actual Execution Timing & Discrepancy Tracking (Early / Late start relative to scheduled)
+  originalScheduledStartTime?: string;
+  originalAppointedMinutes?: number;
+  startDiscrepancyMinutes?: number; // < 0 = early, > 0 = late, 0 = on time
+  actualStartTime?: string;
+
   // Mandatory / Fixed Schedule Flag (Non-reschedulable, irreplaceable & protected from auto-shifts)
   isMandatorySchedule?: boolean;
 
   // Plan / Project Folder Association
   planProjectId?: string;
+
+  // Signal vs Noise classification
+  signalNoise?: SignalNoiseType;
 }
+
+export type SignalNoiseType = 'signal' | 'noise';
 
 export type PlanProjectType = 'plan' | 'project';
 export type PlanProjectStatus = 'active' | 'completed' | 'on_hold' | 'archived';
@@ -272,6 +286,7 @@ export interface BufferCategoryItem {
   color?: string;
   bgColor?: string;
   isSystem?: boolean;
+  defaultSignalNoise?: SignalNoiseType;
 }
 
 export interface BufferStatusNote {
@@ -283,6 +298,8 @@ export interface BufferStatusNote {
   activityTag: BufferActivityTag | string;
   notes: string; // "What did you do during this free time / buffer?"
   energyLevel?: number; // 1 to 5
+  signalNoise?: SignalNoiseType;
+  reflectionNotes?: string;
   relatedTaskId?: string;
   relatedTaskTitle?: string;
   createdAt: string; // ISO string
@@ -324,11 +341,14 @@ export interface LifeEventLog {
   details?: {
     previousStartTime?: string;
     newStartTime?: string;
+    previousEndTime?: string;
+    newEndTime?: string;
     previousDate?: string;
     newDate?: string;
     durationMinutes?: number;
     appointedMinutes?: number;
     delayMinutes?: number;
+    extraMinutes?: number;
     isLate?: boolean;
     reason?: string;
     emergencyType?: string;
@@ -336,9 +356,15 @@ export interface LifeEventLog {
     bufferActivityTag?: string;
     bufferNotes?: string;
     scheduledStartTime?: string;
+    originalScheduledStartTime?: string;
     actualStartTime?: string;
+    scheduledEndTime?: string;
     lateStartMinutes?: number;
+    earlyStartMinutes?: number;
+    startDiscrepancyMinutes?: number;
     isLateStart?: boolean;
+    signalNoiseType?: SignalNoiseType;
+    [key: string]: any;
   };
 }
 
@@ -357,6 +383,9 @@ export interface DaySlice24 {
   bufferNote?: BufferStatusNote;
   color?: string;
   bgColor?: string;
+  signalNoise: SignalNoiseType;
+  isNoise: boolean;
+  snReason?: string;
 }
 
 export interface DayBreakdown24Metrics {
@@ -368,6 +397,12 @@ export interface DayBreakdown24Metrics {
   scheduledBufferMinutes: number;
   unaccountedMinutes: number;
   accountabilityScore: number; // 0 - 100%
+  // Signal vs Noise Metrics
+  signalMinutes: number;
+  noiseMinutes: number;
+  signalRatio: number; // 0 - 100%
+  snrMultiplier: number; // e.g. 4.5x
+  noiseLeakMinutes: number;
 }
 
 

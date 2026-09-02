@@ -25,8 +25,19 @@ import {
   PlanProjectFolder,
   PlanProjectType,
   PlanProjectStatus,
-  DefaultTaskSettings
+  DefaultTaskSettings,
+  DaySlice24,
+  SignalNoiseType
 } from '../types';
+import { detectSignalVsNoise } from '../utils/signalNoiseUtils';
+import { 
+  createFullSystemBackup, 
+  createSettingsOnlyBackup, 
+  validateBackupBundle, 
+  saveRollbackSnapshot, 
+  getRollbackSnapshot, 
+  clearRollbackSnapshot 
+} from '../utils/backupUtils';
 import { 
   DEFAULT_CAPACITY, 
   DEFAULT_PRIORITIES, 
@@ -117,6 +128,7 @@ interface AppContextType {
   holdTask: (taskId: string) => void;
   rescheduleTask: (taskId: string, newDate: string, newStartTime: string) => void;
   terminateTask: (taskId: string) => void;
+  extendTaskDuration: (taskId: string, extraMinutes: number) => void;
   
   // Conflict & Cascading Shift Engine
   detectConflicts: (date: string, startTime: string, endTime: string, ignoreTaskId?: string) => Task[];
@@ -165,6 +177,16 @@ interface AppContextType {
   closeBufferNoteModal: () => void;
   activeBufferPrompt: { date: string; startTime: string; endTime: string; durationMinutes: number; relatedTaskId?: string; relatedTaskTitle?: string } | null;
   setActiveBufferPrompt: (prompt: { date: string; startTime: string; endTime: string; durationMinutes: number; relatedTaskId?: string; relatedTaskTitle?: string } | null) => void;
+  toggleSliceSignalNoise: (slice: DaySlice24) => void;
+  addQuickDiaryEntry: (entry: {
+    date: string;
+    startTime: string;
+    durationMinutes: number;
+    text: string;
+    activityTag?: string;
+    signalNoise?: SignalNoiseType;
+    energyLevel?: number;
+  }) => BufferStatusNote;
 
   // Emergency Buffer Protocol
   isEmergencyModalOpen: boolean;
@@ -199,10 +221,17 @@ interface AppContextType {
   pullFromCloud: () => Promise<boolean>;
   testCloudConnection: () => Promise<{ success: boolean; message: string }>;
   
-  // Backup / Restore
+  // Backup / Restore & 100% System Data Hub
   exportStateJson: () => string;
-  importStateJson: (jsonStr: string) => boolean;
+  exportSettingsOnlyJson: () => string;
+  importStateJson: (jsonStr: string, mode?: 'full' | 'merge' | 'settings_only') => boolean;
+  rollbackLastRestore: () => boolean;
+  canRollback: boolean;
   resetToDefaultData: () => void;
+  isBackupModalOpen: boolean;
+  backupModalTab: 'export' | 'restore';
+  openBackupModal: (tab?: 'export' | 'restore') => void;
+  closeBackupModal: () => void;
   
   // Life Event Audit & Chronological Logs
   auditLogs: LifeEventLog[];
@@ -1287,20 +1316,47 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }));
   }, [logLifeEvent]);
 
-  // Execution Trackers: Start Task (With Intelligent Late Start Detection & Logging)
+  // Execution Trackers: Start Task (With Exact Current Time Alignment & Early/Late Detection)
   const startTask = useCallback((taskId: string) => {
     const now = new Date();
     const nowIso = now.toISOString();
     const todayStr = toISODateString(now);
+    const curMin = now.getHours() * 60 + now.getMinutes();
+    const exactCurrentTimeStr = formatMinutesTo12Hour(curMin);
 
     setTasks(prev => prev.map(t => {
       if (t.id === taskId) {
+        const originalScheduledStart = t.originalScheduledStartTime || t.startTime;
         let lateStartMinutes = 0;
-        if (t.taskDate === todayStr && t.startTime && t.startTime !== 'All Day') {
-          const scheduledStartMin = parse12HourToMinutes(t.startTime);
-          const curMin = now.getHours() * 60 + now.getMinutes();
-          if (curMin > scheduledStartMin + 3) {
-            lateStartMinutes = curMin - scheduledStartMin;
+        let earlyStartMinutes = 0;
+        let diffMinutes = 0;
+
+        if (originalScheduledStart && originalScheduledStart !== 'All Day') {
+          const scheduledStartMin = parse12HourToMinutes(originalScheduledStart);
+          diffMinutes = curMin - scheduledStartMin;
+          if (diffMinutes > 2) {
+            lateStartMinutes = diffMinutes;
+          } else if (diffMinutes < -2) {
+            earlyStartMinutes = Math.abs(diffMinutes);
+          }
+        }
+
+        // End time will be exact time as scheduled
+        const scheduledEnd = t.endTime;
+        let effectiveEndTime = scheduledEnd;
+        let newAppointedMinutes = t.appointedMinutes;
+
+        if (scheduledEnd && scheduledEnd !== 'All Day') {
+          const endMin = parse12HourToMinutes(scheduledEnd);
+          // If started before or at scheduled end time, keep exact scheduled end
+          if (curMin < endMin) {
+            effectiveEndTime = scheduledEnd;
+            newAppointedMinutes = endMin - curMin;
+          } else {
+            // If already past scheduled end time, provide duration from now
+            const fallbackDuration = t.appointedMinutes > 0 ? t.appointedMinutes : 30;
+            effectiveEndTime = addMinutesToTime(exactCurrentTimeStr, fallbackDuration);
+            newAppointedMinutes = fallbackDuration;
           }
         }
 
@@ -1309,10 +1365,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           actualDurationMinutes: 0,
           isLateFinish: false,
           lateStartMinutes,
-          scheduledStartTime: t.startTime
+          earlyStartMinutes,
+          scheduledStartTime: originalScheduledStart,
+          actualStartTime: exactCurrentTimeStr,
+          originalEndTime: scheduledEnd
         }];
 
-        const lateMsg = lateStartMinutes > 0 ? ` • ⚠️ Late Start by +${lateStartMinutes}m (Scheduled: ${t.startTime})` : ' (On-Time)';
+        const discrepancyText = lateStartMinutes > 0
+          ? ` • ⚠️ Late Start by +${lateStartMinutes}m (Scheduled: ${originalScheduledStart})`
+          : earlyStartMinutes > 0
+            ? ` • ⚡ Early Start by -${earlyStartMinutes}m (Scheduled: ${originalScheduledStart})`
+            : ' (On-Time)';
 
         logLifeEvent({
           eventType: 'TASK_STARTED',
@@ -1321,17 +1384,27 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           projectCode: t.projectCode,
           priority: t.priority,
           category: t.category,
-          message: `⚡ Started working on task "${t.title}" (${t.projectCode})${lateMsg}`,
+          message: `⚡ Started working on task "${t.title}" (${t.projectCode})${discrepancyText}. Scheduled End preserved at ${effectiveEndTime}.`,
           details: {
-            scheduledStartTime: t.startTime,
-            actualStartTime: formatMinutesTo12Hour(now.getHours() * 60 + now.getMinutes()),
+            originalScheduledStartTime: originalScheduledStart,
+            actualStartTime: exactCurrentTimeStr,
+            scheduledEndTime: effectiveEndTime,
             lateStartMinutes,
-            isLateStart: lateStartMinutes > 0
+            earlyStartMinutes,
+            startDiscrepancyMinutes: diffMinutes
           }
         });
 
         return {
           ...t,
+          taskDate: todayStr, // Aligned to today when started
+          startTime: exactCurrentTimeStr, // Starts event exactly at current time
+          endTime: effectiveEndTime, // End will be exact time as scheduled
+          appointedMinutes: newAppointedMinutes,
+          originalScheduledStartTime: originalScheduledStart,
+          originalAppointedMinutes: t.originalAppointedMinutes || t.appointedMinutes,
+          startDiscrepancyMinutes: diffMinutes,
+          actualStartTime: exactCurrentTimeStr,
           status: 'Working' as TaskStatus,
           executionLogs: logs
         };
@@ -1342,6 +1415,40 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return t;
     }));
     playNotificationChime('alert');
+  }, [logLifeEvent]);
+
+  // Quick Task Duration Extension (+15 min / +30 min / +60 min)
+  const extendTaskDuration = useCallback((taskId: string, extraMinutes: number) => {
+    setTasks(prev => prev.map(t => {
+      if (t.id === taskId) {
+        const curEnd = t.endTime || '12:00 PM';
+        const newEndTime = addMinutesToTime(curEnd, extraMinutes);
+        const newAppointed = (t.appointedMinutes || 0) + extraMinutes;
+
+        logLifeEvent({
+          eventType: 'TASK_RESCHEDULED',
+          taskId: t.id,
+          taskTitle: t.title,
+          projectCode: t.projectCode,
+          priority: t.priority,
+          category: t.category,
+          message: `⏱️ Extended task "${t.title}" by +${extraMinutes}m (New End: ${newEndTime})`,
+          details: {
+            previousEndTime: curEnd,
+            newEndTime,
+            extraMinutes
+          }
+        });
+
+        return {
+          ...t,
+          endTime: newEndTime,
+          appointedMinutes: newAppointed
+        };
+      }
+      return t;
+    }));
+    playNotificationChime('success');
   }, [logLifeEvent]);
 
   // Pause Task
@@ -1837,11 +1944,29 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, []);
 
   const updateCategory = useCallback((cat: Category) => {
-    setCategories(prev => prev.map(c => c.id === cat.id ? cat : c));
+    setCategories(prev => {
+      const oldCat = prev.find(c => c.id === cat.id);
+      if (oldCat && oldCat.name !== cat.name) {
+        // Cascade rename to all existing tasks using old category name
+        setTasks(prevTasks => prevTasks.map(t => 
+          t.category === oldCat.name ? { ...t, category: cat.name } : t
+        ));
+      }
+      return prev.map(c => c.id === cat.id ? cat : c);
+    });
   }, []);
 
   const deleteCategory = useCallback((catId: string) => {
-    setCategories(prev => prev.filter(c => c.id !== catId));
+    setCategories(prev => {
+      const catToDelete = prev.find(c => c.id === catId);
+      if (catToDelete) {
+        const norm = catToDelete.name.trim().toLowerCase();
+        if (norm === 'note' || norm === 'notes' || norm === 'reminder' || norm === 'reminders') {
+          return prev; // Permanent core categories cannot be deleted
+        }
+      }
+      return prev.filter(c => c.id !== catId);
+    });
   }, []);
 
   // Reminders CRUD
@@ -1893,6 +2018,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       activityTag: noteData.activityTag || 'Break / Rest',
       notes: noteData.notes || '',
       energyLevel: noteData.energyLevel ?? 4,
+      signalNoise: noteData.signalNoise,
+      reflectionNotes: noteData.reflectionNotes,
       relatedTaskId: noteData.relatedTaskId,
       relatedTaskTitle: noteData.relatedTaskTitle,
       createdAt: new Date().toISOString()
@@ -1911,7 +2038,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         newStartTime: newNote.startTime,
         durationMinutes: newNote.durationMinutes,
         bufferActivityTag: newNote.activityTag,
-        bufferNotes: newNote.notes
+        bufferNotes: newNote.notes,
+        signalNoiseType: newNote.signalNoise
       }
     });
 
@@ -1938,6 +2066,65 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return prev.filter(n => n.id !== noteId);
     });
   }, [logLifeEvent]);
+
+  // 1-Click Signal vs Noise Toggle for any 24h timeline interval or diary entry
+  const toggleSliceSignalNoise = useCallback((slice: DaySlice24) => {
+    const newType: SignalNoiseType = slice.signalNoise === 'signal' ? 'noise' : 'signal';
+
+    if (slice.task) {
+      const taskId = slice.task.id;
+      setTasks(prev => prev.map(t => t.id === taskId ? { ...t, signalNoise: newType } : t));
+      logLifeEvent({
+        eventType: 'SETTINGS_UPDATED',
+        taskId: slice.task.id,
+        taskTitle: slice.task.title,
+        message: `Toggled task "${slice.task.title}" to ${newType === 'signal' ? '🎯 SIGNAL' : '⚠️ NOISE'}`,
+        details: { signalNoiseType: newType }
+      });
+    } else if (slice.bufferNote) {
+      const noteId = slice.bufferNote.id;
+      setBufferNotes(prev => prev.map(b => b.id === noteId ? { ...b, signalNoise: newType } : b));
+      logLifeEvent({
+        eventType: 'SETTINGS_UPDATED',
+        message: `Toggled diary entry "${slice.title}" to ${newType === 'signal' ? '🎯 SIGNAL' : '⚠️ NOISE'}`,
+        details: { signalNoiseType: newType }
+      });
+    }
+    playNotificationChime('alert');
+  }, [logLifeEvent]);
+
+  // Fast inline Micro-Diary entry composer
+  const addQuickDiaryEntry = useCallback((entry: {
+    date: string;
+    startTime: string;
+    durationMinutes: number;
+    text: string;
+    activityTag?: string;
+    signalNoise?: SignalNoiseType;
+    energyLevel?: number;
+  }): BufferStatusNote => {
+    const endTime = addMinutesToTime(entry.startTime, entry.durationMinutes);
+    const activityTag = entry.activityTag || 'Other Activity';
+
+    // Auto-detect signal vs noise if not explicitly set
+    const detectedSN = entry.signalNoise || detectSignalVsNoise({
+      title: activityTag,
+      notes: entry.text,
+      tag: activityTag,
+      energyLevel: entry.energyLevel ?? 4
+    }).type;
+
+    return addBufferNote({
+      date: entry.date,
+      startTime: entry.startTime,
+      endTime,
+      durationMinutes: entry.durationMinutes,
+      activityTag,
+      notes: entry.text,
+      signalNoise: detectedSN,
+      energyLevel: entry.energyLevel ?? 4
+    });
+  }, [addBufferNote]);
 
   // Buffer Activity Categories CRUD (Fully Editable)
   const addBufferCategory = useCallback((catData: Omit<BufferCategoryItem, 'id'> & { id?: string }) => {
@@ -2010,44 +2197,243 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setDefaultTaskSettings(settings);
   }, []);
 
-  // Backup / Restore
+  // Backup / Restore & 100% System Data Hub
+  const [isBackupModalOpen, setIsBackupModalOpen] = useState(false);
+  const [backupModalTab, setBackupModalTab] = useState<'export' | 'restore'>('export');
+  const [canRollback, setCanRollback] = useState(Boolean(getRollbackSnapshot()));
+
+  const openBackupModal = useCallback((tab: 'export' | 'restore' = 'export') => {
+    setBackupModalTab(tab);
+    setIsBackupModalOpen(true);
+    setCanRollback(Boolean(getRollbackSnapshot()));
+  }, []);
+
+  const closeBackupModal = useCallback(() => {
+    setIsBackupModalOpen(false);
+  }, []);
+
   const exportStateJson = useCallback((): string => {
-    const bundle = {
-      version: '1.0.0',
-      exportedAt: new Date().toISOString(),
+    return createFullSystemBackup({
       tasks,
+      bufferNotes,
+      planProjects,
       categories,
+      bufferCategories,
+      emergencyCategories,
+      knowledge,
+      reminders,
+      auditLogs,
       capacitySettings,
       prioritySettings,
-      reminders,
-      knowledge,
-      bufferNotes,
-      auditLogs,
+      defaultTaskSettings,
+      securitySettings,
+      cloudSyncConfig,
       theme
-    };
-    return JSON.stringify(bundle, null, 2);
-  }, [tasks, categories, capacitySettings, prioritySettings, reminders, knowledge, bufferNotes, auditLogs, theme]);
+    });
+  }, [
+    tasks, bufferNotes, planProjects, categories, bufferCategories,
+    emergencyCategories, knowledge, reminders, auditLogs, capacitySettings,
+    prioritySettings, defaultTaskSettings, securitySettings, cloudSyncConfig, theme
+  ]);
 
-  const importStateJson = useCallback((jsonStr: string): boolean => {
+  const exportSettingsOnlyJson = useCallback((): string => {
+    return createSettingsOnlyBackup({
+      categories,
+      bufferCategories,
+      emergencyCategories,
+      capacitySettings,
+      prioritySettings,
+      defaultTaskSettings,
+      securitySettings,
+      cloudSyncConfig,
+      theme
+    });
+  }, [
+    categories, bufferCategories, emergencyCategories, capacitySettings,
+    prioritySettings, defaultTaskSettings, securitySettings, cloudSyncConfig, theme
+  ]);
+
+  const importStateJson = useCallback((jsonStr: string, mode: 'full' | 'merge' | 'settings_only' = 'full'): boolean => {
     try {
-      const data = JSON.parse(jsonStr);
-      if (data.tasks) setTasks(data.tasks);
-      if (data.categories) setCategories(data.categories);
-      if (data.capacitySettings) setCapacitySettings(data.capacitySettings);
-      if (data.prioritySettings) setPrioritySettings(data.prioritySettings);
-      if (data.reminders) setReminders(data.reminders);
-      if (data.knowledge) setKnowledge(data.knowledge);
-      if (data.bufferNotes) setBufferNotes(data.bufferNotes);
-      if (data.auditLogs) setAuditLogs(data.auditLogs);
-      if (data.theme) setTheme(data.theme);
+      const validation = validateBackupBundle(jsonStr);
+      if (!validation.isValid) {
+        console.error('Backup validation failed:', validation.error);
+        return false;
+      }
+
+      // Save rollback snapshot of current system before touching anything
+      const currentFullBackup = exportStateJson();
+      saveRollbackSnapshot(currentFullBackup);
+      setCanRollback(true);
+
+      const parsed = validation.parsedData;
+      const isV2Full = validation.type === 'FULL_SYSTEM_BACKUP';
+      const isV2Settings = validation.type === 'SETTINGS_ONLY_BACKUP';
+
+      // Data extraction
+      const incomingTasks: Task[] = isV2Full ? parsed.data?.tasks : parsed.tasks;
+      const incomingBufferNotes: BufferStatusNote[] = isV2Full ? parsed.data?.bufferNotes : parsed.bufferNotes;
+      const incomingProjects: PlanProjectFolder[] = isV2Full ? parsed.data?.planProjects : parsed.planProjects;
+      const incomingCategories: Category[] = isV2Full ? parsed.data?.categories : (isV2Settings ? parsed.categories : parsed.categories);
+      const incomingBufferCategories: BufferCategoryItem[] = isV2Full ? parsed.data?.bufferCategories : (isV2Settings ? parsed.bufferCategories : parsed.bufferCategories);
+      const incomingEmergencyCategories: EmergencyCategoryItem[] = isV2Full ? parsed.data?.emergencyCategories : (isV2Settings ? parsed.emergencyCategories : parsed.emergencyCategories);
+      const incomingKnowledge: KnowledgeItem[] = isV2Full ? parsed.data?.knowledge : parsed.knowledge;
+      const incomingReminders: Reminder[] = isV2Full ? parsed.data?.reminders : parsed.reminders;
+      const incomingAuditLogs: LifeEventLog[] = isV2Full ? parsed.data?.auditLogs : parsed.auditLogs;
+
+      // Settings extraction
+      const settingsObj = isV2Full || isV2Settings ? parsed.settings : parsed;
+      const incomingCapacity = settingsObj?.capacitySettings || parsed.capacitySettings;
+      const incomingPriorities = settingsObj?.prioritySettings || parsed.prioritySettings;
+      const incomingDefaults = settingsObj?.defaultTaskSettings || parsed.defaultTaskSettings;
+      const incomingSecurity = settingsObj?.securitySettings || parsed.securitySettings;
+      const incomingCloud = settingsObj?.cloudSyncConfig || parsed.cloudSyncConfig;
+      const incomingTheme = settingsObj?.theme || parsed.theme;
+
+      // Apply settings
+      if (incomingCapacity) setCapacitySettings(incomingCapacity);
+      if (incomingPriorities) setPrioritySettings(incomingPriorities);
+      if (incomingDefaults) setDefaultTaskSettings(incomingDefaults);
+      if (incomingSecurity) setSecuritySettings(incomingSecurity);
+      if (incomingCloud) setCloudSyncConfig(incomingCloud);
+      if (incomingTheme) setTheme(incomingTheme);
+
+      if (mode === 'settings_only') {
+        if (incomingCategories && incomingCategories.length > 0) setCategories(incomingCategories);
+        if (incomingBufferCategories && incomingBufferCategories.length > 0) setBufferCategories(incomingBufferCategories);
+        if (incomingEmergencyCategories && incomingEmergencyCategories.length > 0) setEmergencyCategories(incomingEmergencyCategories);
+        playNotificationChime('success');
+        return true;
+      }
+
+      if (mode === 'merge') {
+        // Smart merge: update existing or add new
+        if (incomingTasks) {
+          setTasks(prev => {
+            const map = new Map(prev.map(t => [t.id, t]));
+            incomingTasks.forEach(t => map.set(t.id, t));
+            return Array.from(map.values());
+          });
+        }
+        if (incomingBufferNotes) {
+          setBufferNotes(prev => {
+            const map = new Map(prev.map(b => [b.id, b]));
+            incomingBufferNotes.forEach(b => map.set(b.id, b));
+            return Array.from(map.values());
+          });
+        }
+        if (incomingProjects) {
+          setPlanProjects(prev => {
+            const map = new Map(prev.map(p => [p.id, p]));
+            incomingProjects.forEach(p => map.set(p.id, p));
+            return Array.from(map.values());
+          });
+        }
+        if (incomingCategories) {
+          setCategories(prev => {
+            const map = new Map(prev.map(c => [c.id, c]));
+            incomingCategories.forEach(c => map.set(c.id, c));
+            return Array.from(map.values());
+          });
+        }
+        if (incomingBufferCategories) {
+          setBufferCategories(prev => {
+            const map = new Map(prev.map(c => [c.id, c]));
+            incomingBufferCategories.forEach(c => map.set(c.id, c));
+            return Array.from(map.values());
+          });
+        }
+        if (incomingEmergencyCategories) {
+          setEmergencyCategories(prev => {
+            const map = new Map(prev.map(c => [c.id, c]));
+            incomingEmergencyCategories.forEach(c => map.set(c.id, c));
+            return Array.from(map.values());
+          });
+        }
+        if (incomingKnowledge) {
+          setKnowledge(prev => {
+            const map = new Map(prev.map(k => [k.id, k]));
+            incomingKnowledge.forEach(k => map.set(k.id, k));
+            return Array.from(map.values());
+          });
+        }
+        if (incomingReminders) {
+          setReminders(prev => {
+            const map = new Map(prev.map(r => [r.id, r]));
+            incomingReminders.forEach(r => map.set(r.id, r));
+            return Array.from(map.values());
+          });
+        }
+        if (incomingAuditLogs) {
+          setAuditLogs(prev => {
+            const map = new Map(prev.map(l => [l.id, l]));
+            incomingAuditLogs.forEach(l => map.set(l.id, l));
+            return Array.from(map.values());
+          });
+        }
+      } else {
+        // Full clean restore
+        if (incomingTasks) setTasks(incomingTasks);
+        if (incomingBufferNotes) setBufferNotes(incomingBufferNotes);
+        if (incomingProjects) setPlanProjects(incomingProjects);
+        if (incomingCategories) setCategories(incomingCategories);
+        if (incomingBufferCategories) setBufferCategories(incomingBufferCategories);
+        if (incomingEmergencyCategories) setEmergencyCategories(incomingEmergencyCategories);
+        if (incomingKnowledge) setKnowledge(incomingKnowledge);
+        if (incomingReminders) setReminders(incomingReminders);
+        if (incomingAuditLogs) setAuditLogs(incomingAuditLogs);
+      }
+
+      playNotificationChime('success');
       return true;
     } catch (e) {
-      console.error('Failed to import state JSON', e);
+      console.error('Failed to import backup JSON', e);
+      return false;
+    }
+  }, [exportStateJson, setTheme]);
+
+  const rollbackLastRestore = useCallback((): boolean => {
+    const snapshot = getRollbackSnapshot();
+    if (!snapshot || !snapshot.backupJson) return false;
+    try {
+      const parsed = JSON.parse(snapshot.backupJson);
+      const isV2Full = parsed.systemIdentifier === 'OPTIMUSTIME_COMPLETE_SYSTEM_BACKUP';
+      const d = isV2Full ? parsed.data : parsed;
+      const s = isV2Full ? parsed.settings : parsed;
+
+      if (d.tasks) setTasks(d.tasks);
+      if (d.bufferNotes) setBufferNotes(d.bufferNotes);
+      if (d.planProjects) setPlanProjects(d.planProjects);
+      if (d.categories) setCategories(d.categories);
+      if (d.bufferCategories) setBufferCategories(d.bufferCategories);
+      if (d.emergencyCategories) setEmergencyCategories(d.emergencyCategories);
+      if (d.knowledge) setKnowledge(d.knowledge);
+      if (d.reminders) setReminders(d.reminders);
+      if (d.auditLogs) setAuditLogs(d.auditLogs);
+
+      if (s.capacitySettings) setCapacitySettings(s.capacitySettings);
+      if (s.prioritySettings) setPrioritySettings(s.prioritySettings);
+      if (s.defaultTaskSettings) setDefaultTaskSettings(s.defaultTaskSettings);
+      if (s.securitySettings) setSecuritySettings(s.securitySettings);
+      if (s.cloudSyncConfig) setCloudSyncConfig(s.cloudSyncConfig);
+      if (s.theme) setTheme(s.theme);
+
+      clearRollbackSnapshot();
+      setCanRollback(false);
+      playNotificationChime('success');
+      return true;
+    } catch (e) {
+      console.error('Failed rollback', e);
       return false;
     }
   }, [setTheme]);
 
   const resetToDefaultData = useCallback(() => {
+    // Save rollback snapshot of current state before wiping to demo defaults
+    const currentFullBackup = exportStateJson();
+    saveRollbackSnapshot(currentFullBackup);
+    setCanRollback(true);
+
     setTasks(INITIAL_TASKS);
     setCategories(INITIAL_CATEGORIES);
     setCapacitySettings(DEFAULT_CAPACITY);
@@ -2056,7 +2442,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setKnowledge(INITIAL_KNOWLEDGE);
     setBufferNotes(INITIAL_BUFFER_NOTES);
     setTheme('light');
-  }, [setTheme]);
+  }, [exportStateJson, setTheme]);
 
   return (
     <AppContext.Provider
@@ -2093,6 +2479,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         holdTask,
         rescheduleTask,
         terminateTask,
+        extendTaskDuration,
         detectConflicts,
         cascadeShiftDownstream,
         linkSimultaneousTasks,
@@ -2127,6 +2514,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         closeBufferNoteModal,
         activeBufferPrompt,
         setActiveBufferPrompt,
+        toggleSliceSignalNoise,
+        addQuickDiaryEntry,
         isEmergencyModalOpen,
         emergencyModalParams,
         openEmergencyModal,
@@ -2153,8 +2542,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         pullFromCloud,
         testCloudConnection,
         exportStateJson,
+        exportSettingsOnlyJson,
         importStateJson,
+        rollbackLastRestore,
+        canRollback,
         resetToDefaultData,
+        isBackupModalOpen,
+        backupModalTab,
+        openBackupModal,
+        closeBackupModal,
         auditLogs,
         logLifeEvent,
         clearAuditLogs,

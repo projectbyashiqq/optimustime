@@ -19,7 +19,9 @@ import {
   getSmartNextFreeSlot,
   getRecommendedDayFreeSlots,
   RecommendedSlot,
-  isTimeInSleepWindow
+  isTimeInSleepWindow,
+  isDateTimeBeforeNow,
+  shouldRolloverToNextDay
 } from '../utils/timeUtils';
 import { ConflictModal } from './ConflictModal';
 import { TimePicker } from './TimePicker';
@@ -36,6 +38,9 @@ import {
   Sparkles, 
   CheckCircle2, 
   AlertTriangle,
+  AlertOctagon,
+  CalendarDays,
+  ArrowRight,
   FileText,
   CornerDownRight,
   Lock,
@@ -179,9 +184,32 @@ export const TaskModal: React.FC<TaskModalProps> = ({
   // Validation state
   const [validationError, setValidationError] = useState<string | null>(null);
 
+  // Rollover & Past Time Warning state
+  const [rolloverNotice, setRolloverNotice] = useState<{ message: string; originalDate: string; nextDate: string } | null>(null);
+  const [showPastTimeModal, setShowPastTimeModal] = useState(false);
+  const [hasConfirmedPastTime, setHasConfirmedPastTime] = useState(false);
+
   // Conflict state
   const [conflictingTasks, setConflictingTasks] = useState<Task[]>([]);
   const [showConflictModal, setShowConflictModal] = useState(false);
+
+  // Auto-roll date to tomorrow if initial smart slot landed past midnight
+  useEffect(() => {
+    if (!taskToEdit && !initialDate && initialSmartSlot.crossesMidnight && initialSmartSlot.dateStr) {
+      setTaskDate(initialSmartSlot.dateStr);
+    }
+  }, [taskToEdit, initialDate, initialSmartSlot]);
+
+  // Live evaluation of whether scheduled start time is in the past
+  const pastTimeCheck = useMemo(() => {
+    return isDateTimeBeforeNow(taskDate, startTime);
+  }, [taskDate, startTime]);
+
+  const tomorrowStr = useMemo(() => {
+    const d = new Date();
+    d.setDate(d.getDate() + 1);
+    return toISODateString(d);
+  }, []);
 
   // Auto calculate day of week
   const dayOfWeek = getDayOfWeekFromDate(taskDate);
@@ -238,11 +266,55 @@ export const TaskModal: React.FC<TaskModalProps> = ({
     setValidationError(null);
   };
 
-  // When start time changes, recompute end time
+  // When start time changes, recompute end time and evaluate midnight rollover
   const handleStartTimeChange = (newStart: string) => {
+    const oldStart = startTime;
     setStartTime(newStart);
     setValidationError(null);
+    setHasConfirmedPastTime(false);
     setEndTime(addMinutesToTime(newStart, appointedMinutes));
+
+    // Check if newStart crosses midnight relative to existing tasks or late evening hours
+    const existingOnDate = tasks.filter(t => t.taskDate === taskDate && t.id !== taskToEdit?.id);
+    const rollover = shouldRolloverToNextDay(taskDate, newStart, oldStart, existingOnDate);
+    if (rollover.shouldRollover && taskDate !== rollover.nextDateStr) {
+      const prevDate = taskDate;
+      setTaskDate(rollover.nextDateStr);
+      setRolloverNotice({
+        message: `🌙 Rolled over to Next Day (${rollover.nextDateStr}): ${newStart} follows late night work (12:30 AM is after midnight).`,
+        originalDate: prevDate,
+        nextDate: rollover.nextDateStr
+      });
+    }
+  };
+
+  // Resolution handlers for past time warning dialog
+  const handleAdjustToNextFreeSlot = () => {
+    const smart = getSmartNextFreeSlot(
+      toISODateString(new Date()),
+      appointedMinutes,
+      tasks,
+      bufferNotes,
+      taskToEdit?.id,
+      capacitySettings.defaultBufferMinutes || 15
+    );
+    setTaskDate(smart.dateStr || toISODateString(new Date()));
+    setStartTime(smart.startTime);
+    setEndTime(smart.endTime);
+    setShowPastTimeModal(false);
+    setHasConfirmedPastTime(true);
+  };
+
+  const handleShiftToTomorrow = () => {
+    setTaskDate(tomorrowStr);
+    setShowPastTimeModal(false);
+    setHasConfirmedPastTime(true);
+  };
+
+  const handleConfirmPastEntry = () => {
+    setHasConfirmedPastTime(true);
+    setShowPastTimeModal(false);
+    handleSave(false, true);
   };
 
   // When appointed minutes changes, recompute end time
@@ -296,7 +368,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
   };
 
   // Submission with mandatory parameters validation & conflict detection
-  const handleSave = (forceNoConflictCheck = false) => {
+  const handleSave = (forceNoConflictCheck = false, bypassPastWarning = false) => {
     if (!title.trim()) {
       setValidationError('Task Title is mandatory. Please enter a title.');
       return;
@@ -314,6 +386,12 @@ export const TaskModal: React.FC<TaskModalProps> = ({
       return;
     }
     setValidationError(null);
+
+    // 🚨 HUGE WARNING INTERCEPTOR: Block saving entry before current time without explicit permission
+    if (!bypassPastWarning && !hasConfirmedPastTime && pastTimeCheck.isPast) {
+      setShowPastTimeModal(true);
+      return;
+    }
 
     // Auto-choose Unknown if category is not selected
     const effectiveCategory = (category && category.trim()) ? category.trim() : 'Unknown';
@@ -987,8 +1065,48 @@ export const TaskModal: React.FC<TaskModalProps> = ({
               </select>
             </div>
 
+            {/* Automatic Midnight Rollover Alert */}
+            {rolloverNotice && (
+              <div className="p-3 rounded-xl bg-gradient-to-r from-indigo-500/15 via-purple-500/10 to-blue-500/15 border border-indigo-300 dark:border-indigo-700 text-indigo-950 dark:text-indigo-200 flex items-center justify-between text-xs animate-fade-in shadow-xs">
+                <div className="flex items-center gap-2">
+                  <Moon className="w-4 h-4 text-indigo-500 shrink-0 animate-pulse" />
+                  <span className="font-semibold">{rolloverNotice.message}</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setTaskDate(rolloverNotice.originalDate);
+                    setRolloverNotice(null);
+                  }}
+                  className="px-2.5 py-1 bg-white dark:bg-black/40 hover:bg-theme-card-hover border border-indigo-300 dark:border-indigo-700 rounded-lg text-[10px] font-black text-indigo-600 dark:text-indigo-300 shrink-0 shadow-2xs transition-colors"
+                >
+                  Keep as {rolloverNotice.originalDate}
+                </button>
+              </div>
+            )}
+
             {/* Date & Time Settings */}
             <div className="space-y-2 p-3.5 rounded-xl bg-theme-card-hover border border-theme-border">
+              {/* Prominent Live Past Time Alert */}
+              {pastTimeCheck.isPast && (
+                <div className="p-3 rounded-xl bg-amber-500/15 border-2 border-amber-500/60 text-amber-950 dark:text-amber-200 flex items-center justify-between gap-2 text-xs font-semibold animate-pulse shadow-sm">
+                  <div className="flex items-center gap-2">
+                    <AlertOctagon className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0" />
+                    <span>
+                      ⚠️ <strong>Past Time Warning:</strong> Scheduled start ({startTime} on {taskDate}) is <strong>earlier than current time</strong> ({pastTimeCheck.currentTimeStr}).
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleAdjustToNextFreeSlot}
+                    className="px-2.5 py-1 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-[10px] font-black shrink-0 shadow-xs flex items-center gap-1 transition-colors"
+                  >
+                    <Sparkles className="w-3 h-3" />
+                    <span>Fix to Now / Next Slot</span>
+                  </button>
+                </div>
+              )}
+
               {/* Quick Date Click Buttons & Auto Free Slot Button */}
               <div className="flex items-center justify-between">
                 <label className="text-[11px] font-bold text-theme-text flex items-center gap-1">
@@ -1000,6 +1118,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                     type="button"
                     onClick={() => {
                       setTaskDate(toISODateString(new Date()));
+                      setRolloverNotice(null);
                       if (validationError) setValidationError(null);
                     }}
                     className={`px-2 py-0.5 rounded font-bold border transition-colors ${
@@ -1016,6 +1135,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                       const tomorrow = new Date();
                       tomorrow.setDate(tomorrow.getDate() + 1);
                       setTaskDate(toISODateString(tomorrow));
+                      setRolloverNotice(null);
                       if (validationError) setValidationError(null);
                     }}
                     className="px-2 py-0.5 rounded font-bold bg-theme-card text-theme-muted border border-theme-border hover:text-theme-text transition-colors"
@@ -1540,6 +1660,110 @@ export const TaskModal: React.FC<TaskModalProps> = ({
           onSelectSlot={handleResolveWithSelectedSlot}
           onCancel={() => setShowConflictModal(false)}
         />
+      )}
+
+      {/* Huge Warning Interceptor Modal: Scheduling Before Current Time */}
+      {showPastTimeModal && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fade-in">
+          <div className="bg-theme-card border-2 border-red-500/80 rounded-3xl max-w-lg w-full p-6 shadow-2xl space-y-5 animate-scale-up">
+            
+            {/* Header */}
+            <div className="flex items-start gap-3.5">
+              <div className="w-14 h-14 rounded-2xl bg-gradient-to-tr from-red-600 to-amber-500 text-white flex items-center justify-center shadow-lg shadow-red-500/30 shrink-0 ring-4 ring-red-400/20 animate-pulse">
+                <AlertOctagon className="w-7 h-7 stroke-[2.5]" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-red-100 dark:bg-red-950 text-red-700 dark:text-red-300 tracking-wider">
+                    CRITICAL INTERCEPTOR
+                  </span>
+                </div>
+                <h3 className="text-base font-black text-theme-text tracking-tight mt-0.5">
+                  🚨 Warning: Scheduling Before Current Time!
+                </h3>
+                <p className="text-xs text-theme-muted font-medium">
+                  OptimusTime is a live forward-planning system. This entry starts before right now.
+                </p>
+              </div>
+            </div>
+
+            {/* Comparison Box */}
+            <div className="p-4 rounded-2xl bg-red-50/70 dark:bg-red-950/30 border border-red-200 dark:border-red-900/60 space-y-2.5">
+              <div className="grid grid-cols-2 gap-2 text-xs">
+                <div className="p-2.5 rounded-xl bg-white dark:bg-black/40 border border-red-200/60 dark:border-red-900/40">
+                  <span className="text-[10px] font-bold text-red-600 dark:text-red-400 block uppercase tracking-wider">
+                    Scheduled Start:
+                  </span>
+                  <strong className="text-xs font-mono text-theme-text block mt-0.5">
+                    {taskDate} @ {startTime}
+                  </strong>
+                </div>
+
+                <div className="p-2.5 rounded-xl bg-white dark:bg-black/40 border border-theme-border">
+                  <span className="text-[10px] font-bold text-theme-muted block uppercase tracking-wider">
+                    Current Time (Now):
+                  </span>
+                  <strong className="text-xs font-mono text-emerald-600 dark:text-emerald-400 block mt-0.5">
+                    {pastTimeCheck.todayStr} @ {pastTimeCheck.currentTimeStr}
+                  </strong>
+                </div>
+              </div>
+
+              <div className="text-[11px] text-theme-muted bg-theme-card/60 p-2.5 rounded-xl border border-theme-border">
+                ⚠️ This entry is <strong className="text-red-600 dark:text-red-400">{pastTimeCheck.diffMinutes >= 1440 ? `${Math.round(pastTimeCheck.diffMinutes / 1440)} day(s)` : `${pastTimeCheck.diffMinutes} minutes`}</strong> in the past. If scheduled, it will immediately be marked as expired / overdue.
+              </div>
+            </div>
+
+            {/* Action Buttons */}
+            <div className="space-y-2">
+              <button
+                type="button"
+                onClick={handleAdjustToNextFreeSlot}
+                className="w-full flex items-center justify-between p-3.5 rounded-2xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs shadow-md transition-all group"
+              >
+                <div className="flex items-center gap-2">
+                  <Sparkles className="w-4 h-4 text-amber-300" />
+                  <div className="text-left">
+                    <div>⚡ Auto-Adjust to Next Free Slot / Now</div>
+                    <div className="text-[10px] font-normal text-blue-100">Recommended: Automatically moves start time to next open gap today</div>
+                  </div>
+                </div>
+                <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+              </button>
+
+              <button
+                type="button"
+                onClick={handleShiftToTomorrow}
+                className="w-full flex items-center justify-between p-3 rounded-2xl bg-amber-50 dark:bg-amber-950/40 hover:bg-amber-100/70 dark:hover:bg-amber-900/30 text-amber-900 dark:text-amber-200 border border-amber-300 dark:border-amber-800 font-bold text-xs transition-all"
+              >
+                <div className="flex items-center gap-2">
+                  <CalendarDays className="w-4 h-4 text-amber-600" />
+                  <div className="text-left">
+                    <div>📅 Shift to Tomorrow ({tomorrowStr} @ {startTime})</div>
+                    <div className="text-[10px] font-normal text-amber-700 dark:text-amber-400">Keep same hour ({startTime}) but schedule on tomorrow</div>
+                  </div>
+                </div>
+              </button>
+
+              <button
+                type="button"
+                onClick={handleConfirmPastEntry}
+                className="w-full p-2.5 rounded-xl border border-red-300 dark:border-red-900/60 hover:bg-red-50 dark:hover:bg-red-950/30 text-red-600 dark:text-red-400 font-bold text-xs transition-colors"
+              >
+                ⚠️ Yes, Log Past Entry Anyway (Retroactive Record)
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setShowPastTimeModal(false)}
+                className="w-full py-2 text-xs font-semibold text-theme-muted hover:text-theme-text transition-colors text-center"
+              >
+                Cancel & Adjust Manually
+              </button>
+            </div>
+
+          </div>
+        </div>
       )}
     </>
   );

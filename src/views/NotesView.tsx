@@ -5,7 +5,9 @@ import {
   playNotificationChime, 
   toISODateString, 
   getDayOfWeekFromDate, 
-  generateProjectCode 
+  generateProjectCode,
+  isDateTimeBeforeNow,
+  shouldRolloverToNextDay 
 } from '../utils/timeUtils';
 import { 
   StickyNote, 
@@ -67,10 +69,27 @@ export const NotesView: React.FC<NotesViewProps> = ({ onOpenTaskModal }) => {
   
   const [showAddForm, setShowAddForm] = useState(false);
   const [editingNoteId, setEditingNoteId] = useState<string | null>(null);
+  const [formError, setFormError] = useState<string | null>(null);
 
   // Filters
   const [priorityFilter, setPriorityFilter] = useState<'ALL' | 'P1' | 'P5' | 'P2_P4' | 'RECURRING'>('ALL');
   const [statusFilter, setStatusFilter] = useState<'ACTIVE' | 'COMPLETED' | 'ALL'>('ACTIVE');
+
+  // Category change handler with smart priority & recurrence defaults
+  const handleCategorySelect = (newCat: string) => {
+    setCategory(newCat);
+    setFormError(null);
+    if (newCat === 'Reminder') {
+      // Reminders default to P1 and mandatorily recurring with Yearly by default
+      setPriority('P1');
+      if (recurrence === 'None') {
+        setRecurrence('Yearly');
+      }
+    } else if (newCat === 'Notes') {
+      // Notes are by default P5 and no other mandatory
+      setPriority('P5');
+    }
+  };
 
   // Notes & Reminders are Tasks with category === 'Notes' or category === 'Reminder' or appointedMinutes === 0 or isAllDay
   const noteTasks = tasks.filter(t => {
@@ -110,6 +129,7 @@ export const NotesView: React.FC<NotesViewProps> = ({ onOpenTaskModal }) => {
     } else {
       setSelectedDays([...selectedDays, day]);
     }
+    if (formError) setFormError(null);
   };
 
   const handleAddSubtask = () => {
@@ -140,7 +160,38 @@ export const NotesView: React.FC<NotesViewProps> = ({ onOpenTaskModal }) => {
   };
 
   const handleSaveNote = () => {
-    if (!title.trim()) return;
+    if (!title.trim()) {
+      setFormError('Note Title is required.');
+      playNotificationChime('alert');
+      return;
+    }
+
+    // Reminders require mandatory recurrence
+    if (category === 'Reminder') {
+      if (recurrence === 'None') {
+        setFormError('Reminders require a recurrence schedule (Yearly, Daily, Custom Days, Weekly, or Monthly).');
+        playNotificationChime('alert');
+        return;
+      }
+      if (recurrence === 'Selected Days' && selectedDays.length === 0) {
+        setFormError('Please select at least one day for Custom Days recurring reminder.');
+        playNotificationChime('alert');
+        return;
+      }
+    }
+
+    setFormError(null);
+
+    // Past time warning for point-in-time reminders
+    if (time) {
+      const pastInfo = isDateTimeBeforeNow(date, time);
+      if (pastInfo.isPast) {
+        const proceed = window.confirm(
+          `⚠️ Past Time Warning:\nThe scheduled time "${time}" on ${date} is before the current time (${pastInfo.currentTimeStr}).\n\nDo you want to log it as a past entry anyway?`
+        );
+        if (!proceed) return;
+      }
+    }
 
     if (editingNoteId) {
       const existing = tasks.find(t => t.id === editingNoteId);
@@ -172,7 +223,7 @@ export const NotesView: React.FC<NotesViewProps> = ({ onOpenTaskModal }) => {
         notes: notesBody.trim(),
         taskDate: date,
         dayOfWeek: getDayOfWeekFromDate(date),
-        priority, // Auto P5 or customized up to P1
+        priority, // Auto P5 for Notes or customized/P1 for Reminders
         category: category || 'Notes',
         subCategory: subCategory || undefined,
         appointedMinutes: 0,
@@ -205,6 +256,7 @@ export const NotesView: React.FC<NotesViewProps> = ({ onOpenTaskModal }) => {
     setSubtasks([]);
     setLinks([]);
     setEditingNoteId(null);
+    setFormError(null);
   };
 
   const handleStartEdit = (task: Task) => {
@@ -220,6 +272,7 @@ export const NotesView: React.FC<NotesViewProps> = ({ onOpenTaskModal }) => {
     setSelectedDays(task.selectedDays || []);
     setSubtasks(task.subtasks || []);
     setLinks(task.links || []);
+    setFormError(null);
     setShowAddForm(true);
   };
 
@@ -245,6 +298,8 @@ export const NotesView: React.FC<NotesViewProps> = ({ onOpenTaskModal }) => {
   const p1Count = activeNotes.filter(n => n.priority === 'P1').length;
   const recurringCount = activeNotes.filter(n => n.recurrence && n.recurrence !== 'None').length;
 
+  const categoryOptions = Array.from(new Set(['Notes', 'Reminder', ...categories.map(c => c.name)]));
+
   return (
     <div className="space-y-6 animate-fade-in">
       
@@ -260,7 +315,10 @@ export const NotesView: React.FC<NotesViewProps> = ({ onOpenTaskModal }) => {
                 Notes & Reminders Hub
               </h2>
               <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-mono">
-                Auto P5 by Default
+                Notes: Auto P5
+              </span>
+              <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-red-100 dark:bg-red-950 text-red-700 dark:text-red-300 border border-red-300 dark:border-red-800 font-mono">
+                Reminders: P1 & Recurring
               </span>
               {p1Count > 0 && (
                 <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-red-100 dark:bg-red-950 text-red-700 dark:text-red-300 border border-red-300 dark:border-red-800 animate-pulse flex items-center gap-1">
@@ -299,7 +357,13 @@ export const NotesView: React.FC<NotesViewProps> = ({ onOpenTaskModal }) => {
           <div className="flex items-center justify-between border-b border-amber-200 dark:border-amber-900/60 pb-3">
             <h3 className="text-sm font-bold text-theme-text flex items-center gap-2 font-display">
               <Sparkles className="w-4 h-4 text-amber-500" />
-              <span>{editingNoteId ? 'Edit Note / Reminder' : 'Create Recurrable Note / Reminder'}</span>
+              <span>
+                {editingNoteId 
+                  ? 'Edit Note / Reminder' 
+                  : category === 'Reminder' 
+                    ? 'Create Recurring Reminder' 
+                    : 'Create Note / Reminder'}
+              </span>
             </h3>
             <button
               onClick={() => {
@@ -312,17 +376,28 @@ export const NotesView: React.FC<NotesViewProps> = ({ onOpenTaskModal }) => {
             </button>
           </div>
 
+          {/* Form Validation Warning */}
+          {formError && (
+            <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/30 text-red-600 dark:text-red-400 text-xs font-bold flex items-center gap-2 animate-shake">
+              <AlertTriangle className="w-4 h-4 shrink-0 text-red-500" />
+              <span>{formError}</span>
+            </div>
+          )}
+
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {/* Title */}
             <div className="md:col-span-2 space-y-1">
               <label className="text-[11px] font-bold text-theme-text uppercase tracking-wider">
-                Note Title <span className="text-red-500">*</span>
+                {category === 'Reminder' ? 'Reminder Title' : 'Note Title'} <span className="text-red-500">*</span>
               </label>
               <input
                 type="text"
-                placeholder="e.g. Daily Standup Notes & Reminders..."
+                placeholder={category === 'Reminder' ? 'e.g. Daily Standup Reminder, Weekly Review...' : 'e.g. Daily Standup Notes, Brainstorming ideas...'}
                 value={title}
-                onChange={(e) => setTitle(e.target.value)}
+                onChange={(e) => {
+                  setTitle(e.target.value);
+                  if (formError) setFormError(null);
+                }}
                 className="w-full px-3.5 py-2 rounded-xl bg-theme-card border border-theme-border text-theme-text text-sm font-bold focus:outline-none focus:ring-2 focus:ring-amber-500"
                 autoFocus
               />
@@ -331,7 +406,7 @@ export const NotesView: React.FC<NotesViewProps> = ({ onOpenTaskModal }) => {
             {/* Note Content / Body */}
             <div className="md:col-span-2 space-y-1">
               <label className="text-[11px] font-bold text-theme-text uppercase tracking-wider">
-                Note Details & Context (Markdown Supported)
+                {category === 'Reminder' ? 'Reminder Details & Context' : 'Note Details & Context (Markdown Supported)'}
               </label>
               <textarea
                 rows={3}
@@ -342,12 +417,16 @@ export const NotesView: React.FC<NotesViewProps> = ({ onOpenTaskModal }) => {
               />
             </div>
 
-            {/* Priority Selector (P5 default vs P1..P4) */}
+            {/* Priority Selector (P5 default for notes vs P1 default for reminders) */}
             <div className="space-y-1.5">
               <label className="text-[11px] font-bold text-theme-text uppercase tracking-wider flex items-center justify-between">
                 <span>Priority Level</span>
                 <span className="text-[10px] text-theme-muted font-mono font-bold">
-                  {priority === 'P5' ? '★ Auto P5 (General Note)' : priority === 'P1' ? '🔥 P1 (Must-Do Urgent)' : `${priority}`}
+                  {priority === 'P5' 
+                    ? '★ Auto P5 (Notes Default)' 
+                    : priority === 'P1' 
+                      ? '🔥 P1 (Reminders Default - Urgent)' 
+                      : `${priority}`}
                 </span>
               </label>
               <div className="grid grid-cols-5 gap-1.5">
@@ -380,20 +459,25 @@ export const NotesView: React.FC<NotesViewProps> = ({ onOpenTaskModal }) => {
 
             {/* Category */}
             <div className="space-y-1.5">
-              <label className="text-[11px] font-bold text-theme-text uppercase tracking-wider">
-                Category
+              <label className="text-[11px] font-bold text-theme-text uppercase tracking-wider flex items-center justify-between">
+                <span>Category</span>
+                <span className="text-[10px] font-semibold text-theme-muted">
+                  {category === 'Reminder' ? '⚡ P1 & Recurring Enabled' : '📝 Auto P5 General'}
+                </span>
               </label>
               <div className="flex flex-wrap gap-1">
-                {['Notes', 'Reminder', ...categories.map(c => c.name)].map((cName) => {
+                {categoryOptions.map((cName) => {
                   const isCatSelected = category === cName;
                   return (
                     <button
                       key={cName}
                       type="button"
-                      onClick={() => setCategory(cName)}
-                      className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all border flex items-center gap-1 ${
+                      onClick={() => handleCategorySelect(cName)}
+                      className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all border flex items-center gap-1 cursor-pointer ${
                         isCatSelected
-                          ? 'bg-blue-600 text-white border-blue-600 shadow-xs'
+                          ? cName === 'Reminder'
+                            ? 'bg-red-600 text-white border-red-600 shadow-xs'
+                            : 'bg-blue-600 text-white border-blue-600 shadow-xs'
                           : 'bg-theme-card text-theme-muted hover:text-theme-text border-theme-border'
                       }`}
                     >
@@ -429,34 +513,57 @@ export const NotesView: React.FC<NotesViewProps> = ({ onOpenTaskModal }) => {
                   type="text"
                   placeholder="e.g. 10:00 AM (or empty for all-day)"
                   value={time}
-                  onChange={(e) => setTime(e.target.value)}
+                  onChange={(e) => {
+                    const newT = e.target.value;
+                    setTime(newT);
+                    if (newT.trim().match(/^\d{1,2}:\d{2}\s*(AM|PM)$/i)) {
+                      const rollover = shouldRolloverToNextDay(date, newT.trim(), undefined, tasks);
+                      if (rollover.shouldRollover && date !== rollover.nextDateStr) {
+                        setDate(rollover.nextDateStr);
+                      }
+                    }
+                  }}
                   className="w-full px-3 py-1.5 rounded-xl bg-theme-card border border-theme-border text-theme-text text-xs font-mono font-bold focus:outline-none focus:ring-1 focus:ring-amber-500"
                 />
               </div>
             </div>
 
             {/* 🔁 Recurrence Rule Engine */}
-            <div className="space-y-2 p-3 rounded-xl bg-indigo-50/50 dark:bg-indigo-950/20 border border-indigo-200 dark:border-indigo-900/60">
+            <div className={`space-y-2 p-3 rounded-xl border transition-all ${
+              category === 'Reminder'
+                ? 'bg-indigo-50/70 dark:bg-indigo-950/40 border-indigo-300 dark:border-indigo-800 ring-1 ring-indigo-500/30'
+                : 'bg-indigo-50/50 dark:bg-indigo-950/20 border-indigo-200 dark:border-indigo-900/60'
+            }`}>
               <label className="text-[11px] font-bold text-indigo-900 dark:text-indigo-200 flex items-center justify-between uppercase tracking-wider font-display">
                 <span className="flex items-center gap-1.5">
                   <Repeat className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
                   <span>Recurrence Schedule</span>
+                  {category === 'Reminder' && (
+                    <span className="text-[9px] px-1.5 py-0.5 rounded font-black bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300 border border-red-300 dark:border-red-800">
+                      * Mandatory for Reminders
+                    </span>
+                  )}
                 </span>
                 <span className="font-mono text-[10px] text-indigo-700 dark:text-indigo-300 font-bold">
-                  {recurrence !== 'None' ? `Repeating: ${recurrence}` : 'One-time'}
+                  {recurrence !== 'None' ? `Repeating: ${recurrence}` : category === 'Reminder' ? '⚠️ Recurrence Required' : 'One-time'}
                 </span>
               </label>
 
-              <div className="grid grid-cols-5 gap-1">
-                {(['None', 'Daily', 'Selected Days', 'Weekly', 'Monthly'] as RecurrenceType[]).map((rType) => (
+              <div className="grid grid-cols-3 sm:grid-cols-6 gap-1">
+                {(['None', 'Yearly', 'Daily', 'Selected Days', 'Weekly', 'Monthly'] as RecurrenceType[]).map((rType) => (
                   <button
                     key={rType}
                     type="button"
-                    onClick={() => setRecurrence(rType)}
-                    className={`py-1 px-1 rounded-lg text-xs font-bold transition-all border text-center ${
+                    onClick={() => {
+                      setRecurrence(rType);
+                      if (formError) setFormError(null);
+                    }}
+                    className={`py-1 px-1 rounded-lg text-xs font-bold transition-all border text-center cursor-pointer ${
                       recurrence === rType
                         ? 'bg-indigo-600 text-white border-indigo-600 shadow-xs'
-                        : 'bg-theme-card text-theme-muted hover:text-theme-text border-theme-border'
+                        : rType === 'None' && category === 'Reminder'
+                          ? 'bg-theme-card text-red-500/70 hover:text-red-600 border-dashed border-red-300 dark:border-red-900/50'
+                          : 'bg-theme-card text-theme-muted hover:text-theme-text border-theme-border'
                     }`}
                   >
                     {rType === 'Selected Days' ? 'Custom Days' : rType}
@@ -475,7 +582,7 @@ export const NotesView: React.FC<NotesViewProps> = ({ onOpenTaskModal }) => {
                           key={day}
                           type="button"
                           onClick={() => toggleDay(day)}
-                          className={`px-2 py-1 rounded-lg text-xs font-bold border transition-colors ${
+                          className={`px-2 py-1 rounded-lg text-xs font-bold border transition-colors cursor-pointer ${
                             isSelected
                               ? 'bg-indigo-600 text-white border-indigo-600 shadow-xs'
                               : 'bg-theme-card text-theme-muted border-theme-border hover:border-indigo-400'
@@ -604,10 +711,20 @@ export const NotesView: React.FC<NotesViewProps> = ({ onOpenTaskModal }) => {
               type="button"
               onClick={handleSaveNote}
               disabled={!title.trim()}
-              className="px-5 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 disabled:opacity-50 text-white text-xs font-black shadow-md transition-all transform active:scale-95 cursor-pointer flex items-center gap-1.5"
+              className={`px-5 py-2 rounded-xl text-white text-xs font-black shadow-md transition-all transform active:scale-95 cursor-pointer flex items-center gap-1.5 ${
+                category === 'Reminder'
+                  ? 'bg-red-600 hover:bg-red-700 disabled:opacity-50'
+                  : 'bg-amber-500 hover:bg-amber-600 disabled:opacity-50'
+              }`}
             >
               <Check className="w-3.5 h-3.5 stroke-[3]" />
-              <span>{editingNoteId ? 'Update Note' : 'Save Recurrable Note'}</span>
+              <span>
+                {editingNoteId 
+                  ? 'Update Note / Reminder' 
+                  : category === 'Reminder' 
+                    ? 'Save Recurring Reminder' 
+                    : 'Save Recurrable Note'}
+              </span>
             </button>
           </div>
         </div>

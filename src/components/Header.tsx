@@ -166,11 +166,11 @@ export const Header: React.FC<HeaderProps> = ({ onOpenNewTaskModal }) => {
           <div className="flex items-center gap-2 shrink-0">
             
             {/* Search Input */}
-            <div className="relative w-28 sm:w-36 md:w-44">
+            <div className="relative w-24 sm:w-36 md:w-44 focus-within:w-36 sm:focus-within:w-48 transition-all duration-200">
               <Search className="w-3.5 h-3.5 text-theme-muted absolute left-2.5 top-1/2 -translate-y-1/2" />
               <input
                 type="text"
-                placeholder="Search tasks..."
+                placeholder="Search..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="w-full text-xs pl-7 pr-2.5 py-1.5 rounded-lg bg-theme-card-hover border border-theme-border text-theme-text placeholder-theme-muted focus:outline-none focus:ring-1 focus:ring-blue-500"
@@ -186,7 +186,7 @@ export const Header: React.FC<HeaderProps> = ({ onOpenNewTaskModal }) => {
                   syncNow();
                 }
               }}
-              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-xs font-semibold transition-all cursor-pointer ${
+              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-xs font-semibold transition-all cursor-pointer shrink-0 ${
                 cloudSyncStatus === 'synced'
                   ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/20'
                   : cloudSyncStatus === 'syncing'
@@ -235,7 +235,7 @@ export const Header: React.FC<HeaderProps> = ({ onOpenNewTaskModal }) => {
             <div className="relative">
               <button
                 onClick={() => setShowThemeMenu(!showThemeMenu)}
-                className="flex items-center gap-1 p-1.5 rounded-lg bg-theme-card-hover border border-theme-border text-theme-text hover:bg-theme-border transition-colors text-xs font-medium cursor-pointer"
+                className="flex items-center gap-1 p-1.5 rounded-lg bg-theme-card-hover border border-theme-border text-theme-text hover:bg-theme-border transition-colors text-xs font-medium cursor-pointer shrink-0"
                 title="Change Theme"
               >
                 <Palette className="w-4 h-4 text-blue-600 dark:text-blue-400" />
@@ -279,10 +279,11 @@ export const Header: React.FC<HeaderProps> = ({ onOpenNewTaskModal }) => {
             {/* Primary New Task CTA */}
             <button
               onClick={onOpenNewTaskModal}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-gradient-to-r from-blue-600 to-sky-500 hover:from-blue-700 hover:to-sky-600 text-white text-xs font-bold rounded-lg shadow-md shadow-blue-500/25 transition-all transform active:scale-95 cursor-pointer shrink-0"
+              className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 bg-gradient-to-r from-blue-600 to-sky-500 hover:from-blue-700 hover:to-sky-600 text-white text-xs font-bold rounded-lg shadow-md shadow-blue-500/25 transition-all transform active:scale-95 cursor-pointer shrink-0 whitespace-nowrap"
+              title="Create New Task"
             >
-              <Plus className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">New Task</span>
+              <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
+              <span className="hidden md:inline">New Task</span>
             </button>
 
             {/* Quick Lock / Logout Button */}

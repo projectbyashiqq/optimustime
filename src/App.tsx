@@ -8,6 +8,7 @@ import { BufferNoteModal } from './components/BufferNoteModal';
 import { RecurringDeleteModal } from './components/RecurringDeleteModal';
 import { RecurringManagerModal } from './components/RecurringManagerModal';
 import { EmergencyBufferModal } from './components/EmergencyBufferModal';
+import { BackupRestoreModal } from './components/BackupRestoreModal';
 import { DashboardView } from './views/DashboardView';
 import { TimeTracker24View } from './views/TimeTracker24View';
 import { AllTasksView } from './views/AllTasksView';
@@ -120,6 +121,9 @@ export const AppContent: React.FC = () => {
 
       {/* Recurring Task Deletion Choice Modal */}
       <RecurringDeleteModal />
+
+      {/* 100% System Backup & Data Recovery Hub Modal */}
+      <BackupRestoreModal />
 
       {/* Recurring Tasks & Schedules Manager Hub Modal */}
       {isRecurringManagerOpen && (

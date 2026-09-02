@@ -385,7 +385,8 @@ export const Day24HourView: React.FC<Day24HourViewProps> = ({
 
                     <span className={`text-[11px] font-bold truncate ${
                       isWorking ? 'text-white' :
-                      isDone ? 'line-through text-theme-muted' : 'text-theme-text'
+                      isDone ? 'line-through text-theme-muted' : 
+                      isInSleep ? 'text-white font-black drop-shadow-sm' : 'text-theme-text'
                     }`}>
                       {task.title}
                     </span>

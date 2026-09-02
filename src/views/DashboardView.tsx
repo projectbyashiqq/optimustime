@@ -71,6 +71,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
     pauseTask, 
     completeTask, 
     updateTask,
+    extendTaskDuration,
     deleteTask,
     requestDeleteTask,
     detectConflicts,
@@ -220,12 +221,12 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
   return (
     <div className="space-y-4 animate-fade-in">
       
-      {/* Sleek Compact Top Bar: Single-Row Optimized */}
-      <div className="glass-panel px-3 py-2 rounded-2xl flex items-center justify-between gap-2 border border-theme-border shadow-sm overflow-x-auto no-scrollbar">
+      {/* Sleek Compact Top Bar: Responsive & Multi-Device Optimized */}
+      <div className="glass-panel p-2.5 sm:px-3 sm:py-2 rounded-2xl flex flex-col md:flex-row items-stretch md:items-center justify-between gap-2.5 border border-theme-border shadow-sm">
         
         {/* Left Side: Date Selector, Quick Chips & Action */}
-        <div className="flex items-center gap-1.5 shrink-0">
-          <div className="flex items-center gap-1.5 bg-theme-card-hover px-2 py-1 rounded-xl border border-theme-border">
+        <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5 max-w-full">
+          <div className="flex items-center gap-1.5 bg-theme-card-hover px-2 py-1 rounded-xl border border-theme-border shrink-0">
             <Calendar className="w-3.5 h-3.5 text-blue-500 shrink-0" />
             <input
               type="date"
@@ -319,7 +320,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
         </div>
 
         {/* Right Side: Mode Switcher & Primary Schedule CTA */}
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex items-center justify-between md:justify-end gap-2 shrink-0 pt-2 md:pt-0 border-t md:border-t-0 border-theme-border/50">
           <div className="flex items-center gap-0.5 p-0.5 bg-theme-card-hover rounded-xl border border-theme-border shadow-inner">
             <button
               onClick={() => setDashboardMode('time')}
@@ -900,7 +901,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
 
                                 {/* Task Title (Auto-scaled dynamic typography) + Appointed Duration */}
                                 <div className="flex items-baseline gap-2 flex-wrap">
-                                  <h4 className={getTaskTitleClasses(task.title, task.status === 'Done')}>
+                                  <h4 className={getTaskTitleClasses(task.title, task.status === 'Done', isInSleep)}>
                                     {task.title}
                                   </h4>
                                   <span className="font-mono text-xs font-bold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/60 px-2 py-0.5 rounded-md border border-blue-200 dark:border-blue-900/60 shadow-2xs">
@@ -1418,7 +1419,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
                                   title="Log what you did during this past free window"
                                 >
                                   <Coffee className="w-3.5 h-3.5" />
-                                  <span>+ Add Buffer Note</span>
+                                  <span>Add Buffer Note</span>
                                 </button>
 
                                 <button
@@ -1437,7 +1438,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
                                   title="Schedule and start task now"
                                 >
                                   <Plus className="w-3.5 h-3.5 stroke-[3]" />
-                                  <span>+ Start Task Now</span>
+                                  <span>Start Task Now</span>
                                 </button>
 
                                 <button
@@ -1462,7 +1463,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
                                   title="Fill gap with new scheduled task"
                                 >
                                   <Plus className="w-3.5 h-3.5 stroke-[3]" />
-                                  <span>+ Schedule Task</span>
+                                  <span>Schedule Task</span>
                                 </button>
 
                                 <button

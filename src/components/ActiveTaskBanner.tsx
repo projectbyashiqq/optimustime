@@ -14,7 +14,7 @@ import {
 } from 'lucide-react';
 
 export const ActiveTaskBanner: React.FC = () => {
-  const { tasks, completeTask, pauseTask, holdTask, prioritySettings } = useApp();
+  const { tasks, completeTask, pauseTask, holdTask, prioritySettings, extendTaskDuration } = useApp();
   
   const activeTask = tasks.find(t => t.status === 'Working');
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
@@ -62,7 +62,7 @@ export const ActiveTaskBanner: React.FC = () => {
               <Play className="w-5 h-5 text-white fill-white" />
             </div>
             <div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
                 <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-white/20 tracking-wider">
                   WORKING NOW
                 </span>
@@ -84,15 +84,40 @@ export const ActiveTaskBanner: React.FC = () => {
                     MANDATORY
                   </span>
                 )}
+
+                {/* Early / Late Start Timing Indicator */}
+                {activeTask.startDiscrepancyMinutes !== undefined && (
+                  activeTask.startDiscrepancyMinutes > 2 ? (
+                    <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-amber-400 text-amber-950 shadow-sm flex items-center gap-1 animate-pulse">
+                      ⚠️ Started {activeTask.startDiscrepancyMinutes}m late
+                    </span>
+                  ) : activeTask.startDiscrepancyMinutes < -2 ? (
+                    <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-emerald-400 text-emerald-950 shadow-sm flex items-center gap-1">
+                      ⚡ Started {Math.abs(activeTask.startDiscrepancyMinutes)}m early
+                    </span>
+                  ) : (
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-sky-300 text-sky-950 shadow-xs">
+                      ✓ Started on time
+                    </span>
+                  )
+                )}
               </div>
-              <h3 className="text-base sm:text-lg font-bold tracking-tight text-white truncate max-w-md font-openSans">
-                {activeTask.title}
-              </h3>
+              <div className="flex items-center gap-2 flex-wrap mt-0.5">
+                <h3 className="text-base sm:text-lg font-bold tracking-tight text-white truncate max-w-md font-openSans">
+                  {activeTask.title}
+                </h3>
+                <span className="text-[11px] font-mono text-blue-100 bg-white/10 px-2 py-0.5 rounded-md">
+                  Started: {activeTask.startTime} • Scheduled End: {activeTask.endTime}
+                  {activeTask.originalScheduledStartTime && activeTask.originalScheduledStartTime !== activeTask.startTime && (
+                    <span className="opacity-80 ml-1">(Plan: {activeTask.originalScheduledStartTime})</span>
+                  )}
+                </span>
+              </div>
             </div>
           </div>
 
           {/* Stopwatch & Auto-Buffer Alert */}
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-4 flex-wrap">
             <div className="flex flex-col items-end">
               <div className="flex items-center gap-2">
                 {isOvertime && (
@@ -118,11 +143,40 @@ export const ActiveTaskBanner: React.FC = () => {
               </div>
             </div>
 
+            {/* Quick Extension Buttons: +15m / +30m / +60m */}
+            <div className="flex items-center gap-1 bg-white/15 p-1 rounded-xl backdrop-blur-md border border-white/20 shadow-sm">
+              <span className="text-[10px] font-bold text-white/90 px-1">+Add:</span>
+              <button
+                type="button"
+                onClick={() => extendTaskDuration(activeTask.id, 15)}
+                className="px-2 py-1 bg-white/20 hover:bg-white/35 text-white rounded-lg text-xs font-mono font-bold transition-all transform active:scale-95 shadow-xs cursor-pointer"
+                title="Add 15 minutes to scheduled end time"
+              >
+                +15m
+              </button>
+              <button
+                type="button"
+                onClick={() => extendTaskDuration(activeTask.id, 30)}
+                className="px-2 py-1 bg-white/20 hover:bg-white/35 text-white rounded-lg text-xs font-mono font-bold transition-all transform active:scale-95 shadow-xs cursor-pointer"
+                title="Add 30 minutes to scheduled end time"
+              >
+                +30m
+              </button>
+              <button
+                type="button"
+                onClick={() => extendTaskDuration(activeTask.id, 60)}
+                className="px-2 py-1 bg-white/20 hover:bg-white/35 text-white rounded-lg text-xs font-mono font-bold transition-all transform active:scale-95 shadow-xs cursor-pointer"
+                title="Add 60 minutes to scheduled end time"
+              >
+                +60m
+              </button>
+            </div>
+
             {/* Action Buttons */}
             <div className="flex items-center gap-2">
               <button
                 onClick={() => pauseTask(activeTask.id)}
-                className="flex items-center gap-1 px-3 py-1.5 bg-white/10 hover:bg-white/20 text-white rounded-lg text-xs font-semibold backdrop-blur-sm border border-white/20 transition-colors"
+                className="flex items-center gap-1 px-3 py-1.5 bg-white/10 hover:bg-white/20 text-white rounded-lg text-xs font-semibold backdrop-blur-sm border border-white/20 transition-colors cursor-pointer"
                 title="Pause Execution"
               >
                 <Pause className="w-3.5 h-3.5" />
@@ -131,7 +185,7 @@ export const ActiveTaskBanner: React.FC = () => {
 
               <button
                 onClick={() => completeTask(activeTask.id)}
-                className="flex items-center gap-1.5 px-4 py-1.5 bg-emerald-500 hover:bg-emerald-400 text-white rounded-lg text-xs font-bold shadow-lg shadow-emerald-900/30 transition-all transform active:scale-95"
+                className="flex items-center gap-1.5 px-4 py-1.5 bg-emerald-500 hover:bg-emerald-400 text-white rounded-lg text-xs font-bold shadow-lg shadow-emerald-900/30 transition-all transform active:scale-95 cursor-pointer"
               >
                 <CheckCircle2 className="w-4 h-4" />
                 <span>Complete Task</span>

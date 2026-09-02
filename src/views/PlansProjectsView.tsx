@@ -255,7 +255,7 @@ export const PlansProjectsView: React.FC<PlansProjectsViewProps> = ({ onOpenTask
             className="flex-1 md:flex-initial flex items-center justify-center gap-1.5 px-4 py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white text-xs font-black rounded-2xl shadow-md shadow-blue-500/20 transition-all transform active:scale-95"
           >
             <FolderPlus className="w-4 h-4" />
-            <span>+ New {activeType === 'plan' ? 'Plan Folder' : 'Project Folder'}</span>
+            <span>New {activeType === 'plan' ? 'Plan Folder' : 'Project Folder'}</span>
           </button>
         </div>
 
@@ -661,7 +661,7 @@ export const PlansProjectsView: React.FC<PlansProjectsViewProps> = ({ onOpenTask
                 className="flex-1 flex items-center justify-center gap-1.5 py-2.5 px-4 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold shadow-md shadow-blue-500/20 transition-all"
               >
                 <Plus className="w-4 h-4 stroke-[3]" />
-                <span>+ Add Task to {selectedFolder.title}</span>
+                <span>Add Task to {selectedFolder.title}</span>
               </button>
 
               <button

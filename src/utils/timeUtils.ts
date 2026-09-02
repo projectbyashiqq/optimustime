@@ -2,7 +2,8 @@
  * Time utility functions for OptimusTime Time-Boxing and Automation Engines
  */
 
-import { Task, BufferStatusNote, CapacitySettings, DaySlice24, DayBreakdown24Metrics } from '../types';
+import { Task, BufferStatusNote, CapacitySettings, DaySlice24, DayBreakdown24Metrics, SignalNoiseType } from '../types';
+import { detectSignalVsNoise } from './signalNoiseUtils';
 
 export const DAYS_OF_WEEK = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 export const SHORT_DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -771,17 +772,21 @@ export function formatMonthYear(year: number, monthIndex: number): string {
  * - Medium title (26 - 55 chars): standard medium font size
  * - Long title (> 55 chars): auto-scaled slightly smaller with graceful line clamping
  */
-export function getTaskTitleClasses(title: string, isDone = false): string {
+export function getTaskTitleClasses(title: string, isDone = false, isInSleep = false): string {
   const len = (title || '').trim().length;
-  const strike = isDone ? 'line-through text-theme-muted opacity-75' : 'text-theme-text';
+  const colorClass = isDone 
+    ? 'line-through text-theme-muted opacity-75' 
+    : isInSleep 
+    ? 'text-white drop-shadow-sm font-black' 
+    : 'text-theme-text';
   
   if (len <= 25) {
-    return `text-lg sm:text-xl font-black font-openSans tracking-tight leading-snug ${strike}`;
+    return `text-lg sm:text-xl font-black font-openSans tracking-tight leading-snug ${colorClass}`;
   }
   if (len <= 55) {
-    return `text-base sm:text-lg font-bold font-openSans tracking-normal leading-snug ${strike}`;
+    return `text-base sm:text-lg font-bold font-openSans tracking-normal leading-snug ${colorClass}`;
   }
-  return `text-xs sm:text-sm font-semibold font-openSans leading-snug line-clamp-2 ${strike}`;
+  return `text-xs sm:text-sm font-semibold font-openSans leading-snug line-clamp-2 ${colorClass}`;
 }
 
 export function getBufferActivityEmoji(tag: string): string {
@@ -866,6 +871,8 @@ export function get24HourContinuousTimeline(
     bufferNote?: BufferStatusNote;
     category?: string;
     priority?: Task['priority'];
+    signalNoise?: SignalNoiseType;
+    snReason?: string;
   }
 
   const rawIntervals: RawInterval[] = [];
@@ -877,7 +884,9 @@ export function get24HourContinuousTimeline(
       start: 0,
       end: dayStartMin,
       type: 'sleep',
-      title: 'Sleep Cycle & Rest'
+      title: 'Sleep Cycle & Rest',
+      signalNoise: 'signal',
+      snReason: 'Essential Circadian Recovery & Sleep'
     });
   }
   // After dayEndTime (dayEndMin % 1440 to 1440)
@@ -889,7 +898,9 @@ export function get24HourContinuousTimeline(
       start: dayEndMin,
       end: 1440,
       type: 'sleep',
-      title: 'Sleep Cycle & Rest'
+      title: 'Sleep Cycle & Rest',
+      signalNoise: 'signal',
+      snReason: 'Essential Circadian Recovery & Sleep'
     });
   }
 
@@ -909,6 +920,15 @@ export function get24HourContinuousTimeline(
     const clampedEnd = Math.min(1440, Math.max(clampedStart, e));
 
     if (clampedEnd > clampedStart) {
+      const sn = detectSignalVsNoise({
+        title: t.title,
+        notes: t.notes || t.description,
+        category: t.category,
+        priority: t.priority,
+        sliceType,
+        explicitType: t.signalNoise
+      });
+
       rawIntervals.push({
         start: clampedStart,
         end: clampedEnd,
@@ -916,7 +936,9 @@ export function get24HourContinuousTimeline(
         title: t.title,
         task: t,
         category: t.category,
-        priority: t.priority
+        priority: t.priority,
+        signalNoise: sn.type,
+        snReason: sn.reason
       });
     }
 
@@ -931,7 +953,9 @@ export function get24HourContinuousTimeline(
           end: bufEnd,
           type: 'task_buffer',
           title: `Buffer (${t.projectCode})`,
-          task: t
+          task: t,
+          signalNoise: 'signal',
+          snReason: 'Mindful post-task transition buffer'
         });
       }
     }
@@ -947,12 +971,23 @@ export function get24HourContinuousTimeline(
     const clampedEnd = Math.min(1440, Math.max(clampedStart, e));
 
     if (clampedEnd > clampedStart) {
+      const sn = detectSignalVsNoise({
+        title: note.activityTag,
+        notes: note.notes,
+        tag: note.activityTag,
+        energyLevel: note.energyLevel,
+        sliceType: 'buffer_note',
+        explicitType: note.signalNoise
+      });
+
       rawIntervals.push({
         start: clampedStart,
         end: clampedEnd,
         type: 'buffer_note',
         title: `${getBufferActivityEmoji(note.activityTag)} ${note.activityTag}: ${note.notes || 'Free Time'}`,
-        bufferNote: note
+        bufferNote: note,
+        signalNoise: sn.type,
+        snReason: sn.reason
       });
     }
   }
@@ -978,7 +1013,10 @@ export function get24HourContinuousTimeline(
         endTime: formatMinutesTo12Hour(item.start),
         startMinute: cursor,
         endMinute: item.start,
-        durationMinutes: gapDuration
+        durationMinutes: gapDuration,
+        signalNoise: 'noise',
+        isNoise: true,
+        snReason: 'Unaccounted time window'
       });
       cursor = item.start;
     }
@@ -988,6 +1026,7 @@ export function get24HourContinuousTimeline(
       const sliceStart = Math.max(cursor, item.start);
       const sliceEnd = item.end;
       const duration = sliceEnd - sliceStart;
+      const isNoise = item.signalNoise === 'noise';
 
       slices.push({
         id: `slice_${item.type}_${sliceStart}_${sliceEnd}_${Math.random().toString(36).substring(2, 6)}`,
@@ -1001,7 +1040,10 @@ export function get24HourContinuousTimeline(
         category: item.category,
         priority: item.priority,
         task: item.task,
-        bufferNote: item.bufferNote
+        bufferNote: item.bufferNote,
+        signalNoise: item.signalNoise || (isNoise ? 'noise' : 'signal'),
+        isNoise,
+        snReason: item.snReason
       });
 
       cursor = sliceEnd;
@@ -1018,7 +1060,10 @@ export function get24HourContinuousTimeline(
       endTime: formatMinutesTo12Hour(1440),
       startMinute: cursor,
       endMinute: 1440,
-      durationMinutes: 1440 - cursor
+      durationMinutes: 1440 - cursor,
+      signalNoise: 'noise',
+      isNoise: true,
+      snReason: 'Unaccounted time window'
     });
   }
 
@@ -1029,6 +1074,8 @@ export function get24HourContinuousTimeline(
   let bufferLoggedMinutes = 0;
   let scheduledBufferMinutes = 0;
   let unaccountedMinutes = 0;
+  let signalMinutes = 0;
+  let noiseMinutes = 0;
 
   for (const s of slices) {
     if (s.type === 'work_completed') {
@@ -1045,10 +1092,25 @@ export function get24HourContinuousTimeline(
     } else if (s.type === 'unaccounted_gap') {
       unaccountedMinutes += s.durationMinutes;
     }
+
+    // Signal vs Noise breakdown
+    if (s.signalNoise === 'noise') {
+      noiseMinutes += s.durationMinutes;
+    } else if (s.signalNoise === 'signal' && s.type !== 'sleep') {
+      signalMinutes += s.durationMinutes;
+    }
   }
 
   const accountedMinutes = Math.min(1440, 1440 - unaccountedMinutes);
   const accountabilityScore = Math.min(100, Math.round((accountedMinutes / 1440) * 100));
+
+  const awakeTotalTracked = signalMinutes + noiseMinutes;
+  const signalRatio = awakeTotalTracked > 0 
+    ? Math.min(100, Math.max(0, Math.round((signalMinutes / awakeTotalTracked) * 100))) 
+    : 100;
+  const snrMultiplier = noiseMinutes > 0 
+    ? Number((signalMinutes / noiseMinutes).toFixed(2)) 
+    : (signalMinutes > 0 ? 10.0 : 1.0);
 
   const metrics: DayBreakdown24Metrics = {
     totalMinutes: 1440,
@@ -1058,7 +1120,12 @@ export function get24HourContinuousTimeline(
     bufferLoggedMinutes,
     scheduledBufferMinutes,
     unaccountedMinutes,
-    accountabilityScore
+    accountabilityScore,
+    signalMinutes,
+    noiseMinutes,
+    signalRatio,
+    snrMultiplier,
+    noiseLeakMinutes: noiseMinutes
   };
 
   return { slices, metrics };
@@ -1522,6 +1589,116 @@ export interface RecommendedSlot {
  * accounting for existing tasks (including recurring instances), their post-task buffer time (15 mins),
  * and buffer status notes.
  */
+export interface SmartFreeSlotResult {
+  startTime: string;
+  endTime: string;
+  dateStr?: string;
+  crossesMidnight?: boolean;
+}
+
+/**
+ * Checks if a scheduled date and time is earlier than the current moment.
+ */
+export function isDateTimeBeforeNow(dateStr: string, timeStr: string): { 
+  isPast: boolean; 
+  diffMinutes: number; 
+  currentTimeStr: string; 
+  todayStr: string;
+} {
+  const now = new Date();
+  const todayStr = toISODateString(now);
+  const nowMinutes = now.getHours() * 60 + now.getMinutes();
+  const currentTimeStr = formatMinutesTo12Hour(nowMinutes);
+
+  if (!dateStr || !timeStr || timeStr === 'All Day') {
+    return { isPast: false, diffMinutes: 0, currentTimeStr, todayStr };
+  }
+
+  if (dateStr < todayStr) {
+    const [y1, m1, d1] = dateStr.split('-').map(Number);
+    const [y2, m2, d2] = todayStr.split('-').map(Number);
+    const d1Obj = new Date(y1, m1 - 1, d1);
+    const d2Obj = new Date(y2, m2 - 1, d2);
+    const daysDiff = Math.max(1, Math.round((d2Obj.getTime() - d1Obj.getTime()) / (1000 * 60 * 60 * 24)));
+    return {
+      isPast: true,
+      diffMinutes: daysDiff * 1440,
+      currentTimeStr,
+      todayStr
+    };
+  }
+
+  if (dateStr === todayStr) {
+    const taskStartMinutes = parse12HourToMinutes(timeStr);
+    if (taskStartMinutes < nowMinutes) {
+      return {
+        isPast: true,
+        diffMinutes: nowMinutes - taskStartMinutes,
+        currentTimeStr,
+        todayStr
+      };
+    }
+  }
+
+  return { isPast: false, diffMinutes: 0, currentTimeStr, todayStr };
+}
+
+/**
+ * Checks whether selecting an early AM time (e.g. 12:00 AM - 04:59 AM) should roll over to the next day,
+ * when the context indicates it follows late-night work (e.g. after an 11:00 PM task or >= 09:00 PM).
+ */
+export function shouldRolloverToNextDay(
+  currentTaskDate: string,
+  newStartTime: string,
+  previousStartTime?: string,
+  existingTasksOnDate: Array<{ startTime: string; endTime: string; status: string }> = []
+): { shouldRollover: boolean; nextDateStr: string } {
+  const [y, m, d] = currentTaskDate.split('-').map(Number);
+  const nextDate = new Date(y, m - 1, d + 1);
+  const nextDateStr = toISODateString(nextDate);
+
+  if (!newStartTime || newStartTime === 'All Day') {
+    return { shouldRollover: false, nextDateStr };
+  }
+
+  const newMin = parse12HourToMinutes(newStartTime);
+  // Early morning / midnight window: 12:00 AM (0 min) up to 04:59 AM (299 min)
+  const isEarlyAmMidnight = newMin < 300;
+  if (!isEarlyAmMidnight) {
+    return { shouldRollover: false, nextDateStr };
+  }
+
+  // 1. If previous start time was late evening / night (>= 09:00 PM = 1260 mins)
+  if (previousStartTime && previousStartTime !== 'All Day') {
+    const prevMin = parse12HourToMinutes(previousStartTime);
+    if (prevMin >= 1260) {
+      return { shouldRollover: true, nextDateStr };
+    }
+  }
+
+  // 2. If there are tasks on currentTaskDate ending or starting late (>= 09:00 PM = 1260 mins)
+  const hasLateTask = existingTasksOnDate.some(t => {
+    if (!t.startTime || t.startTime === 'All Day' || t.status === 'Terminated') return false;
+    const s = parse12HourToMinutes(t.startTime);
+    const e = parse12HourToMinutes(t.endTime);
+    return s >= 1260 || e >= 1260;
+  });
+  if (hasLateTask) {
+    return { shouldRollover: true, nextDateStr };
+  }
+
+  // 3. If currentTaskDate is today and real-world time right now is late night (>= 09:00 PM = 1260 mins)
+  const now = new Date();
+  if (currentTaskDate === toISODateString(now)) {
+    const nowMin = now.getHours() * 60 + now.getMinutes();
+    if (nowMin >= 1260) {
+      return { shouldRollover: true, nextDateStr };
+    }
+  }
+
+  return { shouldRollover: false, nextDateStr };
+}
+
 export function getSmartNextFreeSlot(
   dateStr: string,
   durationMinutes: number,
@@ -1529,7 +1706,7 @@ export function getSmartNextFreeSlot(
   bufferNotes: Array<{ date?: string; startTime: string; endTime: string }> = [],
   ignoreTaskId?: string,
   bufferGap = 15
-): { startTime: string; endTime: string } {
+): SmartFreeSlotResult {
   const todayStr = toISODateString(new Date());
   const isToday = dateStr === todayStr;
 
@@ -1568,7 +1745,7 @@ export function getSmartNextFreeSlot(
     if (usableStart + durationMinutes <= gapEndMin) {
       const slotStart = formatMinutesTo12Hour(usableStart);
       const slotEnd = formatMinutesTo12Hour(usableStart + durationMinutes);
-      return { startTime: slotStart, endTime: slotEnd };
+      return { startTime: slotStart, endTime: slotEnd, dateStr, crossesMidnight: false };
     }
   }
 
@@ -1585,9 +1762,18 @@ export function getSmartNextFreeSlot(
       }
     }
     const finalStart = Math.max(latestEndMin, earliestMin);
+    const crossesMidnight = finalStart >= 1440;
+    let targetDateStr = dateStr;
+    if (crossesMidnight) {
+      const [y, m, d] = dateStr.split('-').map(Number);
+      const nextDate = new Date(y, m - 1, d + 1);
+      targetDateStr = toISODateString(nextDate);
+    }
     return {
       startTime: formatMinutesTo12Hour(finalStart),
-      endTime: formatMinutesTo12Hour(finalStart + durationMinutes)
+      endTime: formatMinutesTo12Hour(finalStart + durationMinutes),
+      dateStr: targetDateStr,
+      crossesMidnight
     };
   }
 
@@ -1595,7 +1781,9 @@ export function getSmartNextFreeSlot(
   const defaultStartMin = isToday ? earliestMin : parse12HourToMinutes('09:00 AM');
   return {
     startTime: formatMinutesTo12Hour(defaultStartMin),
-    endTime: formatMinutesTo12Hour(defaultStartMin + durationMinutes)
+    endTime: formatMinutesTo12Hour(defaultStartMin + durationMinutes),
+    dateStr,
+    crossesMidnight: false
   };
 }
 

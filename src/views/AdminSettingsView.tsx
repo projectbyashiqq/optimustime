@@ -41,8 +41,11 @@ import {
   ShieldAlert,
   Timer,
   Sliders,
-  Activity
+  Activity,
+  FileSpreadsheet,
+  FileJson
 } from 'lucide-react';
+import { exportTasksToExcelWorkbook, exportTasksToDetailedCSV } from '../utils/excelExporter';
 import { DEFAULT_SQL_SCHEMA, testSupabaseConnection } from '../services/supabase';
 
 export const AdminSettingsView: React.FC = () => {
@@ -63,8 +66,14 @@ export const AdminSettingsView: React.FC = () => {
     emergencyCategories,
     deleteEmergencyCategory,
     resetEmergencyCategories,
+    tasks,
+    planProjects,
     exportStateJson,
+    exportSettingsOnlyJson,
     importStateJson,
+    rollbackLastRestore,
+    canRollback,
+    openBackupModal,
     resetToDefaultData,
     securitySettings,
     updateSecuritySettings,
@@ -1512,51 +1521,103 @@ export const AdminSettingsView: React.FC = () => {
           </div>
         </div>
 
-        {/* Data Backup & Restore */}
+        {/* Complete 100% Data Backup & Recovery Hub */}
         <div className="glass-panel p-6 rounded-2xl border border-theme-border space-y-4">
-          <div className="flex items-center justify-between border-b border-theme-border pb-3">
+          <div className="flex items-center justify-between border-b border-theme-border pb-3 flex-wrap gap-2">
             <h3 className="text-sm font-bold text-theme-text uppercase tracking-wider flex items-center gap-2">
-              <Download className="w-4 h-4 text-purple-500" />
-              Unified Data Backup & Restore
+              <Database className="w-4 h-4 text-purple-500" />
+              <span>100% System Backup & Data Hub</span>
             </h3>
+            <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-purple-100 dark:bg-purple-950 text-purple-800 dark:text-purple-300 font-mono">
+              v2.0 Vault
+            </span>
           </div>
 
           <div className="space-y-3 text-xs">
-            <p className="text-theme-muted">
-              Export your full system matrix, tasks, categories, knowledge hub and reminders as a JSON file or restore from a previous backup.
+            <p className="text-theme-muted leading-relaxed">
+              Export a complete 100% snapshot of your system (tasks, journals, rules, and settings), download a multi-sheet Excel workbook, or restore from a JSON backup.
             </p>
 
+            {/* Hub Launcher Button */}
             <button
-              onClick={handleExport}
-              className="w-full py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-xl font-bold shadow-md transition-colors flex items-center justify-center gap-2"
+              onClick={() => openBackupModal('export')}
+              className="w-full py-3 bg-gradient-to-r from-purple-600 via-indigo-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 text-white rounded-xl font-black shadow-lg shadow-purple-500/25 transition-all flex items-center justify-center gap-2 transform active:scale-95"
             >
-              <Download className="w-4 h-4" />
-              <span>Download Full JSON Backup</span>
+              <Database className="w-4 h-4" />
+              <span>Open 100% Backup & Recovery Hub</span>
             </button>
 
-            <div className="pt-2 border-t border-theme-border space-y-2">
-              <label className="font-bold text-theme-text block">
-                Restore State from JSON:
-              </label>
-              <textarea
-                rows={3}
-                placeholder="Paste exported JSON state here..."
-                value={importJsonText}
-                onChange={(e) => setImportJsonText(e.target.value)}
-                className="w-full p-2.5 rounded-xl bg-theme-card-hover border border-theme-border text-theme-text font-mono text-[11px]"
-              />
+            {/* Quick Actions Grid */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-1">
               <button
-                onClick={handleImport}
-                className="w-full py-2 bg-theme-card-hover hover:bg-theme-border border border-theme-border text-theme-text rounded-xl font-bold transition-colors flex items-center justify-center gap-2"
+                onClick={handleExport}
+                className="p-2.5 rounded-xl border border-theme-border bg-theme-card-hover hover:bg-theme-border text-theme-text font-bold transition-all flex flex-col items-center text-center gap-1"
+                title="Download full database + settings JSON"
               >
-                <Upload className="w-4 h-4" />
-                <span>Import & Restore</span>
+                <FileJson className="w-4 h-4 text-blue-500" />
+                <span className="text-[11px]">Full Backup (JSON)</span>
               </button>
 
-              {importStatus && (
-                <p className="text-xs text-emerald-500 font-bold text-center">
-                  {importStatus}
-                </p>
+              <button
+                onClick={() => {
+                  const jsonStr = exportSettingsOnlyJson();
+                  const blob = new Blob([jsonStr], { type: 'application/json' });
+                  const url = URL.createObjectURL(blob);
+                  const a = document.createElement('a');
+                  a.href = url;
+                  a.download = `optimustime_settings_profile_${new Date().toISOString().slice(0, 10)}.json`;
+                  a.click();
+                  URL.revokeObjectURL(url);
+                }}
+                className="p-2.5 rounded-xl border border-theme-border bg-theme-card-hover hover:bg-theme-border text-theme-text font-bold transition-all flex flex-col items-center text-center gap-1"
+                title="Download only settings and configurations"
+              >
+                <Settings2 className="w-4 h-4 text-purple-500" />
+                <span className="text-[11px]">Settings Profile</span>
+              </button>
+
+              <button
+                onClick={() => {
+                  exportTasksToExcelWorkbook(tasks, planProjects, prioritySettings);
+                }}
+                className="p-2.5 rounded-xl border border-theme-border bg-theme-card-hover hover:bg-theme-border text-theme-text font-bold transition-all flex flex-col items-center text-center gap-1"
+                title="Download 4-sheet complete Excel tasks workbook"
+              >
+                <FileSpreadsheet className="w-4 h-4 text-emerald-500" />
+                <span className="text-[11px]">Tasks Excel (.xlsx)</span>
+              </button>
+            </div>
+
+            {/* Restore Quick Trigger & Rollback */}
+            <div className="pt-3 border-t border-theme-border space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="font-bold text-theme-text text-[11px]">Quick Restore:</span>
+                <button
+                  onClick={() => openBackupModal('restore')}
+                  className="text-[11px] font-bold text-purple-600 dark:text-purple-400 hover:underline flex items-center gap-1"
+                >
+                  <Upload className="w-3 h-3" />
+                  <span>File Picker & Inspection Mode</span>
+                </button>
+              </div>
+
+              {canRollback && (
+                <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <ShieldCheck className="w-4 h-4 text-amber-500 shrink-0" />
+                    <span className="text-[11px] font-bold text-theme-text">Safety Snapshot Available</span>
+                  </div>
+                  <button
+                    onClick={() => {
+                      if (confirm('Revert system to pre-restore snapshot?')) {
+                        rollbackLastRestore();
+                      }
+                    }}
+                    className="px-2.5 py-1 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-[10px] font-black shadow-sm transition-all"
+                  >
+                    Undo / Rollback
+                  </button>
+                </div>
               )}
             </div>
           </div>
@@ -1580,9 +1641,26 @@ const CategoryItemEditor: React.FC<CategoryItemEditorProps> = ({
   onDelete
 }) => {
   const [isExpanded, setIsExpanded] = useState(false);
+  const [isEditingName, setIsEditingName] = useState(false);
+  const [editingNameText, setEditingNameText] = useState(category.name);
   const [editingSubIndex, setEditingSubIndex] = useState<number | null>(null);
   const [editingSubText, setEditingSubText] = useState('');
   const [newSubText, setNewSubText] = useState('');
+
+  const isPermanent = ['notes', 'note', 'reminder', 'reminders'].includes(category.name.trim().toLowerCase());
+
+  // Save renamed category
+  const handleSaveCategoryName = () => {
+    if (!editingNameText.trim() || isPermanent) {
+      setIsEditingName(false);
+      return;
+    }
+    onUpdate({
+      ...category,
+      name: editingNameText.trim()
+    });
+    setIsEditingName(false);
+  };
 
   // Delete a subcategory
   const handleDeleteSub = (subToDelete: string) => {
@@ -1627,34 +1705,91 @@ const CategoryItemEditor: React.FC<CategoryItemEditorProps> = ({
   return (
     <div className="rounded-xl bg-theme-card-hover border border-theme-border p-3 space-y-2.5 text-xs transition-all">
       {/* Category Header Bar */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2.5">
+      <div className="flex items-center justify-between gap-2 flex-wrap">
+        <div className="flex items-center gap-2.5 min-w-0 flex-1">
           <input
             type="color"
             value={category.color}
             onChange={(e) => onUpdate({ ...category, color: e.target.value })}
-            className="w-5 h-5 rounded-md cursor-pointer border-0 p-0 bg-transparent"
+            className="w-5 h-5 rounded-md cursor-pointer border-0 p-0 bg-transparent shrink-0"
             title="Change Category Color"
           />
-          <span className="font-bold text-theme-text">{category.name}</span>
-          <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-theme-card border border-theme-border text-theme-muted">
-            {category.subCategories.length} sub-entities
-          </span>
+
+          {isEditingName && !isPermanent ? (
+            <div className="flex items-center gap-1">
+              <input
+                type="text"
+                value={editingNameText}
+                onChange={(e) => setEditingNameText(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') handleSaveCategoryName(); }}
+                className="text-xs px-2 py-0.5 rounded bg-theme-card text-theme-text font-bold border border-blue-400 focus:outline-none"
+                autoFocus
+              />
+              <button
+                onClick={handleSaveCategoryName}
+                className="p-1 text-emerald-600 hover:text-emerald-700 cursor-pointer"
+                title="Save Category Name"
+              >
+                <Check className="w-3.5 h-3.5" />
+              </button>
+              <button
+                onClick={() => {
+                  setEditingNameText(category.name);
+                  setIsEditingName(false);
+                }}
+                className="p-1 text-red-500 hover:text-red-700 cursor-pointer"
+                title="Cancel"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          ) : (
+            <div className="flex items-center gap-1.5 min-w-0">
+              <span className="font-bold text-theme-text truncate">{category.name}</span>
+              {!isPermanent && (
+                <button
+                  onClick={() => {
+                    setEditingNameText(category.name);
+                    setIsEditingName(true);
+                  }}
+                  className="p-0.5 text-theme-muted hover:text-blue-600 rounded transition-colors cursor-pointer"
+                  title="Rename Category"
+                >
+                  <Edit2 className="w-3 h-3" />
+                </button>
+              )}
+            </div>
+          )}
+
+          {isPermanent ? (
+            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-800 flex items-center gap-1 shrink-0">
+              <Lock className="w-2.5 h-2.5" />
+              <span>Permanent Core</span>
+            </span>
+          ) : (
+            <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-theme-card border border-theme-border text-theme-muted shrink-0">
+              {category.subCategories.length} sub-entities
+            </span>
+          )}
         </div>
 
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-1 shrink-0">
           <button
             onClick={() => setIsExpanded(!isExpanded)}
-            className="px-2.5 py-1 rounded-lg bg-theme-card border border-theme-border hover:bg-theme-border text-theme-text font-bold flex items-center gap-1 text-[11px]"
+            className="px-2.5 py-1 rounded-lg bg-theme-card border border-theme-border hover:bg-theme-border text-theme-text font-bold flex items-center gap-1 text-[11px] cursor-pointer"
           >
             <span>Manage SubCategories</span>
             {isExpanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
           </button>
 
-          {!category.isSystem && (
+          {!isPermanent && (
             <button
-              onClick={onDelete}
-              className="p-1 text-red-500 hover:text-red-700 rounded hover:bg-red-50 dark:hover:bg-red-950/40"
+              onClick={() => {
+                if (confirm(`Are you sure you want to delete category "${category.name}"?`)) {
+                  onDelete();
+                }
+              }}
+              className="p-1 text-red-500 hover:text-red-700 rounded hover:bg-red-50 dark:hover:bg-red-950/40 cursor-pointer"
               title="Delete Category"
             >
               <Trash2 className="w-3.5 h-3.5" />
@@ -1688,14 +1823,14 @@ const CategoryItemEditor: React.FC<CategoryItemEditorProps> = ({
                     />
                     <button
                       onClick={() => handleSaveEditSub(idx)}
-                      className="p-0.5 text-emerald-600 hover:text-emerald-700"
+                      className="p-0.5 text-emerald-600 hover:text-emerald-700 cursor-pointer"
                       title="Save"
                     >
                       <Check className="w-3.5 h-3.5" />
                     </button>
                     <button
                       onClick={() => setEditingSubIndex(null)}
-                      className="p-0.5 text-red-500 hover:text-red-700"
+                      className="p-0.5 text-red-500 hover:text-red-700 cursor-pointer"
                       title="Cancel"
                     >
                       <X className="w-3.5 h-3.5" />
@@ -1713,14 +1848,14 @@ const CategoryItemEditor: React.FC<CategoryItemEditorProps> = ({
                   <span>{sub}</span>
                   <button
                     onClick={() => handleStartEditSub(idx, sub)}
-                    className="opacity-0 group-hover:opacity-100 p-0.5 text-theme-muted hover:text-blue-600 transition-opacity"
+                    className="opacity-0 group-hover:opacity-100 p-0.5 text-theme-muted hover:text-blue-600 transition-opacity cursor-pointer"
                     title="Rename SubCategory"
                   >
                     <Edit2 className="w-3 h-3" />
                   </button>
                   <button
                     onClick={() => handleDeleteSub(sub)}
-                    className="p-0.5 text-theme-muted hover:text-red-500 transition-colors"
+                    className="p-0.5 text-theme-muted hover:text-red-500 transition-colors cursor-pointer"
                     title="Delete SubCategory"
                   >
                     <X className="w-3 h-3" />
@@ -1742,7 +1877,7 @@ const CategoryItemEditor: React.FC<CategoryItemEditorProps> = ({
             />
             <button
               onClick={handleAddSub}
-              className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-bold text-xs flex items-center gap-1 shadow-sm"
+              className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-bold text-xs flex items-center gap-1 shadow-sm cursor-pointer"
             >
               <Plus className="w-3.5 h-3.5" />
               <span>Add</span>

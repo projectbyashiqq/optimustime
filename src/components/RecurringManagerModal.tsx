@@ -90,7 +90,7 @@ export const RecurringManagerModal: React.FC<RecurringManagerModalProps> = ({
               className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold shadow-sm flex items-center gap-1 transition-all"
             >
               <Plus className="w-3.5 h-3.5" />
-              <span>+ New Recurring Task</span>
+              <span>New Recurring Task</span>
             </button>
             <button
               onClick={onClose}

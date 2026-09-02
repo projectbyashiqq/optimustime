@@ -81,7 +81,7 @@ export const ReminderCenterView: React.FC<ReminderCenterViewProps> = ({ onOpenTa
       isAllDay: true,
       status: 'Pending',
       bufferMinutes: 0,
-      recurrence: 'None',
+      recurrence: 'Yearly',
       links: [],
       subtasks: []
     });

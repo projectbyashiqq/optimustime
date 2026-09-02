@@ -37,9 +37,13 @@ import {
   X,
   Zap,
   Lock,
+  Moon,
   Sparkles,
-  Moon
+  Download,
+  FileSpreadsheet,
+  Database
 } from 'lucide-react';
+import { exportTasksToExcelWorkbook, exportTasksToDetailedCSV } from '../utils/excelExporter';
 import { RescheduleModal } from '../components/RescheduleModal';
 import { RecurringManagerModal } from '../components/RecurringManagerModal';
 import { TableView } from '../components/views/TableView';
@@ -62,6 +66,8 @@ export const AllTasksView: React.FC<AllTasksViewProps> = ({ onOpenTaskModal }) =
     categories, 
     capacitySettings,
     prioritySettings, 
+    planProjects,
+    openBackupModal,
     startTask, 
     pauseTask, 
     completeTask, 
@@ -72,6 +78,7 @@ export const AllTasksView: React.FC<AllTasksViewProps> = ({ onOpenTaskModal }) =
     setSearchQuery 
   } = useApp();
 
+  const [isExportMenuOpen, setIsExportMenuOpen] = useState(false);
   const [timeRange, setTimeRange] = useState<TimeRangeFilter>('ALL');
   const [selectedCategory, setSelectedCategory] = useState<string>('ALL');
   const [selectedPriority, setSelectedPriority] = useState<PriorityLevel | 'ALL'>('ALL');
@@ -228,11 +235,11 @@ export const AllTasksView: React.FC<AllTasksViewProps> = ({ onOpenTaskModal }) =
         </div>
 
         {/* Right: View Switcher Box & Actions */}
-        <div className="flex items-center gap-2 flex-wrap">
-          <div className="flex items-center gap-1 p-1 bg-theme-card-hover rounded-xl border border-theme-border shadow-inner">
+        <div className="flex items-center gap-2 flex-wrap w-full lg:w-auto justify-between lg:justify-end">
+          <div className="flex items-center gap-1 p-1 bg-theme-card-hover rounded-xl border border-theme-border shadow-inner max-w-full overflow-x-auto no-scrollbar">
             <button
               onClick={() => setViewMode('list')}
-              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all ${
+              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all shrink-0 ${
                 viewMode === 'list'
                   ? 'bg-blue-600 text-white shadow-sm'
                   : 'text-theme-muted hover:text-theme-text'
@@ -244,7 +251,7 @@ export const AllTasksView: React.FC<AllTasksViewProps> = ({ onOpenTaskModal }) =
 
             <button
               onClick={() => setViewMode('table')}
-              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all ${
+              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all shrink-0 ${
                 viewMode === 'table'
                   ? 'bg-blue-600 text-white shadow-sm'
                   : 'text-theme-muted hover:text-theme-text'
@@ -256,7 +263,7 @@ export const AllTasksView: React.FC<AllTasksViewProps> = ({ onOpenTaskModal }) =
 
             <button
               onClick={() => setViewMode('timeline')}
-              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all ${
+              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all shrink-0 ${
                 viewMode === 'timeline'
                   ? 'bg-blue-600 text-white shadow-sm'
                   : 'text-theme-muted hover:text-theme-text'
@@ -268,7 +275,7 @@ export const AllTasksView: React.FC<AllTasksViewProps> = ({ onOpenTaskModal }) =
 
             <button
               onClick={() => setViewMode('24hours')}
-              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all ${
+              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all shrink-0 ${
                 viewMode === '24hours'
                   ? 'bg-blue-600 text-white shadow-sm'
                   : 'text-theme-muted hover:text-theme-text'
@@ -280,7 +287,7 @@ export const AllTasksView: React.FC<AllTasksViewProps> = ({ onOpenTaskModal }) =
 
             <button
               onClick={() => setViewMode('weekly')}
-              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all ${
+              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all shrink-0 ${
                 viewMode === 'weekly'
                   ? 'bg-blue-600 text-white shadow-sm'
                   : 'text-theme-muted hover:text-theme-text'
@@ -292,7 +299,7 @@ export const AllTasksView: React.FC<AllTasksViewProps> = ({ onOpenTaskModal }) =
 
             <button
               onClick={() => setViewMode('monthly')}
-              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all ${
+              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all shrink-0 ${
                 viewMode === 'monthly'
                   ? 'bg-blue-600 text-white shadow-sm'
                   : 'text-theme-muted hover:text-theme-text'
@@ -305,6 +312,78 @@ export const AllTasksView: React.FC<AllTasksViewProps> = ({ onOpenTaskModal }) =
 
           {/* Action button */}
         <div className="flex items-center gap-2 self-end lg:self-auto">
+          
+          {/* Complete 100% Export & Backup Hub Dropdown */}
+          <div className="relative">
+            <button
+              onClick={() => setIsExportMenuOpen(!isExportMenuOpen)}
+              className="flex items-center gap-1.5 px-3 py-2 bg-emerald-50 dark:bg-emerald-950/60 hover:bg-emerald-100 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 rounded-xl text-xs font-bold transition-all shadow-sm"
+              title="Export complete tasks and data"
+            >
+              <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+              <span>Export</span>
+              <ChevronDown className={`w-3.5 h-3.5 transition-transform ${isExportMenuOpen ? 'rotate-180' : ''}`} />
+            </button>
+
+            {isExportMenuOpen && (
+              <div className="absolute right-0 mt-2 w-64 rounded-2xl bg-theme-card border border-theme-border shadow-2xl p-2 z-30 animate-scale-in space-y-1">
+                <button
+                  onClick={() => {
+                    setIsExportMenuOpen(false);
+                    exportTasksToExcelWorkbook(tasks, planProjects, prioritySettings);
+                  }}
+                  className="w-full p-2.5 rounded-xl hover:bg-theme-card-hover text-left flex items-start gap-2.5 transition-colors group"
+                >
+                  <FileSpreadsheet className="w-4 h-4 text-emerald-500 shrink-0 mt-0.5" />
+                  <div>
+                    <div className="text-xs font-black text-theme-text group-hover:text-emerald-500 transition-colors">
+                      Excel Workbook (.xlsx)
+                    </div>
+                    <div className="text-[10px] text-theme-muted">
+                      4 sheets • 28 columns • full details
+                    </div>
+                  </div>
+                </button>
+
+                <button
+                  onClick={() => {
+                    setIsExportMenuOpen(false);
+                    exportTasksToDetailedCSV(tasks, planProjects, prioritySettings);
+                  }}
+                  className="w-full p-2.5 rounded-xl hover:bg-theme-card-hover text-left flex items-start gap-2.5 transition-colors group"
+                >
+                  <Download className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
+                  <div>
+                    <div className="text-xs font-black text-theme-text group-hover:text-amber-500 transition-colors">
+                      Detailed Tasks CSV (.csv)
+                    </div>
+                    <div className="text-[10px] text-theme-muted">
+                      Universal UTF-8 BOM spreadsheet
+                    </div>
+                  </div>
+                </button>
+
+                <button
+                  onClick={() => {
+                    setIsExportMenuOpen(false);
+                    openBackupModal('export');
+                  }}
+                  className="w-full p-2.5 rounded-xl hover:bg-theme-card-hover text-left flex items-start gap-2.5 transition-colors group border-t border-theme-border/60 pt-2"
+                >
+                  <Database className="w-4 h-4 text-blue-500 shrink-0 mt-0.5" />
+                  <div>
+                    <div className="text-xs font-black text-theme-text group-hover:text-blue-500 transition-colors">
+                      100% Full Backup (JSON)
+                    </div>
+                    <div className="text-[10px] text-theme-muted">
+                      Full database + settings backup
+                    </div>
+                  </div>
+                </button>
+              </div>
+            )}
+          </div>
+
           <button
             onClick={() => setIsRecurringHubOpen(true)}
             className="flex items-center gap-1.5 px-3 py-2 bg-indigo-50 dark:bg-indigo-950/60 hover:bg-indigo-100 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 rounded-xl text-xs font-bold transition-all shadow-sm"
@@ -613,7 +692,7 @@ export const AllTasksView: React.FC<AllTasksViewProps> = ({ onOpenTaskModal }) =
 
                               {/* Task Title (Auto-scaled dynamic typography) + Appointed Duration */}
                               <div className="flex items-baseline gap-2 flex-wrap">
-                                <h4 className={getTaskTitleClasses(task.title, task.status === 'Done')}>
+                                <h4 className={getTaskTitleClasses(task.title, task.status === 'Done', isInSleep)}>
                                   {task.title}
                                 </h4>
                                 <span className="font-mono text-xs font-bold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/60 px-2 py-0.5 rounded-md border border-blue-200 dark:border-blue-900/60 shadow-2xs">

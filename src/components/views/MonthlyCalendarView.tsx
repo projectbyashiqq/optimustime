@@ -290,7 +290,7 @@ export const MonthlyCalendarView: React.FC<MonthlyCalendarViewProps> = ({
                             <Moon className="w-2.5 h-2.5 text-indigo-400 shrink-0" />
                           </span>
                         )}
-                        <span className="truncate">{task.title}</span>
+                        <span className={`truncate ${isInSleep ? 'text-white font-bold' : ''}`}>{task.title}</span>
                       </div>
                     );
                   })}

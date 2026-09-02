@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
-import { BufferCategoryItem, BufferStatusNote } from '../types';
+import { BufferCategoryItem, BufferStatusNote, SignalNoiseType } from '../types';
+import { detectSignalVsNoise } from '../utils/signalNoiseUtils';
 import { 
   getBufferActivityEmoji, 
   diffTimeInMinutes,
@@ -53,6 +54,8 @@ export const BufferNoteModal: React.FC = () => {
   const [activityTag, setActivityTag] = useState<string>('Break / Rest');
   const [notes, setNotes] = useState<string>('');
   const [energyLevel, setEnergyLevel] = useState<number>(4);
+  const [signalNoise, setSignalNoise] = useState<SignalNoiseType>('signal');
+  const [manualOverrideSN, setManualOverrideSN] = useState<boolean>(false);
 
   // Category Editor / Management Mode
   const [isManagingCategories, setIsManagingCategories] = useState<boolean>(false);
@@ -61,6 +64,14 @@ export const BufferNoteModal: React.FC = () => {
   const [newCatIcon, setNewCatIcon] = useState<string>('☕');
   const [newCatDesc, setNewCatDesc] = useState<string>('');
   const [showEmojiPicker, setShowEmojiPicker] = useState<boolean>(false);
+
+  // Auto-detection analysis
+  const autoSN = detectSignalVsNoise({
+    title: activityTag,
+    notes,
+    tag: activityTag,
+    energyLevel
+  });
 
   // Sync state whenever modal opens or initialData changes
   useEffect(() => {
@@ -75,21 +86,69 @@ export const BufferNoteModal: React.FC = () => {
         setActivityTag(note.activityTag);
         setNotes(note.notes || '');
         setEnergyLevel(note.energyLevel ?? 4);
+        if (note.signalNoise) {
+          setSignalNoise(note.signalNoise);
+          setManualOverrideSN(true);
+        } else {
+          const detected = detectSignalVsNoise({
+            title: note.activityTag,
+            notes: note.notes,
+            tag: note.activityTag,
+            energyLevel: note.energyLevel
+          });
+          setSignalNoise(detected.type);
+          setManualOverrideSN(false);
+        }
       } else {
         const d = initialData?.date || todayStr;
         const s = initialData?.startTime || getCurrentRoundedTime12Hour(15);
         const duration = initialData?.durationMinutes || 15;
         const e = initialData?.endTime || addMinutesToTime(s, duration);
+        const initialTag = bufferCategories[0]?.label || 'Break / Rest';
 
         setDate(d);
         setStartTime(s);
         setEndTime(e);
-        setActivityTag(bufferCategories[0]?.label || 'Break / Rest');
+        setActivityTag(initialTag);
         setNotes('');
         setEnergyLevel(4);
+        const detected = detectSignalVsNoise({
+          title: initialTag,
+          tag: initialTag,
+          energyLevel: 4
+        });
+        setSignalNoise(detected.type);
+        setManualOverrideSN(false);
       }
     }
   }, [isOpen, initialData, todayStr, bufferCategories]);
+
+  // Update auto-suggested signal/noise when notes or tag change if user hasn't locked a manual choice
+  const handleTagSelect = (tag: string) => {
+    setActivityTag(tag);
+    if (!manualOverrideSN) {
+      const detected = detectSignalVsNoise({
+        title: tag,
+        notes,
+        tag,
+        energyLevel
+      });
+      setSignalNoise(detected.type);
+    }
+  };
+
+  const handleNotesChange = (val: string) => {
+    setNotes(val);
+    if (!manualOverrideSN) {
+      const detected = detectSignalVsNoise({
+        title: activityTag,
+        notes: val,
+        tag: activityTag,
+        energyLevel
+      });
+      setSignalNoise(detected.type);
+    }
+  };
 
   if (!isOpen) return null;
 
@@ -110,7 +169,8 @@ export const BufferNoteModal: React.FC = () => {
         durationMinutes,
         activityTag,
         notes: notes.trim(),
-        energyLevel
+        energyLevel,
+        signalNoise
       });
     } else {
       addBufferNote({
@@ -121,6 +181,7 @@ export const BufferNoteModal: React.FC = () => {
         activityTag,
         notes: notes.trim(),
         energyLevel,
+        signalNoise,
         relatedTaskId: initialData?.relatedTaskId,
         relatedTaskTitle: initialData?.relatedTaskTitle
       });
@@ -434,7 +495,7 @@ export const BufferNoteModal: React.FC = () => {
                   >
                     <button
                       type="button"
-                      onClick={() => setActivityTag(item.label)}
+                      onClick={() => handleTagSelect(item.label)}
                       className="min-w-0 flex-1 flex items-start gap-2 text-left"
                     >
                       <span className="text-lg shrink-0">{item.icon}</span>
@@ -476,16 +537,94 @@ export const BufferNoteModal: React.FC = () => {
           {/* Notes Text Area */}
           <div className="space-y-1.5">
             <label className="text-xs font-bold text-theme-text uppercase tracking-wider flex items-center justify-between">
-              <span>What did you do? (Detailed Log)</span>
-              <span className="text-[10px] text-theme-muted font-normal">Free time tracker note</span>
+              <span>What did you do? (Life Diary Log & Details)</span>
+              <span className="text-[10px] text-theme-muted font-normal">Life Journal Entry</span>
             </label>
             <textarea
               rows={3}
               value={notes}
-              onChange={(e) => setNotes(e.target.value)}
+              onChange={(e) => handleNotesChange(e.target.value)}
               placeholder="e.g., Brewed fresh coffee, walked outside for 15 mins, stretched, and reviewed next goals..."
               className="w-full px-3.5 py-2.5 rounded-xl bg-theme-card-hover border border-theme-border text-xs sm:text-sm text-theme-text focus:outline-none focus:ring-2 focus:ring-amber-500/40 transition-all placeholder:text-theme-muted"
             />
+          </div>
+
+          {/* Intelligent Signal vs. Noise Categorization */}
+          <div className="p-3.5 rounded-2xl bg-theme-card-hover/80 border border-theme-border space-y-2.5 shadow-sm">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-1.5">
+                <Sparkles className="w-4 h-4 text-amber-500" />
+                <span className="text-xs font-bold text-theme-text uppercase tracking-wider">
+                  Signal vs. Noise Classification
+                </span>
+              </div>
+              <span className="text-[10px] font-mono text-theme-muted px-2 py-0.5 rounded bg-theme-card border border-theme-border">
+                {manualOverrideSN ? 'Locked Override' : 'AI Auto-Detected'}
+              </span>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setSignalNoise('signal');
+                  setManualOverrideSN(true);
+                }}
+                className={`p-2.5 rounded-xl border text-left transition-all flex items-center gap-2.5 ${
+                  signalNoise === 'signal'
+                    ? 'bg-emerald-500 text-white border-emerald-600 shadow-md shadow-emerald-500/20 ring-2 ring-emerald-400'
+                    : 'bg-theme-card border-theme-border text-theme-muted hover:text-theme-text'
+                }`}
+              >
+                <span className="text-lg">🎯</span>
+                <div className="min-w-0">
+                  <div className="text-xs font-black">Signal (High Value)</div>
+                  <div className={`text-[10px] truncate ${signalNoise === 'signal' ? 'text-emerald-100' : 'text-theme-muted'}`}>
+                    Deep work, health, renewal
+                  </div>
+                </div>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setSignalNoise('noise');
+                  setManualOverrideSN(true);
+                }}
+                className={`p-2.5 rounded-xl border text-left transition-all flex items-center gap-2.5 ${
+                  signalNoise === 'noise'
+                    ? 'bg-rose-500 text-white border-rose-600 shadow-md shadow-rose-500/20 ring-2 ring-rose-400'
+                    : 'bg-theme-card border-theme-border text-theme-muted hover:text-theme-text'
+                }`}
+              >
+                <span className="text-lg">⚠️</span>
+                <div className="min-w-0">
+                  <div className="text-xs font-black">Noise (Distraction)</div>
+                  <div className={`text-[10px] truncate ${signalNoise === 'noise' ? 'text-rose-100' : 'text-theme-muted'}`}>
+                    Aimless feeds, idle leak
+                  </div>
+                </div>
+              </button>
+            </div>
+
+            <div className="flex items-center justify-between text-[11px] px-1 text-theme-muted pt-0.5">
+              <span className="flex items-center gap-1 truncate">
+                <span className="font-semibold text-theme-text">Detection:</span>
+                <span className="truncate">{autoSN.reason}</span>
+              </span>
+              {manualOverrideSN && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setManualOverrideSN(false);
+                    setSignalNoise(autoSN.type);
+                  }}
+                  className="text-[10px] text-blue-500 hover:underline font-bold shrink-0 ml-2"
+                >
+                  Reset Auto
+                </button>
+              )}
+            </div>
           </div>
 
           {/* Energy & Focus Level Rating */}

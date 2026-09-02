@@ -97,7 +97,7 @@ export const INITIAL_CATEGORIES: Category[] = [
     color: '#3B82F6',
     iconName: 'Zap',
     subCategories: ['Core Engine', 'Infrastructure', 'API Design'],
-    isSystem: true
+    isSystem: false
   },
   {
     id: 'cat-personal',
@@ -105,7 +105,7 @@ export const INITIAL_CATEGORIES: Category[] = [
     color: '#10B981',
     iconName: 'User',
     subCategories: ['Health & Fitness', 'Family', 'Self Development'],
-    isSystem: true
+    isSystem: false
   },
   {
     id: 'cat-optimuslab',
@@ -113,7 +113,7 @@ export const INITIAL_CATEGORIES: Category[] = [
     color: '#8B5CF6',
     iconName: 'Cpu',
     subCategories: ['R&D', 'Experimental Tech', 'Automation'],
-    isSystem: true
+    isSystem: false
   },
   {
     id: 'cat-ashiqq',
@@ -121,7 +121,7 @@ export const INITIAL_CATEGORIES: Category[] = [
     color: '#F59E0B',
     iconName: 'Globe',
     subCategories: ['Content Strategy', 'Media Production', 'Community'],
-    isSystem: true
+    isSystem: false
   },
   {
     id: 'cat-mybiz',
@@ -129,7 +129,7 @@ export const INITIAL_CATEGORIES: Category[] = [
     color: '#EC4899',
     iconName: 'Briefcase',
     subCategories: ['Finance', 'Client Relations', 'Strategy'],
-    isSystem: true
+    isSystem: false
   },
   {
     id: 'cat-research',
@@ -137,7 +137,7 @@ export const INITIAL_CATEGORIES: Category[] = [
     color: '#06B6D4',
     iconName: 'BookOpen',
     subCategories: ['AI Models', 'System Architecture', 'Market Insights'],
-    isSystem: true
+    isSystem: false
   },
   {
     id: 'cat-reminder',
@@ -149,7 +149,7 @@ export const INITIAL_CATEGORIES: Category[] = [
   },
   {
     id: 'cat-note',
-    name: 'Note',
+    name: 'Notes',
     color: '#64748B',
     iconName: 'FileText',
     subCategories: ['Quick Thoughts', 'Architectural Specs', 'Logs'],

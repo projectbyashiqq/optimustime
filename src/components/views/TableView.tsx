@@ -25,8 +25,8 @@ import {
   Clock, 
   Calendar, 
   Plus, 
-  SlidersHorizontal, 
   Download, 
+  FileSpreadsheet,
   Zap, 
   AlertTriangle,
   RotateCcw,
@@ -34,6 +34,7 @@ import {
   Lock,
   Moon
 } from 'lucide-react';
+import { exportTasksToExcelWorkbook, exportTasksToDetailedCSV } from '../../utils/excelExporter';
 
 interface TableViewProps {
   onOpenTaskModal: (task?: Task, date?: string, startTime?: string) => void;
@@ -52,6 +53,7 @@ export const TableView: React.FC<TableViewProps> = ({
     categories, 
     prioritySettings, 
     capacitySettings,
+    planProjects,
     startTask, 
     pauseTask, 
     completeTask, 
@@ -208,33 +210,15 @@ export const TableView: React.FC<TableViewProps> = ({
     }
   };
 
-  // Export to CSV
+  // Complete Detailed Exports
   const handleExportCSV = () => {
-    const headers = ['Project Code', 'Priority', 'Title', 'Category', 'SubCategory', 'Date', 'Day', 'Start Time', 'End Time', 'Duration (Min)', 'Status', 'Actual Time (Min)', 'Recurrence'];
-    const rows = sortedTasks.map(t => [
-      t.projectCode,
-      t.priority,
-      `"${t.title.replace(/"/g, '""')}"`,
-      t.category,
-      t.subCategory || '',
-      t.taskDate,
-      t.dayOfWeek,
-      t.startTime,
-      t.endTime,
-      t.appointedMinutes,
-      t.status,
-      t.totalActualMinutes || 0,
-      t.recurrence
-    ]);
+    exportTasksToDetailedCSV(sortedTasks, planProjects, prioritySettings, `optimustime_tasks_${todayStr}.csv`);
+  };
 
-    const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map(e => e.join(','))].join('\n');
-    const encodedUri = encodeURI(csvContent);
-    const link = document.createElement('a');
-    link.setAttribute('href', encodedUri);
-    link.setAttribute('download', `optimustime_tasks_${todayStr}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+  const handleExportExcel = () => {
+    exportTasksToExcelWorkbook(sortedTasks, planProjects, prioritySettings, {
+      fileName: `optimustime_tasks_table_${todayStr}.xlsx`
+    });
   };
 
   // Summary Metrics
@@ -291,9 +275,18 @@ export const TableView: React.FC<TableViewProps> = ({
             </div>
 
             <button
+              onClick={handleExportExcel}
+              className="px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-sm flex items-center gap-1.5 transition-all"
+              title="Download Complete Tasks Excel Workbook (.xlsx)"
+            >
+              <FileSpreadsheet className="w-3.5 h-3.5" />
+              <span>Export Excel (.xlsx)</span>
+            </button>
+
+            <button
               onClick={handleExportCSV}
               className="px-3 py-2 rounded-xl bg-theme-card-hover border border-theme-border text-xs font-bold text-theme-text hover:bg-theme-border flex items-center gap-1.5 transition-colors"
-              title="Export filtered records to CSV"
+              title="Export complete records to CSV"
             >
               <Download className="w-3.5 h-3.5" />
               <span>Export CSV</span>
@@ -413,9 +406,10 @@ export const TableView: React.FC<TableViewProps> = ({
         </div>
       )}
 
-      {/* Main Responsive Data Table Container */}
       <div className="glass-panel rounded-3xl border border-theme-border overflow-hidden shadow-sm">
-        <div className="overflow-x-auto max-h-[70vh]">
+        
+        {/* Desktop & Tablet Table Matrix (>=768px) */}
+        <div className="hidden md:block overflow-x-auto max-h-[70vh]">
           <table className="w-full text-left border-collapse text-xs">
             
             {/* Sticky Table Header */}
@@ -589,11 +583,11 @@ export const TableView: React.FC<TableViewProps> = ({
                       {/* Title & Subtasks */}
                       <td className="p-3.5">
                         <div className="space-y-0.5">
-                          <span className={`font-bold text-xs block ${isDone ? 'line-through text-theme-muted' : 'text-theme-text'}`}>
+                          <span className={`font-bold text-xs block ${isDone ? 'line-through text-theme-muted' : isInSleep ? 'text-white font-black' : 'text-theme-text'}`}>
                             {task.title}
                           </span>
                           {(task.subtasks || []).length > 0 && (
-                            <span className="text-[10px] text-theme-muted font-mono block">
+                            <span className={`text-[10px] font-mono block ${isInSleep ? 'text-slate-300' : 'text-theme-muted'}`}>
                               {task.subtasks.filter(s => s.isCompleted).length}/{task.subtasks.length} Subtasks
                             </span>
                           )}
@@ -724,6 +718,149 @@ export const TableView: React.FC<TableViewProps> = ({
               )}
             </tbody>
           </table>
+        </div>
+
+        {/* Mobile Responsive Card List (<768px) */}
+        <div className="block md:hidden divide-y divide-theme-border/60">
+          {sortedTasks.length === 0 ? (
+            <div className="p-8 text-center text-theme-muted">
+              <TableIcon className="w-8 h-8 mx-auto opacity-40 mb-2" />
+              <p className="font-bold text-xs text-theme-text">No tasks found</p>
+              <p className="text-[11px] mt-0.5">Try broadening your search or horizon filter.</p>
+            </div>
+          ) : (
+            sortedTasks.map((task) => {
+              const isDone = task.status === 'Done';
+              const isWorking = task.status === 'Working';
+              const isSelected = selectedTaskIds.includes(task.id);
+              const pMeta = prioritySettings[task.priority];
+              const isInSleep = isTaskInSleepWindow(task, capacitySettings);
+
+              return (
+                <div
+                  key={task.id}
+                  onClick={() => onOpenTaskModal(task)}
+                  className={`p-4 space-y-3 transition-colors cursor-pointer rounded-2xl ${
+                    isSelected 
+                      ? 'bg-blue-500/10' 
+                      : isInSleep
+                      ? 'bg-slate-900 text-slate-100 dark:bg-slate-950 dark:text-slate-100 border border-indigo-900 shadow-md ring-1 ring-indigo-500/40'
+                      : isDone 
+                      ? 'bg-emerald-500/[0.02]' 
+                      : isWorking 
+                      ? 'bg-blue-500/[0.05]' 
+                      : 'hover:bg-theme-card-hover/80'
+                  }`}
+                >
+                  {/* Top Row: Checkbox, Priority, Code, Status */}
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        checked={isSelected}
+                        onChange={(e) => { e.stopPropagation(); handleToggleSelectTask(task.id); }}
+                        className="rounded border-theme-border text-blue-600 focus:ring-blue-500 cursor-pointer"
+                      />
+                      <span 
+                        className="text-[10px] font-black px-2 py-0.5 rounded-md text-white font-mono shadow-xs"
+                        style={{ backgroundColor: pMeta?.color || '#3B82F6' }}
+                      >
+                        {task.priority}
+                      </span>
+                      <span className={`font-mono text-[11px] font-bold ${isInSleep ? 'text-slate-300' : 'text-theme-muted'}`}>
+                        {task.projectCode}
+                      </span>
+                    </div>
+
+                    <span className={`text-[10px] font-black px-2 py-0.5 rounded-md uppercase font-mono ${
+                      isDone
+                        ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300'
+                        : isWorking
+                        ? 'bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-300 animate-pulse'
+                        : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300'
+                    }`}>
+                      {task.status}
+                    </span>
+                  </div>
+
+                  {/* Title */}
+                  <div className={`text-xs sm:text-sm font-bold line-clamp-2 ${isDone ? 'line-through opacity-60' : isInSleep ? 'text-white font-black drop-shadow-sm' : 'text-theme-text'}`}>
+                    {task.title}
+                  </div>
+
+                  {/* Metadata: Category, Date, Slot */}
+                  <div className="flex items-center gap-2 text-[11px] text-theme-muted flex-wrap">
+                    <span className="px-2 py-0.5 rounded-lg bg-theme-card-hover border border-theme-border font-medium text-theme-text">
+                      {task.category}
+                    </span>
+                    <span>•</span>
+                    <span>{task.taskDate}</span>
+                    <span>•</span>
+                    <span className="font-mono font-bold text-theme-text">
+                      {task.startTime && task.endTime ? `${task.startTime} - ${task.endTime}` : `${task.appointedMinutes}m`}
+                    </span>
+                  </div>
+
+                  {/* Action Buttons Row */}
+                  <div className="flex items-center justify-end gap-1.5 pt-2 border-t border-theme-border/40" onClick={(e) => e.stopPropagation()}>
+                    {!isDone && (
+                      isWorking ? (
+                        <button
+                          onClick={() => pauseTask(task.id)}
+                          className="px-3 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold flex items-center gap-1 shadow-sm"
+                        >
+                          <Pause className="w-3.5 h-3.5" />
+                          <span>Pause</span>
+                        </button>
+                      ) : (
+                        <button
+                          onClick={() => startTask(task.id)}
+                          className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center gap-1 shadow-sm"
+                        >
+                          <Play className="w-3.5 h-3.5" />
+                          <span>Start</span>
+                        </button>
+                      )
+                    )}
+
+                    {!isDone ? (
+                      <button
+                        onClick={() => completeTask(task.id)}
+                        className="px-3 py-1.5 rounded-xl border border-theme-border hover:bg-emerald-50 text-theme-muted hover:text-emerald-600 text-xs font-bold flex items-center gap-1 transition-colors"
+                      >
+                        <Check className="w-3.5 h-3.5" />
+                        <span>Done</span>
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => updateTask({ ...task, status: 'Pending' })}
+                        className="px-3 py-1.5 rounded-xl bg-emerald-50 dark:bg-emerald-950 text-emerald-600 text-xs font-bold flex items-center gap-1"
+                      >
+                        <CheckCircle2 className="w-3.5 h-3.5" />
+                        <span>Reopen</span>
+                      </button>
+                    )}
+
+                    <button
+                      onClick={() => onOpenTaskModal(task)}
+                      className="p-2 rounded-xl border border-theme-border text-theme-muted hover:text-theme-text hover:bg-theme-card-hover transition-colors"
+                      title="Edit Task"
+                    >
+                      <Edit2 className="w-3.5 h-3.5" />
+                    </button>
+
+                    <button
+                      onClick={() => requestDeleteTask(task, task.taskDate)}
+                      className="p-2 rounded-xl border border-theme-border text-theme-muted hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/30 transition-colors"
+                      title="Delete Task"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </div>
+              );
+            })
+          )}
         </div>
       </div>
 

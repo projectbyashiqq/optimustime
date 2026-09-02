@@ -126,3 +126,22 @@
 .animate-glow-danger {
   animation: pulseGlow 2s infinite ease-in-out;
 }
+
+/* Touch & Mobile UX Polish */
+html, body {
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+  overflow-x: hidden;
+}
+
+/* Smooth momentum scrolling on mobile */
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
