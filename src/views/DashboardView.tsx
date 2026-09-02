@@ -16,7 +16,8 @@ import {
   getTaskTitleClasses,
   getBufferActivityEmoji,
   getBufferActivityColor,
-  isTaskInSleepWindow
+  isTaskInSleepWindow,
+  isTimeInSleepWindow
 } from '../utils/timeUtils';
 import { 
   Play, 
@@ -209,11 +210,13 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
     return parse12HourToMinutes(a.startTime) - parse12HourToMinutes(b.startTime);
   });
 
-  // Find Gaps in today's schedule (automatically adjusted when buffer notes & post-task buffers are present)
+  // Find Gaps in today's schedule (strictly bounded to waking hours, never inside sleep window)
+  const wakingStart = capacitySettings.sleepEndTime || capacitySettings.dayStartTime || '06:00 AM';
+  const wakingEnd = capacitySettings.sleepStartTime || capacitySettings.dayEndTime || '11:00 PM';
   const gaps: TimeGap[] = findScheduleGaps(
     tasks.filter(t => isTaskScheduledForDate(t, selectedDate)),
-    capacitySettings.dayStartTime,
-    capacitySettings.dayEndTime,
+    wakingStart,
+    wakingEnd,
     bufferNotes.filter(n => n.date === selectedDate),
     capacitySettings.defaultBufferMinutes || 15
   );
@@ -1433,7 +1436,11 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
                             ) : isCurrentGap ? (
                               <>
                                 <button
-                                  onClick={() => onOpenTaskModal(undefined, selectedDate, formatMinutesTo12Hour(currentMinutesFromMidnight))}
+                                  onClick={() => {
+                                    const timeStr = formatMinutesTo12Hour(currentMinutesFromMidnight);
+                                    const inSleep = isTimeInSleepWindow(timeStr, formatMinutesTo12Hour(currentMinutesFromMidnight + 30), wakingEnd, wakingStart);
+                                    onOpenTaskModal(undefined, selectedDate, inSleep ? undefined : timeStr);
+                                  }}
                                   className="px-3 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold shadow-sm transition-transform active:scale-95 flex items-center gap-1.5 cursor-pointer"
                                   title="Schedule and start task now"
                                 >

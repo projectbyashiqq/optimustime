@@ -22,7 +22,9 @@ export const TimePicker: React.FC<TimePickerProps> = ({
 
   // Parse incoming value "09:30 AM"
   const parseCurrentValue = () => {
-    const cleaned = (value || '09:00 AM').trim().toUpperCase();
+    const isNowPm = new Date().getHours() >= 12;
+    const defaultTime = isNowPm ? '02:00 PM' : '09:00 AM';
+    const cleaned = (value || defaultTime).trim().toUpperCase();
     const match = cleaned.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/);
     if (match) {
       return {
@@ -31,7 +33,7 @@ export const TimePicker: React.FC<TimePickerProps> = ({
         period: match[3] as 'AM' | 'PM'
       };
     }
-    return { hours: 9, minutes: 0, period: 'AM' as const };
+    return { hours: isNowPm ? 2 : 9, minutes: 0, period: (isNowPm ? 'PM' : 'AM') as 'AM' | 'PM' };
   };
 
   const parsed = parseCurrentValue();
@@ -124,7 +126,7 @@ export const TimePicker: React.FC<TimePickerProps> = ({
         className="w-full text-xs px-3 py-2 rounded-xl bg-theme-card border border-theme-border text-theme-text hover:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 font-mono font-bold flex items-center justify-between gap-2 shadow-sm transition-all text-left cursor-pointer"
       >
         <span className="text-xs sm:text-sm tracking-wide text-blue-600 dark:text-blue-400 whitespace-nowrap">
-          {value || '09:00 AM'}
+          {value || (new Date().getHours() >= 12 ? '02:00 PM' : '09:00 AM')}
         </span>
         <Clock className="w-4 h-4 text-theme-muted shrink-0" />
       </button>

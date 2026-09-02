@@ -21,7 +21,8 @@ import {
   RecommendedSlot,
   isTimeInSleepWindow,
   isDateTimeBeforeNow,
-  shouldRolloverToNextDay
+  shouldRolloverToNextDay,
+  formatMinutesTo12Hour
 } from '../utils/timeUtils';
 import { ConflictModal } from './ConflictModal';
 import { TimePicker } from './TimePicker';
@@ -47,7 +48,8 @@ import {
   Zap,
   RotateCcw,
   Repeat,
-  Moon
+  Moon,
+  Sun
 } from 'lucide-react';
 
 interface TaskModalProps {
@@ -140,27 +142,56 @@ export const TaskModal: React.FC<TaskModalProps> = ({
       : (taskDefaults.defaultBufferMinutes ?? (capacitySettings.defaultBufferMinutes || 15))
   );
   
-  // Smart Next Free Slot Computation on Creation
+  // Smart Next Free Slot Computation on Creation (Never recommends sleep time & defaults to PM if in sleep/afternoon)
   const initialSmartSlot = useMemo(() => {
     if (taskToEdit) {
       return { startTime: taskToEdit.startTime, endTime: taskToEdit.endTime };
     }
+
+    const sleepStart = capacitySettings?.sleepStartTime || capacitySettings?.dayEndTime || '11:00 PM';
+    const sleepEnd = capacitySettings?.sleepEndTime || capacitySettings?.dayStartTime || '06:00 AM';
+
+    // If initialStartTime was provided (e.g. from a gap click), ensure it's not sleep time
     if (initialStartTime) {
-      return { startTime: initialStartTime, endTime: addMinutesToTime(initialStartTime, defaultMin) };
+      const initEnd = addMinutesToTime(initialStartTime, defaultMin);
+      if (!isTimeInSleepWindow(initialStartTime, initEnd, sleepStart, sleepEnd)) {
+        return { startTime: initialStartTime, endTime: initEnd };
+      }
+      // If initialStartTime falls inside sleep window, do NOT recommend sleep time! Fall through to daytime/PM slot.
     }
     
+    // Check if right now is in the sleep window or afternoon/evening
+    const now = new Date();
+    const isAfternoonOrEvening = now.getHours() >= 12;
+    const nowCurMin = now.getHours() * 60 + now.getMinutes();
+    const isNowInSleep = isTimeInSleepWindow(formatMinutesTo12Hour(nowCurMin), formatMinutesTo12Hour(nowCurMin + 30), sleepStart, sleepEnd);
+    // Prefer PM if currently afternoon/evening or if currently in sleep window (avoid sleeping/morning period)
+    const preferPm = isAfternoonOrEvening || isNowInSleep;
+
     const strategy = taskDefaults.defaultSmartSlot || 'auto-fit';
-    if (strategy === 'current-time') {
+    if (strategy === 'current-time' && !isNowInSleep) {
       const roundedNow = getCurrentRoundedTime12Hour(5);
-      return { startTime: roundedNow, endTime: addMinutesToTime(roundedNow, defaultMin) };
+      const roundedEnd = addMinutesToTime(roundedNow, defaultMin);
+      if (!isTimeInSleepWindow(roundedNow, roundedEnd, sleepStart, sleepEnd)) {
+        return { startTime: roundedNow, endTime: roundedEnd };
+      }
     }
     if (strategy === 'work-start') {
       const workStart = capacitySettings.dayStartTime || '06:00 AM';
       return { startTime: workStart, endTime: addMinutesToTime(workStart, defaultMin) };
     }
 
-    return getSmartNextFreeSlot(initialDate || toISODateString(new Date()), defaultMin, tasks, bufferNotes, undefined, capacitySettings.defaultBufferMinutes || 15);
-  }, [taskToEdit, initialStartTime, initialDate, defaultMin, tasks, bufferNotes, capacitySettings.defaultBufferMinutes, capacitySettings.dayStartTime, taskDefaults.defaultSmartSlot]);
+    return getSmartNextFreeSlot(
+      initialDate || toISODateString(new Date()), 
+      defaultMin, 
+      tasks, 
+      bufferNotes, 
+      undefined, 
+      capacitySettings.defaultBufferMinutes || 15,
+      capacitySettings,
+      preferPm
+    );
+  }, [taskToEdit, initialStartTime, initialDate, defaultMin, tasks, bufferNotes, capacitySettings, taskDefaults.defaultSmartSlot]);
 
   const [startTime, setStartTime] = useState<string>(initialSmartSlot.startTime);
   const [endTime, setEndTime] = useState<string>(initialSmartSlot.endTime);
@@ -214,10 +245,10 @@ export const TaskModal: React.FC<TaskModalProps> = ({
   // Auto calculate day of week
   const dayOfWeek = getDayOfWeekFromDate(taskDate);
 
-  // Recommended candidate free slots across the day
+  // Recommended candidate free slots across the day (guaranteed zero sleep window slots)
   const recommendedSlots = useMemo(() => {
-    return getRecommendedDayFreeSlots(taskDate, appointedMinutes, tasks, bufferNotes, taskToEdit?.id, 4, capacitySettings.defaultBufferMinutes || 15);
-  }, [taskDate, appointedMinutes, tasks, bufferNotes, taskToEdit?.id, capacitySettings.defaultBufferMinutes]);
+    return getRecommendedDayFreeSlots(taskDate, appointedMinutes, tasks, bufferNotes, taskToEdit?.id, 5, capacitySettings.defaultBufferMinutes || 15, capacitySettings);
+  }, [taskDate, appointedMinutes, tasks, bufferNotes, taskToEdit?.id, capacitySettings]);
 
   // Live Overlap / Conflict Intelligence calculation
   const liveOverlaps = useMemo(() => {
@@ -288,15 +319,33 @@ export const TaskModal: React.FC<TaskModalProps> = ({
     }
   };
 
+  // 1-Click AM / PM Period Toggle
+  const handleTogglePeriod = (targetPeriod: 'AM' | 'PM') => {
+    if (!startTime) return;
+    const match = startTime.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
+    if (match) {
+      const hours = match[1].padStart(2, '0');
+      const minutes = match[2];
+      const newStartTime = `${hours}:${minutes} ${targetPeriod}`;
+      setStartTime(newStartTime);
+      setEndTime(addMinutesToTime(newStartTime, appointedMinutes));
+      setValidationError(null);
+    }
+  };
+
   // Resolution handlers for past time warning dialog
   const handleAdjustToNextFreeSlot = () => {
+    const now = new Date();
+    const isAfternoonOrEvening = now.getHours() >= 12;
     const smart = getSmartNextFreeSlot(
       toISODateString(new Date()),
       appointedMinutes,
       tasks,
       bufferNotes,
       taskToEdit?.id,
-      capacitySettings.defaultBufferMinutes || 15
+      capacitySettings.defaultBufferMinutes || 15,
+      capacitySettings,
+      isAfternoonOrEvening
     );
     setTaskDate(smart.dateStr || toISODateString(new Date()));
     setStartTime(smart.startTime);
@@ -1155,13 +1204,27 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                   <button
                     type="button"
                     onClick={() => {
-                      const smart = getSmartNextFreeSlot(taskDate, appointedMinutes, tasks, bufferNotes, taskToEdit?.id, capacitySettings.defaultBufferMinutes || 15);
+                      const now = new Date();
+                      const isAfternoonOrEvening = now.getHours() >= 12;
+                      const smart = getSmartNextFreeSlot(
+                        taskDate, 
+                        appointedMinutes, 
+                        tasks, 
+                        bufferNotes, 
+                        taskToEdit?.id, 
+                        capacitySettings.defaultBufferMinutes || 15,
+                        capacitySettings,
+                        isAfternoonOrEvening || startTime.includes('PM')
+                      );
                       setStartTime(smart.startTime);
                       setEndTime(smart.endTime);
+                      if (smart.crossesMidnight && smart.dateStr) {
+                        setTaskDate(smart.dateStr);
+                      }
                       setValidationError(null);
                     }}
                     className="text-[10px] font-bold text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-1"
-                    title="Auto-calculate next non-overlapping free slot"
+                    title="Auto-calculate next non-overlapping daytime free slot"
                   >
                     <RotateCcw className="w-2.5 h-2.5" />
                     <span>Auto-Fit Next Free Slot</span>
@@ -1219,9 +1282,21 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                     <button
                       type="button"
                       onClick={() => {
-                        const smart = getSmartNextFreeSlot(taskDate, appointedMinutes, tasks, bufferNotes, taskToEdit?.id, capacitySettings.defaultBufferMinutes || 15);
+                        const smart = getSmartNextFreeSlot(
+                          taskDate, 
+                          appointedMinutes, 
+                          tasks, 
+                          bufferNotes, 
+                          taskToEdit?.id, 
+                          capacitySettings.defaultBufferMinutes || 15,
+                          capacitySettings,
+                          startTime.includes('PM') || new Date().getHours() >= 12
+                        );
                         setStartTime(smart.startTime);
                         setEndTime(smart.endTime);
+                        if (smart.crossesMidnight && smart.dateStr) {
+                          setTaskDate(smart.dateStr);
+                        }
                       }}
                       className="text-[10px] font-bold px-2 py-0.5 bg-red-600 hover:bg-red-700 text-white rounded-lg shrink-0 shadow-xs whitespace-nowrap"
                     >
@@ -1233,6 +1308,10 @@ export const TaskModal: React.FC<TaskModalProps> = ({
 
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1">
                 <div>
+                  <label className="text-[11px] font-bold text-theme-text flex items-center gap-1 mb-1">
+                    <Calendar className="w-3.5 h-3.5 text-blue-500" />
+                    <span>Task Date</span>
+                  </label>
                   <input
                     type="date"
                     value={taskDate}
@@ -1245,8 +1324,44 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                 </div>
 
                 <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-[11px] font-bold text-theme-text flex items-center gap-1">
+                      <Clock className="w-3.5 h-3.5 text-blue-500" />
+                      <span>Start Time</span>
+                    </label>
+
+                    {/* 1-Click AM / PM Quick Switcher */}
+                    <div className="flex items-center p-0.5 bg-theme-card rounded-lg border border-theme-border text-[10px] font-black shadow-inner">
+                      <button
+                        type="button"
+                        onClick={() => handleTogglePeriod('AM')}
+                        className={`px-2 py-0.5 rounded-md transition-all flex items-center gap-1 cursor-pointer ${
+                          startTime.includes('AM')
+                            ? 'bg-amber-500 text-white shadow-xs'
+                            : 'text-theme-muted hover:text-theme-text'
+                        }`}
+                        title="Switch to Morning (AM)"
+                      >
+                        <Sun className="w-2.5 h-2.5" />
+                        <span>AM</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleTogglePeriod('PM')}
+                        className={`px-2 py-0.5 rounded-md transition-all flex items-center gap-1 cursor-pointer ${
+                          startTime.includes('PM')
+                            ? 'bg-indigo-600 text-white shadow-xs'
+                            : 'text-theme-muted hover:text-theme-text'
+                        }`}
+                        title="Switch to Afternoon / Evening (PM)"
+                      >
+                        <Moon className="w-2.5 h-2.5" />
+                        <span>PM</span>
+                      </button>
+                    </div>
+                  </div>
+
                   <TimePicker
-                    label="Start Time (12h Clock)"
                     value={startTime}
                     onChange={handleStartTimeChange}
                   />
@@ -1317,11 +1432,11 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                           </span>
                         </span>
                         <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-900 text-slate-100 dark:bg-slate-950 dark:text-indigo-300 border border-indigo-700/50">
-                          Dark Night Theme Enabled
+                          Sleep Window
                         </span>
                       </div>
                       <p className="text-[11px] text-indigo-800 dark:text-indigo-300 mt-1">
-                        This task is scheduled at <strong className="font-mono">{startTime} - {endTime}</strong>, which overlaps with your designated Sleep & Recovery Protocol. Working during sleep hours compromises circadian recovery.
+                        This task is scheduled at <strong className="font-mono">{startTime} - {endTime}</strong>, which overlaps with your designated Sleep & Recovery Protocol.
                       </p>
                     </div>
                   </div>
@@ -1329,21 +1444,54 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                   <div className="flex items-center gap-2 pt-1 border-t border-indigo-200 dark:border-indigo-900/60 flex-wrap">
                     <button
                       type="button"
+                      onClick={() => handleTogglePeriod('PM')}
+                      className="px-2.5 py-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-[10px] font-bold shadow-xs transition-colors flex items-center gap-1 cursor-pointer"
+                      title="Switch to PM (Afternoon / Evening)"
+                    >
+                      <Moon className="w-3 h-3 text-indigo-300" />
+                      <span>⚡ Switch to PM</span>
+                    </button>
+                    <button
+                      type="button"
                       onClick={() => {
-                        const newStart = sleepWindowWarning.sleepEnd;
+                        const newStart = '02:00 PM';
                         const newEnd = addMinutesToTime(newStart, appointedMinutes);
                         setStartTime(newStart);
                         setEndTime(newEnd);
                         if (validationError) setValidationError(null);
                       }}
-                      className="px-2.5 py-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-[10px] font-bold shadow-xs transition-colors flex items-center gap-1 cursor-pointer"
+                      className="px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-[10px] font-bold shadow-xs transition-colors flex items-center gap-1 cursor-pointer"
+                      title="Move to 02:00 PM Afternoon Slot"
                     >
                       <Zap className="w-3 h-3 text-yellow-300" />
-                      <span>Avoid Sleep Time: Auto-Shift to Morning ({sleepWindowWarning.sleepEnd})</span>
+                      <span>⚡ Move to 02:00 PM Afternoon Slot</span>
                     </button>
-                    <span className="text-[10px] text-indigo-600 dark:text-indigo-400 font-medium italic">
-                      Or proceed to save with dark night-shift theme
-                    </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const smart = getSmartNextFreeSlot(
+                          taskDate,
+                          appointedMinutes,
+                          tasks,
+                          bufferNotes,
+                          taskToEdit?.id,
+                          capacitySettings.defaultBufferMinutes || 15,
+                          capacitySettings,
+                          true
+                        );
+                        setStartTime(smart.startTime);
+                        setEndTime(smart.endTime);
+                        if (smart.crossesMidnight && smart.dateStr) {
+                          setTaskDate(smart.dateStr);
+                        }
+                        if (validationError) setValidationError(null);
+                      }}
+                      className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-[10px] font-bold shadow-xs transition-colors flex items-center gap-1 cursor-pointer"
+                      title="Auto-Fit to Next Daytime Free Slot"
+                    >
+                      <Sparkles className="w-3 h-3 text-emerald-200" />
+                      <span>⚡ Next Daytime Free Slot</span>
+                    </button>
                   </div>
                 </div>
               )}
