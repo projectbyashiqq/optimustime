@@ -8,6 +8,7 @@ interface TimePickerProps {
   label?: string;
   className?: string;
   disabled?: boolean;
+  align?: 'left' | 'right' | 'auto';
 }
 
 export const TimePicker: React.FC<TimePickerProps> = ({
@@ -15,10 +16,30 @@ export const TimePicker: React.FC<TimePickerProps> = ({
   onChange,
   label,
   className = '',
-  disabled = false
+  disabled = false,
+  align = 'auto'
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
+  const [effectiveAlign, setEffectiveAlign] = useState<'left' | 'right'>(align === 'right' ? 'right' : 'left');
+
+  useEffect(() => {
+    if (isOpen && containerRef.current) {
+      if (align === 'right') {
+        setEffectiveAlign('right');
+      } else if (align === 'left') {
+        setEffectiveAlign('left');
+      } else {
+        const rect = containerRef.current.getBoundingClientRect();
+        const spaceOnRight = window.innerWidth - rect.left;
+        if (spaceOnRight < 310 || rect.left > window.innerWidth / 2) {
+          setEffectiveAlign('right');
+        } else {
+          setEffectiveAlign('left');
+        }
+      }
+    }
+  }, [isOpen, align]);
 
   // Parse incoming value "09:30 AM"
   const parseCurrentValue = () => {
@@ -110,7 +131,7 @@ export const TimePicker: React.FC<TimePickerProps> = ({
   const minuteList = [0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55];
 
   return (
-    <div className={`relative ${className}`} ref={containerRef}>
+    <div className={`relative ${isOpen ? 'z-50' : 'z-10'} ${className}`} ref={containerRef}>
       {label && (
         <label className="text-[11px] font-bold text-theme-text flex items-center gap-1 mb-1">
           <Clock className="w-3.5 h-3.5 text-blue-500" />
@@ -133,20 +154,20 @@ export const TimePicker: React.FC<TimePickerProps> = ({
 
       {/* Interactive Clock Popover Modal */}
       {isOpen && (
-        <div className="absolute left-0 top-full mt-2 z-50 w-72 glass-panel rounded-2xl p-4 shadow-2xl border border-blue-200 dark:border-blue-800 animate-slide-up space-y-4">
+        <div className={`absolute ${effectiveAlign === 'right' ? 'right-0' : 'left-0'} top-full mt-2 z-[9999] w-72 max-w-[90vw] glass-panel rounded-2xl p-3.5 shadow-2xl border border-blue-200 dark:border-blue-800 animate-slide-up space-y-3.5`}>
           
           {/* Digital Time Header + AM/PM Toggle */}
-          <div className="flex items-center justify-between bg-blue-50/70 dark:bg-blue-950/40 p-3 rounded-xl border border-blue-200 dark:border-blue-900">
-            <div className="font-mono text-2xl font-black tracking-wider text-blue-700 dark:text-blue-300">
+          <div className="flex items-center justify-between bg-blue-50/80 dark:bg-blue-950/50 p-2.5 rounded-xl border border-blue-200 dark:border-blue-900 gap-2">
+            <div className="font-mono text-xl sm:text-2xl font-black tracking-wider text-blue-700 dark:text-blue-300 whitespace-nowrap shrink-0">
               {selectedHours.toString().padStart(2, '0')} : {selectedMinutes.toString().padStart(2, '0')}
             </div>
 
             {/* Clickable AM / PM Switcher */}
-            <div className="flex items-center p-1 bg-theme-card rounded-xl border border-theme-border shadow-inner">
+            <div className="flex items-center p-1 bg-theme-card rounded-xl border border-theme-border shadow-inner shrink-0">
               <button
                 type="button"
                 onClick={() => handlePeriodSelect('AM')}
-                className={`px-2.5 py-1 rounded-lg text-xs font-black transition-all flex items-center gap-1 ${
+                className={`px-2 py-1 rounded-lg text-xs font-black transition-all flex items-center gap-1 cursor-pointer ${
                   selectedPeriod === 'AM'
                     ? 'bg-amber-500 text-white shadow-md'
                     : 'text-theme-muted hover:text-theme-text'

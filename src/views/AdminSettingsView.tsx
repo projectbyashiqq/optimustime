@@ -383,7 +383,7 @@ export const AdminSettingsView: React.FC = () => {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
 
         {/* Daily Capacity & Red-Line Protocol (24-Hours Locked System Tools) */}
-        <div className="glass-panel p-6 rounded-2xl border border-theme-border space-y-6">
+        <div className="glass-panel p-6 rounded-2xl border border-theme-border space-y-6 relative z-20">
           <div className="flex items-center justify-between border-b border-theme-border pb-4 flex-wrap gap-2">
             <div>
               <h3 className="text-sm font-black text-theme-text uppercase tracking-wider flex items-center gap-2">
@@ -499,6 +499,7 @@ export const AdminSettingsView: React.FC = () => {
                       setDayStartTime(val);
                       setSleepEndTime(val);
                     }}
+                    align="right"
                   />
                 </div>
 
@@ -510,6 +511,7 @@ export const AdminSettingsView: React.FC = () => {
                       setDayEndTime(val);
                       setSleepStartTime(val);
                     }}
+                    align="right"
                   />
                 </div>
               </div>
@@ -615,6 +617,7 @@ export const AdminSettingsView: React.FC = () => {
                       setSleepStartTime(val);
                       setDayEndTime(val);
                     }}
+                    align="right"
                   />
                 </div>
 
@@ -626,6 +629,7 @@ export const AdminSettingsView: React.FC = () => {
                       setSleepEndTime(val);
                       setDayStartTime(val);
                     }}
+                    align="right"
                   />
                 </div>
               </div>
@@ -829,7 +833,7 @@ export const AdminSettingsView: React.FC = () => {
         </div>
 
         {/* Priority Custom Time Setup (P1-P5) */}
-        <div className="glass-panel p-6 rounded-2xl border border-theme-border space-y-4">
+        <div className="glass-panel p-6 rounded-2xl border border-theme-border space-y-4 relative z-10">
           <div className="flex items-center justify-between border-b border-theme-border pb-3">
             <h3 className="text-sm font-bold text-theme-text uppercase tracking-wider flex items-center gap-2">
               <Flame className="w-4 h-4 text-orange-500" />
