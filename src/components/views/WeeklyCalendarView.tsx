@@ -7,7 +7,8 @@ import {
   parse12HourToMinutes, 
   isTaskScheduledForDate,
   formatMinutesTo12Hour,
-  WeekDayInfo
+  WeekDayInfo,
+  isTaskInSleepWindow
 } from '../../utils/timeUtils';
 import { 
   ChevronLeft, 
@@ -25,7 +26,8 @@ import {
   Flame,
   Layers,
   Sparkles,
-  Lock
+  Lock,
+  Moon
 } from 'lucide-react';
 
 interface WeeklyCalendarViewProps {
@@ -251,6 +253,7 @@ export const WeeklyCalendarView: React.FC<WeeklyCalendarViewProps> = ({
                   dayTasksList.map((task) => {
                     const isDone = task.status === 'Done';
                     const isWorking = task.status === 'Working';
+                    const isInSleep = isTaskInSleepWindow(task, capacitySettings);
 
                     return (
                       <div
@@ -264,6 +267,8 @@ export const WeeklyCalendarView: React.FC<WeeklyCalendarViewProps> = ({
                             ? 'bg-emerald-50/40 dark:bg-emerald-950/20 border-emerald-200 dark:border-emerald-900/40 opacity-80'
                             : isWorking
                             ? 'bg-blue-50/90 dark:bg-blue-950/50 border-blue-400 dark:border-blue-700 shadow-sm ring-1 ring-blue-500/30'
+                            : isInSleep
+                            ? 'bg-slate-900/95 text-slate-100 dark:bg-slate-950 dark:text-slate-100 border-indigo-900/90 shadow-sm ring-1 ring-indigo-500/40'
                             : task.priority === 'P1'
                             ? 'bg-red-50/60 dark:bg-red-950/20 border-red-200 dark:border-red-900/40'
                             : task.priority === 'P2'
@@ -284,6 +289,11 @@ export const WeeklyCalendarView: React.FC<WeeklyCalendarViewProps> = ({
                             {task.isMandatorySchedule && (
                               <span title="Mandatory Fixed Schedule" className="inline-flex">
                                 <Lock className="w-2.5 h-2.5 text-amber-500 shrink-0" />
+                              </span>
+                            )}
+                            {isInSleep && (
+                              <span title="Scheduled on Sleep / Recovery Window" className="inline-flex">
+                                <Moon className="w-2.5 h-2.5 text-indigo-400 shrink-0" />
                               </span>
                             )}
                           </div>

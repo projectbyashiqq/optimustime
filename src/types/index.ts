@@ -171,11 +171,24 @@ export interface Category {
 }
 
 export interface CapacitySettings {
-  maxWorkHours: number; // Default: 14
-  sleepHours: number; // Default: 6
-  bufferHours: number; // Default: 2
-  dayStartTime: string; // "06:00 AM"
-  dayEndTime: string; // "11:00 PM"
+  maxWorkHours: number; // Work Time Target (Hours) - Default: 14
+  sleepHours: number; // Estimated Sleep Time (Hours) - Default: 7
+  bufferHours: number; // Buffer / Leisure Total Budget (Hours) - Default: 3
+  dayStartTime: string; // Work Starts From (e.g. "06:00 AM")
+  dayEndTime: string; // Work Ends At (e.g. "11:00 PM")
+  sleepStartTime?: string; // Estimated Bedtime (e.g. "11:00 PM")
+  sleepEndTime?: string; // Estimated Wake-up (e.g. "06:00 AM")
+  defaultBufferMinutes: number; // Automated Buffer Time between tasks (Default: 15 min)
+}
+
+export interface DefaultTaskSettings {
+  defaultPriority: PriorityLevel; // Default 'P1'
+  defaultCategory: string; // Default 'VRTX'
+  defaultAppointedMinutes?: number; // Optional duration override
+  defaultBufferMinutes: number; // Default buffer time (e.g. 15 min)
+  defaultSmartSlot: 'auto-fit' | 'current-time' | 'work-start'; // Slot suggestion strategy
+  defaultIsMandatory: boolean; // Mandatory locked schedule by default
+  autoConfirmDefaults: boolean; // Fast-Add mode: automatically confirms defaults without blocking clicks
 }
 
 export interface PrioritySettings {
@@ -227,8 +240,7 @@ export type ActiveTab =
   | 'plans-projects'
   | 'categories' 
   | 'analytics' 
-  | 'knowledge' 
-  | 'reminders' 
+  | 'notes' 
   | 'settings';
 
 export interface SecuritySettings {

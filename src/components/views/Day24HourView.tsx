@@ -7,7 +7,8 @@ import {
   isTaskScheduledForDate, 
   isTaskInRunningSlot,
   toISODateString,
-  addMinutesToTime
+  addMinutesToTime,
+  isTaskInSleepWindow
 } from '../../utils/timeUtils';
 import { 
   Play, 
@@ -25,7 +26,8 @@ import {
   Lock,
   Coffee,
   Smile,
-  Activity
+  Activity,
+  Moon
 } from 'lucide-react';
 
 interface Day24HourViewProps {
@@ -287,7 +289,7 @@ export const Day24HourView: React.FC<Day24HourViewProps> = ({
           {/* Post-Task Break Buffer Intervals Rendered on 24H Timeline */}
           {dayTasks.map((task) => {
             const endM = parse12HourToMinutes(task.endTime);
-            const bufMin = task.bufferMinutes || 15;
+            const bufMin = task.bufferMinutes !== undefined ? task.bufferMinutes : (capacitySettings.defaultBufferMinutes || 15);
             if (bufMin <= 0) return null;
             const topPx = (endM / 60) * HOUR_HEIGHT;
             const heightPx = Math.max(16, (bufMin / 60) * HOUR_HEIGHT - 2);
@@ -330,6 +332,7 @@ export const Day24HourView: React.FC<Day24HourViewProps> = ({
             const isWorking = task.status === 'Working';
             const isDone = task.status === 'Done';
             const isInSlot = isTaskInRunningSlot(task.taskDate, task.startTime, task.endTime);
+            const isInSleep = isTaskInSleepWindow(task, capacitySettings);
             const pMeta = prioritySettings[task.priority];
 
             return (
@@ -346,6 +349,8 @@ export const Day24HourView: React.FC<Day24HourViewProps> = ({
                     ? 'bg-emerald-500/15 dark:bg-emerald-950/40 border-emerald-400 dark:border-emerald-700 opacity-80'
                     : isWorking
                     ? 'bg-blue-600 text-white border-blue-400 shadow-lg shadow-blue-500/30 ring-2 ring-blue-400/50 animate-pulse'
+                    : isInSleep
+                    ? 'bg-slate-900/95 text-slate-100 dark:bg-slate-950 dark:text-slate-100 border-indigo-900/90 ring-1 ring-indigo-500/40 shadow-md hover:border-indigo-400'
                     : task.priority === 'P1'
                     ? 'bg-red-50/90 dark:bg-red-950/40 border-red-300 dark:border-red-800'
                     : task.priority === 'P2'
@@ -368,6 +373,13 @@ export const Day24HourView: React.FC<Day24HourViewProps> = ({
                     {task.isMandatorySchedule && (
                       <span title="Mandatory Fixed Schedule" className="inline-flex">
                         <Lock className="w-3 h-3 text-amber-500 shrink-0" />
+                      </span>
+                    )}
+
+                    {isInSleep && (
+                      <span title="Scheduled on Sleep / Recovery Window" className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded bg-indigo-950 text-indigo-300 border border-indigo-700/60 text-[9px] font-bold">
+                        <Moon className="w-2.5 h-2.5 text-indigo-400" />
+                        <span>SLEEP</span>
                       </span>
                     )}
 

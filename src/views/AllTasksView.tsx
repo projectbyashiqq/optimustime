@@ -9,7 +9,8 @@ import {
   isTaskPastDue,
   findSimultaneousTasks,
   getDayOfWeekFromDate,
-  getTaskTitleClasses
+  getTaskTitleClasses,
+  isTaskInSleepWindow
 } from '../utils/timeUtils';
 import { 
   Calendar, 
@@ -36,7 +37,8 @@ import {
   X,
   Zap,
   Lock,
-  Sparkles
+  Sparkles,
+  Moon
 } from 'lucide-react';
 import { RescheduleModal } from '../components/RescheduleModal';
 import { RecurringManagerModal } from '../components/RecurringManagerModal';
@@ -491,6 +493,7 @@ export const AllTasksView: React.FC<AllTasksViewProps> = ({ onOpenTaskModal }) =
 
                     const simultaneousList = findSimultaneousTasks(task, tasks);
                     const isSimultaneous = simultaneousList.length > 0;
+                    const isInSleep = isTaskInSleepWindow(task, capacitySettings);
 
                     return (
                       <div
@@ -500,6 +503,8 @@ export const AllTasksView: React.FC<AllTasksViewProps> = ({ onOpenTaskModal }) =
                             ? 'bg-red-50/30 dark:bg-red-950/20 border-red-300 dark:border-red-900/60 shadow-sm'
                             : isRunning
                               ? 'bg-gradient-to-r from-blue-50/90 via-sky-50/50 to-theme-card dark:from-blue-950/60 dark:via-sky-950/30 dark:to-theme-card border-blue-500 shadow-xl shadow-blue-500/20 ring-2 ring-blue-500/60'
+                              : isInSleep
+                              ? 'bg-slate-900/95 text-slate-100 dark:bg-slate-950 dark:text-slate-100 border-indigo-900/90 shadow-md ring-1 ring-indigo-500/40 hover:border-indigo-400'
                               : isSimultaneous
                                 ? 'bg-purple-50/20 dark:bg-purple-950/10 border-purple-300 dark:border-purple-800 hover:shadow-md'
                                 : 'bg-theme-card border-theme-border hover:shadow-md'
@@ -554,6 +559,16 @@ export const AllTasksView: React.FC<AllTasksViewProps> = ({ onOpenTaskModal }) =
                                   >
                                     <Lock className="w-2.5 h-2.5 text-amber-600 dark:text-amber-400" />
                                     <span>MANDATORY FIXED</span>
+                                  </span>
+                                )}
+
+                                {isInSleep && (
+                                  <span 
+                                    className="text-[10px] font-black px-2 py-0.5 bg-indigo-950 text-indigo-300 border border-indigo-700/80 rounded-full flex items-center gap-1 shadow-sm"
+                                    title="Scheduled on Sleep / Recovery Window"
+                                  >
+                                    <Moon className="w-2.5 h-2.5 text-indigo-400" />
+                                    <span>🌙 SLEEP TIME</span>
                                   </span>
                                 )}
 

@@ -8,17 +8,16 @@ import {
   Layers,
   FolderKanban, 
   BarChart3, 
-  FileText,
-  Bell, 
+  StickyNote,
   Settings2
 } from 'lucide-react';
 
 export const Navbar: React.FC = () => {
-  const { activeTab, setActiveTab, tasks, reminders, knowledge, bufferNotes, planProjects } = useApp();
+  const { activeTab, setActiveTab, tasks, bufferNotes, planProjects } = useApp();
 
   const workingCount = tasks.filter(t => t.status === 'Working').length;
   const incompleteCount = tasks.filter(t => t.status === 'Incomplete').length;
-  const pendingRemindersCount = reminders.filter(r => !r.isDismissed).length;
+  const activeNotesCount = tasks.filter(t => (t.category === 'Notes' || t.category === 'Reminder' || t.appointedMinutes === 0 || t.isAllDay) && t.status !== 'Done' && t.status !== 'Terminated').length;
 
   const navItems: { id: ActiveTab; label: string; icon: React.ComponentType<{ className?: string }>; badge?: number | string; badgeColor?: string }[] = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, badge: workingCount > 0 ? workingCount : undefined, badgeColor: 'bg-emerald-500 text-white animate-pulse' },
@@ -27,8 +26,7 @@ export const Navbar: React.FC = () => {
     { id: 'plans-projects', label: 'Plans & Projects', icon: Layers, badge: planProjects.length > 0 ? planProjects.length : undefined, badgeColor: 'bg-indigo-600 text-white font-mono' },
     { id: 'categories', label: 'Categories', icon: FolderKanban },
     { id: 'analytics', label: 'Analytics', icon: BarChart3 },
-    { id: 'knowledge', label: 'Knowledge', icon: FileText, badge: knowledge.length > 0 ? knowledge.length : undefined, badgeColor: 'bg-indigo-500 text-white' },
-    { id: 'reminders', label: 'Reminders', icon: Bell, badge: pendingRemindersCount > 0 ? pendingRemindersCount : undefined, badgeColor: 'bg-amber-500 text-white' },
+    { id: 'notes', label: 'Notes', icon: StickyNote, badge: activeNotesCount > 0 ? activeNotesCount : undefined, badgeColor: 'bg-amber-500 text-white' },
     { id: 'settings', label: 'Settings', icon: Settings2 },
   ];
 

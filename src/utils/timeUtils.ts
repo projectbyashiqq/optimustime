@@ -165,7 +165,8 @@ export function findScheduleGaps(
   tasks: Array<{ startTime: string; endTime: string; status: string; bufferMinutes?: number }>,
   dayStartTime = '06:00 AM',
   dayEndTime = '11:00 PM',
-  bufferNotes: Array<{ startTime: string; endTime: string; date?: string }> = []
+  bufferNotes: Array<{ startTime: string; endTime: string; date?: string }> = [],
+  defaultBuffer = 15
 ): TimeGap[] {
   const activeTasks = tasks.filter(t => t.status !== 'Terminated' && t.startTime && t.endTime && t.startTime !== 'All Day');
   
@@ -174,7 +175,7 @@ export function findScheduleGaps(
     const s = parse12HourToMinutes(t.startTime);
     let e = parse12HourToMinutes(t.endTime);
     if (e < s) e += 1440;
-    const buf = t.bufferMinutes || 0;
+    const buf = t.bufferMinutes !== undefined ? t.bufferMinutes : defaultBuffer;
     return { start: s, end: e + buf };
   });
 
@@ -470,7 +471,7 @@ export function findAllAvailableSlotsOnDate(
     const s = parse12HourToMinutes(t.startTime);
     let e = parse12HourToMinutes(t.endTime);
     if (e < s) e += 1440;
-    const buf = t.bufferMinutes ?? 15;
+    const buf = t.bufferMinutes !== undefined ? t.bufferMinutes : 15;
     return { start: s, end: e + buf };
   }).sort((a, b) => a.start - b.start);
 
@@ -1546,7 +1547,7 @@ export function getSmartNextFreeSlot(
   const dayBufferNotes = bufferNotes.filter(b => !b.date || b.date === dateStr);
 
   // Gaps on this day from 06:00 AM to 11:30 PM
-  const gaps = findScheduleGaps(activeTasks, '06:00 AM', '11:30 PM', dayBufferNotes);
+  const gaps = findScheduleGaps(activeTasks, '06:00 AM', '11:30 PM', dayBufferNotes, bufferGap);
 
   // If today, determine earliest usable minute (now + 5 rounded to 15 min)
   let earliestMin = parse12HourToMinutes('06:00 AM');
@@ -1607,9 +1608,10 @@ export function getRecommendedDayFreeSlots(
   tasks: Array<{ taskDate: string; startTime: string; endTime: string; status: string; bufferMinutes?: number; recurrence?: string; selectedDays?: string[]; excludedDates?: string[]; id?: string }>,
   bufferNotes: Array<{ date?: string; startTime: string; endTime: string }> = [],
   ignoreTaskId?: string,
-  limit = 4
+  limit = 4,
+  bufferGap = 15
 ): RecommendedSlot[] {
-  const smartNext = getSmartNextFreeSlot(dateStr, durationMinutes, tasks, bufferNotes, ignoreTaskId);
+  const smartNext = getSmartNextFreeSlot(dateStr, durationMinutes, tasks, bufferNotes, ignoreTaskId, bufferGap);
   const slots: RecommendedSlot[] = [
     {
       startTime: smartNext.startTime,
@@ -1629,7 +1631,7 @@ export function getRecommendedDayFreeSlots(
     isTaskScheduledForDate(t, dateStr)
   );
   const dayBufferNotes = bufferNotes.filter(b => !b.date || b.date === dateStr);
-  const gaps = findScheduleGaps(activeTasks, '06:00 AM', '11:00 PM', dayBufferNotes);
+  const gaps = findScheduleGaps(activeTasks, '06:00 AM', '11:00 PM', dayBufferNotes, bufferGap);
 
   const todayStr = toISODateString(new Date());
   const isToday = dateStr === todayStr;
@@ -1666,5 +1668,51 @@ export function getRecommendedDayFreeSlots(
   }
 
   return slots;
+}
+
+/**
+ * Determines whether a time interval [taskStart, taskEnd] overlaps with the configured Sleep / Night window.
+ * Handles cases where the sleep window crosses midnight (e.g. 11:00 PM to 06:00 AM).
+ */
+export function isTimeInSleepWindow(
+  startTimeStr: string,
+  endTimeStr: string,
+  sleepStartTimeStr = '11:00 PM',
+  sleepEndTimeStr = '06:00 AM'
+): boolean {
+  if (!startTimeStr || !endTimeStr || startTimeStr === 'All Day') return false;
+
+  const tStart = parse12HourToMinutes(startTimeStr);
+  let tEnd = parse12HourToMinutes(endTimeStr);
+  if (tEnd <= tStart) tEnd += 1440;
+
+  const sStart = parse12HourToMinutes(sleepStartTimeStr);
+  let sEnd = parse12HourToMinutes(sleepEndTimeStr);
+
+  // If sleep window crosses midnight (e.g. 11:00 PM / 1380 to 06:00 AM / 360)
+  if (sEnd <= sStart) {
+    // Check morning overlap: any portion of task in [0, sEnd)
+    const morningOverlap = (tStart < sEnd) || (tEnd > 1440 && (tEnd - 1440) > 0 && tStart < 1440);
+    // Check evening overlap: any portion of task in [sStart, 1440)
+    const eveningOverlap = (tStart >= sStart && tStart < 1440) || (tStart < sStart && tEnd > sStart);
+
+    return morningOverlap || eveningOverlap;
+  } else {
+    // Non-crossing sleep (e.g., 01:00 AM to 08:00 AM)
+    return Math.max(tStart, sStart) < Math.min(tEnd, sEnd);
+  }
+}
+
+/**
+ * Checks whether a task falls inside or overlaps with the configured sleep window.
+ */
+export function isTaskInSleepWindow(
+  task: { startTime?: string; endTime?: string; isAllDay?: boolean },
+  capacitySettings?: { dayStartTime?: string; dayEndTime?: string; sleepStartTime?: string; sleepEndTime?: string }
+): boolean {
+  if (!task.startTime || !task.endTime || task.startTime === 'All Day' || task.isAllDay) return false;
+  const sleepStart = capacitySettings?.sleepStartTime || capacitySettings?.dayEndTime || '11:00 PM';
+  const sleepEnd = capacitySettings?.sleepEndTime || capacitySettings?.dayStartTime || '06:00 AM';
+  return isTimeInSleepWindow(task.startTime, task.endTime, sleepStart, sleepEnd);
 }
 

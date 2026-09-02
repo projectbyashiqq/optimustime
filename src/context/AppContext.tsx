@@ -24,7 +24,8 @@ import {
   EmergencyType,
   PlanProjectFolder,
   PlanProjectType,
-  PlanProjectStatus
+  PlanProjectStatus,
+  DefaultTaskSettings
 } from '../types';
 import { 
   DEFAULT_CAPACITY, 
@@ -38,7 +39,8 @@ import {
   INITIAL_BUFFER_NOTES,
   INITIAL_BUFFER_CATEGORIES,
   INITIAL_EMERGENCY_CATEGORIES,
-  INITIAL_PLAN_PROJECTS
+  INITIAL_PLAN_PROJECTS,
+  DEFAULT_TASK_PRESETS
 } from './initialData';
 import { 
   generateProjectCode, 
@@ -83,6 +85,7 @@ interface AppContextType {
   categories: Category[];
   capacitySettings: CapacitySettings;
   prioritySettings: PrioritySettings;
+  defaultTaskSettings: DefaultTaskSettings;
   reminders: Reminder[];
   knowledge: KnowledgeItem[];
   theme: ThemeName;
@@ -178,6 +181,7 @@ interface AppContextType {
   // Settings & Capacity
   updateCapacitySettings: (settings: CapacitySettings) => void;
   updatePrioritySettings: (settings: PrioritySettings) => void;
+  updateDefaultTaskSettings: (settings: DefaultTaskSettings) => void;
   
   // Security & Authentication Gate
   securitySettings: SecuritySettings;
@@ -237,7 +241,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [capacitySettings, setCapacitySettings] = useState<CapacitySettings>(() => {
     try {
       const saved = localStorage.getItem(`${STORAGE_KEY}_capacity`);
-      return saved ? JSON.parse(saved) : DEFAULT_CAPACITY;
+      return saved ? { ...DEFAULT_CAPACITY, ...JSON.parse(saved) } : DEFAULT_CAPACITY;
     } catch {
       return DEFAULT_CAPACITY;
     }
@@ -249,6 +253,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return saved ? JSON.parse(saved) : DEFAULT_PRIORITIES;
     } catch {
       return DEFAULT_PRIORITIES;
+    }
+  });
+
+  const [defaultTaskSettings, setDefaultTaskSettings] = useState<DefaultTaskSettings>(() => {
+    try {
+      const saved = localStorage.getItem(`${STORAGE_KEY}_default_task_settings`);
+      return saved ? { ...DEFAULT_TASK_PRESETS, ...JSON.parse(saved) } : DEFAULT_TASK_PRESETS;
+    } catch {
+      return DEFAULT_TASK_PRESETS;
     }
   });
 
@@ -600,6 +613,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       localStorage.setItem(`${STORAGE_KEY}_categories`, JSON.stringify(categories));
       localStorage.setItem(`${STORAGE_KEY}_capacity`, JSON.stringify(capacitySettings));
       localStorage.setItem(`${STORAGE_KEY}_priorities`, JSON.stringify(prioritySettings));
+      localStorage.setItem(`${STORAGE_KEY}_default_task_settings`, JSON.stringify(defaultTaskSettings));
       localStorage.setItem(`${STORAGE_KEY}_reminders`, JSON.stringify(reminders));
       localStorage.setItem(`${STORAGE_KEY}_knowledge`, JSON.stringify(knowledge));
       localStorage.setItem(`${STORAGE_KEY}_audit_logs`, JSON.stringify(auditLogs));
@@ -613,7 +627,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     } catch (e) {
       console.error('Failed to sync to LocalStorage', e);
     }
-  }, [tasks, categories, capacitySettings, prioritySettings, reminders, knowledge, auditLogs, bufferNotes, bufferCategories, emergencyCategories, planProjects, theme, securitySettings, cloudSyncConfig]);
+  }, [tasks, categories, capacitySettings, prioritySettings, defaultTaskSettings, reminders, knowledge, auditLogs, bufferNotes, bufferCategories, emergencyCategories, planProjects, theme, securitySettings, cloudSyncConfig]);
 
   const updateCloudSyncConfig = useCallback((config: CloudSyncConfig) => {
     setCloudSyncConfig(config);
@@ -1058,7 +1072,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       taskDate: date,
       dayOfWeek: day,
       priority: taskData.priority,
-      category: taskData.category || 'VRTX',
+      category: taskData.category?.trim() || 'Unknown',
       subCategory: taskData.subCategory || '',
       appointedMinutes,
       startTime,
@@ -1381,7 +1395,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
       isLateFinish = isLate;
 
-      const bufferMinutes = isLate ? 5 : 15;
+      const defaultBuf = capacitySettings.defaultBufferMinutes || 15;
+      const bufferMinutes = isLate ? Math.min(5, defaultBuf) : defaultBuf;
       const isRecurring = target.recurrence && target.recurrence !== 'None';
       const delayMins = Math.max(0, actualDuration - target.appointedMinutes);
 
@@ -1582,49 +1597,106 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, [logLifeEvent]);
 
   const rescheduleTask = useCallback((taskId: string, newDate: string, newStartTime: string) => {
-    setTasks(prev => prev.map(t => {
-      if (t.id === taskId) {
-        if (t.isMandatorySchedule) {
-          logLifeEvent({
-            eventType: 'TASK_HOLD',
-            taskId: t.id,
-            taskTitle: t.title,
-            projectCode: t.projectCode,
-            priority: t.priority,
-            category: t.category,
-            message: `⚠️ Reschedule blocked: "${t.title}" is a Mandatory Fixed Schedule and cannot be modified.`
-          });
-          return t;
-        }
+    setTasks(prev => {
+      const target = prev.find(t => t.id === taskId);
+      if (!target) return prev;
 
-        const newEndTime = addMinutesToTime(newStartTime, t.appointedMinutes);
+      if (target.isMandatorySchedule) {
         logLifeEvent({
-          eventType: 'TASK_RESCHEDULED',
-          taskId: t.id,
-          taskTitle: t.title,
-          projectCode: t.projectCode,
-          priority: t.priority,
-          category: t.category,
-          message: `↻ Rescheduled "${t.title}" [${t.priority}] from ${t.taskDate} (${t.startTime}) → ${newDate} (${newStartTime})`,
-          details: {
-            previousDate: t.taskDate,
-            previousStartTime: t.startTime,
-            newDate,
-            newStartTime,
-            appointedMinutes: t.appointedMinutes
-          }
+          eventType: 'TASK_HOLD',
+          taskId: target.id,
+          taskTitle: target.title,
+          projectCode: target.projectCode,
+          priority: target.priority,
+          category: target.category,
+          message: `⚠️ Reschedule blocked: "${target.title}" is a Mandatory Fixed Schedule and cannot be modified.`
         });
-        return {
-          ...t,
+        return prev;
+      }
+
+      const newEndTime = addMinutesToTime(newStartTime, target.appointedMinutes);
+      const isRecurring = target.recurrence && target.recurrence !== 'None';
+
+      if (isRecurring) {
+        // Isolate single occurrence for today: Exclude current date from master series so future recurring tasks stay on schedule
+        const originalOccurrenceDate = target.taskDate;
+        const existingExclusions = target.excludedDates || [];
+        const updatedExclusions = existingExclusions.includes(originalOccurrenceDate)
+          ? existingExclusions
+          : [...existingExclusions, originalOccurrenceDate];
+
+        const updatedMaster: Task = {
+          ...target,
+          excludedDates: updatedExclusions
+        };
+
+        const singleRescheduledOccurrence: Task = {
+          ...target,
+          id: `task_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
           taskDate: newDate,
           dayOfWeek: getDayOfWeekFromDate(newDate),
           startTime: newStartTime,
           endTime: newEndTime,
-          status: 'Reschedule' as TaskStatus
+          status: 'Reschedule' as TaskStatus,
+          recurrence: 'None',
+          selectedDays: [],
+          dateAdded: new Date().toISOString()
         };
+
+        logLifeEvent({
+          eventType: 'TASK_RESCHEDULED',
+          taskId: target.id,
+          taskTitle: target.title,
+          projectCode: target.projectCode,
+          priority: target.priority,
+          category: target.category,
+          message: `↻ Rescheduled single occurrence of "${target.title}" [${target.recurrence}] from ${originalOccurrenceDate} (${target.startTime}) → ${newDate} (${newStartTime}) (Next recurring stays at original time)`,
+          details: {
+            previousDate: originalOccurrenceDate,
+            previousStartTime: target.startTime,
+            newDate,
+            newStartTime,
+            appointedMinutes: target.appointedMinutes
+          }
+        });
+
+        return [
+          singleRescheduledOccurrence,
+          ...prev.map(t => t.id === taskId ? updatedMaster : t)
+        ];
       }
-      return t;
-    }));
+
+      logLifeEvent({
+        eventType: 'TASK_RESCHEDULED',
+        taskId: target.id,
+        taskTitle: target.title,
+        projectCode: target.projectCode,
+        priority: target.priority,
+        category: target.category,
+        message: `↻ Rescheduled "${target.title}" [${target.priority}] from ${target.taskDate} (${target.startTime}) → ${newDate} (${newStartTime})`,
+        details: {
+          previousDate: target.taskDate,
+          previousStartTime: target.startTime,
+          newDate,
+          newStartTime,
+          appointedMinutes: target.appointedMinutes
+        }
+      });
+
+      return prev.map(t => {
+        if (t.id === taskId) {
+          return {
+            ...t,
+            taskDate: newDate,
+            dayOfWeek: getDayOfWeekFromDate(newDate),
+            startTime: newStartTime,
+            endTime: newEndTime,
+            status: 'Reschedule' as TaskStatus
+          };
+        }
+        return t;
+      });
+    });
   }, [logLifeEvent]);
 
   const terminateTask = useCallback((taskId: string) => {
@@ -1917,10 +1989,25 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // Settings
   const updateCapacitySettings = useCallback((settings: CapacitySettings) => {
     setCapacitySettings(settings);
+    // Automatically synchronize pending tasks to new default buffer
+    const newDefBuffer = settings.defaultBufferMinutes || 15;
+    setTasks(prev => prev.map(t => {
+      if (t.status === 'Pending') {
+        return {
+          ...t,
+          bufferMinutes: newDefBuffer
+        };
+      }
+      return t;
+    }));
   }, []);
 
   const updatePrioritySettings = useCallback((settings: PrioritySettings) => {
     setPrioritySettings(settings);
+  }, []);
+
+  const updateDefaultTaskSettings = useCallback((settings: DefaultTaskSettings) => {
+    setDefaultTaskSettings(settings);
   }, []);
 
   // Backup / Restore
@@ -1978,6 +2065,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         categories,
         capacitySettings,
         prioritySettings,
+        defaultTaskSettings,
         reminders,
         knowledge,
         theme,
@@ -2051,6 +2139,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         resetEmergencyCategories,
         updateCapacitySettings,
         updatePrioritySettings,
+        updateDefaultTaskSettings,
         securitySettings,
         updateSecuritySettings,
         isAuthenticated,

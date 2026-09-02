@@ -9,7 +9,8 @@ import {
   CloudSyncConfig, 
   BufferStatusNote, 
   BufferCategoryItem,
-  PlanProjectFolder
+  PlanProjectFolder,
+  DefaultTaskSettings
 } from '../types';
 import { toISODateString, getDayOfWeekFromDate } from '../utils/timeUtils';
 
@@ -33,10 +34,22 @@ export const DEFAULT_SECURITY: SecuritySettings = {
 
 export const DEFAULT_CAPACITY: CapacitySettings = {
   maxWorkHours: 14,
-  sleepHours: 6,
-  bufferHours: 2,
+  sleepHours: 7,
+  bufferHours: 3,
   dayStartTime: '06:00 AM',
-  dayEndTime: '11:00 PM'
+  dayEndTime: '11:00 PM',
+  sleepStartTime: '11:00 PM',
+  sleepEndTime: '06:00 AM',
+  defaultBufferMinutes: 15
+};
+
+export const DEFAULT_TASK_PRESETS: DefaultTaskSettings = {
+  defaultPriority: 'P1',
+  defaultCategory: 'VRTX',
+  defaultBufferMinutes: 15,
+  defaultSmartSlot: 'auto-fit',
+  defaultIsMandatory: false,
+  autoConfirmDefaults: true
 };
 
 export const DEFAULT_PRIORITIES: PrioritySettings = {

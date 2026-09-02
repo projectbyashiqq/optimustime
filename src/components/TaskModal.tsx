@@ -18,7 +18,8 @@ import {
   SHORT_DAYS,
   getSmartNextFreeSlot,
   getRecommendedDayFreeSlots,
-  RecommendedSlot
+  RecommendedSlot,
+  isTimeInSleepWindow
 } from '../utils/timeUtils';
 import { ConflictModal } from './ConflictModal';
 import { TimePicker } from './TimePicker';
@@ -39,7 +40,9 @@ import {
   CornerDownRight,
   Lock,
   Zap,
-  RotateCcw
+  RotateCcw,
+  Repeat,
+  Moon
 } from 'lucide-react';
 
 interface TaskModalProps {
@@ -62,7 +65,9 @@ export const TaskModal: React.FC<TaskModalProps> = ({
   const { 
     tasks,
     categories, 
+    capacitySettings,
     prioritySettings, 
+    defaultTaskSettings,
     planProjects,
     bufferNotes,
     addTask, 
@@ -74,6 +79,16 @@ export const TaskModal: React.FC<TaskModalProps> = ({
 
   const isEditing = !!taskToEdit;
 
+  // Task Presets from Admin Settings
+  const taskDefaults = defaultTaskSettings || {
+    defaultPriority: 'P1',
+    defaultCategory: categories[0]?.name || 'VRTX',
+    defaultBufferMinutes: capacitySettings.defaultBufferMinutes || 15,
+    defaultSmartSlot: 'auto-fit',
+    defaultIsMandatory: false,
+    autoConfirmDefaults: true
+  };
+
   // Form State
   const [projectCode, setProjectCode] = useState(
     taskToEdit?.projectCode || initialProjectCode || generateProjectCode()
@@ -81,16 +96,26 @@ export const TaskModal: React.FC<TaskModalProps> = ({
   const [title, setTitle] = useState(taskToEdit?.title || '');
   const [description, setDescription] = useState(taskToEdit?.description || '');
   const [taskDate, setTaskDate] = useState(taskToEdit?.taskDate || initialDate || toISODateString(new Date()));
-  const [priority, setPriority] = useState<PriorityLevel>(taskToEdit?.priority || 'P1');
-  const [category, setCategory] = useState(taskToEdit?.category || initialCategory || categories[0]?.name || 'VRTX');
+  const [priority, setPriority] = useState<PriorityLevel>(
+    taskToEdit?.priority || taskDefaults.defaultPriority || 'P1'
+  );
+  const [category, setCategory] = useState(
+    taskToEdit?.category || initialCategory || taskDefaults.defaultCategory || 'Unknown'
+  );
   const [subCategory, setSubCategory] = useState(taskToEdit?.subCategory || '');
   
-  // Mandatory Manual Confirmation tracking for new tasks
-  const [hasConfirmedPriority, setHasConfirmedPriority] = useState<boolean>(isEditing);
-  const [hasConfirmedCategory, setHasConfirmedCategory] = useState<boolean>(isEditing || !!initialCategory);
+  // Mandatory Manual Confirmation tracking (auto-confirmed if Fast-Add mode is enabled)
+  const [hasConfirmedPriority, setHasConfirmedPriority] = useState<boolean>(
+    isEditing || Boolean(taskDefaults.autoConfirmDefaults)
+  );
+  const [hasConfirmedCategory, setHasConfirmedCategory] = useState<boolean>(
+    isEditing || !!initialCategory || Boolean(taskDefaults.autoConfirmDefaults)
+  );
   
   // Mandatory Schedule (Fixed/Locked non-reschedulable time slot)
-  const [isMandatorySchedule, setIsMandatorySchedule] = useState<boolean>(taskToEdit?.isMandatorySchedule || false);
+  const [isMandatorySchedule, setIsMandatorySchedule] = useState<boolean>(
+    taskToEdit?.isMandatorySchedule ?? (taskDefaults.defaultIsMandatory || false)
+  );
   
   // Simultaneous execution option (Co-working / Parallel Slot)
   const [isSimultaneous, setIsSimultaneous] = useState<boolean>(
@@ -100,8 +125,15 @@ export const TaskModal: React.FC<TaskModalProps> = ({
   // Plan / Project Folder Grouping
   const [planProjectId, setPlanProjectId] = useState<string | undefined>(taskToEdit?.planProjectId);
   
-  const defaultMin = prioritySettings[taskToEdit?.priority || 'P1']?.defaultMinutes ?? 90;
-  const [appointedMinutes, setAppointedMinutes] = useState<number>(taskToEdit?.appointedMinutes ?? defaultMin);
+  const defaultMin = prioritySettings[taskToEdit?.priority || taskDefaults.defaultPriority || 'P1']?.defaultMinutes ?? 90;
+  const [appointedMinutes, setAppointedMinutes] = useState<number>(
+    taskToEdit?.appointedMinutes ?? (taskDefaults.defaultAppointedMinutes || defaultMin)
+  );
+  const [bufferMinutes, setBufferMinutes] = useState<number>(
+    taskToEdit?.bufferMinutes !== undefined 
+      ? taskToEdit.bufferMinutes 
+      : (taskDefaults.defaultBufferMinutes ?? (capacitySettings.defaultBufferMinutes || 15))
+  );
   
   // Smart Next Free Slot Computation on Creation
   const initialSmartSlot = useMemo(() => {
@@ -111,8 +143,19 @@ export const TaskModal: React.FC<TaskModalProps> = ({
     if (initialStartTime) {
       return { startTime: initialStartTime, endTime: addMinutesToTime(initialStartTime, defaultMin) };
     }
-    return getSmartNextFreeSlot(initialDate || toISODateString(new Date()), defaultMin, tasks, bufferNotes);
-  }, [taskToEdit, initialStartTime, initialDate, defaultMin, tasks, bufferNotes]);
+    
+    const strategy = taskDefaults.defaultSmartSlot || 'auto-fit';
+    if (strategy === 'current-time') {
+      const roundedNow = getCurrentRoundedTime12Hour(5);
+      return { startTime: roundedNow, endTime: addMinutesToTime(roundedNow, defaultMin) };
+    }
+    if (strategy === 'work-start') {
+      const workStart = capacitySettings.dayStartTime || '06:00 AM';
+      return { startTime: workStart, endTime: addMinutesToTime(workStart, defaultMin) };
+    }
+
+    return getSmartNextFreeSlot(initialDate || toISODateString(new Date()), defaultMin, tasks, bufferNotes, undefined, capacitySettings.defaultBufferMinutes || 15);
+  }, [taskToEdit, initialStartTime, initialDate, defaultMin, tasks, bufferNotes, capacitySettings.defaultBufferMinutes, capacitySettings.dayStartTime, taskDefaults.defaultSmartSlot]);
 
   const [startTime, setStartTime] = useState<string>(initialSmartSlot.startTime);
   const [endTime, setEndTime] = useState<string>(initialSmartSlot.endTime);
@@ -120,6 +163,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
   const [status, setStatus] = useState<TaskStatus>(taskToEdit?.status || 'Pending');
   const [recurrence, setRecurrence] = useState<RecurrenceType>(taskToEdit?.recurrence || 'None');
   const [selectedDays, setSelectedDays] = useState<string[]>(taskToEdit?.selectedDays || []);
+  const [recurringEditScope, setRecurringEditScope] = useState<'single' | 'series'>('single');
   const [notes, setNotes] = useState(taskToEdit?.notes || '');
   const [links, setLinks] = useState<TaskLink[]>(taskToEdit?.links || []);
   const [subtasks, setSubtasks] = useState<SubTask[]>(taskToEdit?.subtasks || []);
@@ -144,13 +188,25 @@ export const TaskModal: React.FC<TaskModalProps> = ({
 
   // Recommended candidate free slots across the day
   const recommendedSlots = useMemo(() => {
-    return getRecommendedDayFreeSlots(taskDate, appointedMinutes, tasks, bufferNotes, taskToEdit?.id);
-  }, [taskDate, appointedMinutes, tasks, bufferNotes, taskToEdit?.id]);
+    return getRecommendedDayFreeSlots(taskDate, appointedMinutes, tasks, bufferNotes, taskToEdit?.id, 4, capacitySettings.defaultBufferMinutes || 15);
+  }, [taskDate, appointedMinutes, tasks, bufferNotes, taskToEdit?.id, capacitySettings.defaultBufferMinutes]);
 
   // Live Overlap / Conflict Intelligence calculation
   const liveOverlaps = useMemo(() => {
     return detectConflicts(taskDate, startTime, endTime, taskToEdit?.id);
   }, [taskDate, startTime, endTime, taskToEdit?.id, detectConflicts]);
+
+  // Sleep / Night Window Conflict Calculation & Warning
+  const sleepWindowWarning = useMemo(() => {
+    const sleepStart = capacitySettings?.sleepStartTime || capacitySettings?.dayEndTime || '11:00 PM';
+    const sleepEnd = capacitySettings?.sleepEndTime || capacitySettings?.dayStartTime || '06:00 AM';
+    const inSleep = isTimeInSleepWindow(startTime, endTime, sleepStart, sleepEnd);
+    return {
+      inSleep,
+      sleepStart,
+      sleepEnd
+    };
+  }, [startTime, endTime, capacitySettings]);
 
   // Update subcategories when category changes
   const currentCategoryObj = categories.find(c => c.name === category);
@@ -245,12 +301,8 @@ export const TaskModal: React.FC<TaskModalProps> = ({
       setValidationError('Task Title is mandatory. Please enter a title.');
       return;
     }
-    if (!hasConfirmedPriority) {
+    if (!hasConfirmedPriority && !taskDefaults.autoConfirmDefaults) {
       setValidationError('Please manually click your Priority level (P1-P5) to confirm urgency & duration.');
-      return;
-    }
-    if (!hasConfirmedCategory) {
-      setValidationError('Please manually select a Category from the list.');
       return;
     }
     if (!taskDate) {
@@ -262,6 +314,9 @@ export const TaskModal: React.FC<TaskModalProps> = ({
       return;
     }
     setValidationError(null);
+
+    // Auto-choose Unknown if category is not selected
+    const effectiveCategory = (category && category.trim()) ? category.trim() : 'Unknown';
 
     if (!forceNoConflictCheck && !isSimultaneous) {
       const conflicts = detectConflicts(taskDate, startTime, endTime, taskToEdit?.id);
@@ -279,13 +334,13 @@ export const TaskModal: React.FC<TaskModalProps> = ({
       taskDate,
       dayOfWeek,
       priority,
-      category,
+      category: effectiveCategory,
       subCategory,
       appointedMinutes,
       startTime,
       endTime,
       status,
-      bufferMinutes: 15,
+      bufferMinutes,
       recurrence,
       selectedDays: recurrence === 'Selected Days' ? selectedDays : [],
       isMandatorySchedule,
@@ -297,10 +352,31 @@ export const TaskModal: React.FC<TaskModalProps> = ({
     };
 
     if (isEditing && taskToEdit) {
-      updateTask({
-        ...taskToEdit,
-        ...payload
-      });
+      if (taskToEdit.recurrence && taskToEdit.recurrence !== 'None' && recurringEditScope === 'single') {
+        // Exclude today/this occurrence from master series so future recurring stays fit on original time
+        const targetDate = initialDate || taskToEdit.taskDate || taskDate;
+        const existingExclusions = taskToEdit.excludedDates || [];
+        const updatedExclusions = existingExclusions.includes(targetDate)
+          ? existingExclusions
+          : [...existingExclusions, targetDate];
+
+        updateTask({
+          ...taskToEdit,
+          excludedDates: updatedExclusions
+        });
+
+        // Create standalone single occurrence with the updated time / details
+        addTask({
+          ...payload,
+          recurrence: 'None',
+          selectedDays: []
+        });
+      } else {
+        updateTask({
+          ...taskToEdit,
+          ...payload
+        });
+      }
     } else {
       addTask(payload);
     }
@@ -312,7 +388,8 @@ export const TaskModal: React.FC<TaskModalProps> = ({
   const handleResolveWithAutoShift = (newCalculatedStartTime: string) => {
     const newEnd = addMinutesToTime(newCalculatedStartTime, appointedMinutes);
     // Cascade shift any downstream tasks starting at or after the new start time forward
-    cascadeShiftDownstream(taskDate, newCalculatedStartTime, appointedMinutes + 15, taskToEdit?.id);
+    const autoBuffer = capacitySettings.defaultBufferMinutes || 15;
+    cascadeShiftDownstream(taskDate, newCalculatedStartTime, appointedMinutes + autoBuffer, taskToEdit?.id);
     setShowConflictModal(false);
     setStartTime(newCalculatedStartTime);
     setEndTime(newEnd);
@@ -330,7 +407,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
       startTime: newCalculatedStartTime,
       endTime: newEnd,
       status,
-      bufferMinutes: 15,
+      bufferMinutes: taskToEdit?.bufferMinutes ?? autoBuffer,
       recurrence,
       selectedDays: recurrence === 'Selected Days' ? selectedDays : [],
       isMandatorySchedule,
@@ -560,12 +637,39 @@ export const TaskModal: React.FC<TaskModalProps> = ({
               </div>
             </div>
 
-            {/* Task Title */}
+            {/* Task Title with Main Category on Left & Budget Duration on Right */}
             <div className="space-y-1.5">
-              <label className="text-xs font-bold text-theme-text uppercase tracking-wider flex items-center justify-between">
-                <span>Task Title <span className="text-red-500">* (Mandatory)</span></span>
-                <span className="text-[10px] text-theme-muted">Keep actionable & concise</span>
-              </label>
+              <div className="flex items-center justify-between gap-2 flex-wrap">
+                {/* Left Side: Task Title Label & Main Category */}
+                <div className="flex items-center gap-2 flex-wrap">
+                  <label className="text-xs font-bold text-theme-text uppercase tracking-wider flex items-center gap-1 font-display">
+                    <span>Task Title</span>
+                    <span className="text-red-500 font-black">*</span>
+                  </label>
+                  
+                  <div className="flex items-center gap-1.5 px-2.5 py-0.5 rounded-lg bg-blue-100/90 dark:bg-blue-950/80 border border-blue-300 dark:border-blue-800 text-blue-800 dark:text-blue-300 font-bold text-xs shadow-2xs">
+                    <Folder className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400 shrink-0" />
+                    <span className="text-[10px] text-theme-muted uppercase font-semibold">Category:</span>
+                    <span className="font-black text-theme-text font-mono text-xs">{category || 'VRTX'}</span>
+                  </div>
+                </div>
+
+                {/* Right Side: Budget Duration & Time Slot */}
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <div className="flex items-center gap-1.5 px-2.5 py-0.5 rounded-lg bg-amber-50 dark:bg-amber-950/70 border border-amber-300 dark:border-amber-800/80 text-amber-800 dark:text-amber-200 text-xs font-bold font-mono shadow-2xs">
+                    <Clock className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 shrink-0" />
+                    <span>Budget Duration:</span>
+                    <span className="font-black text-amber-950 dark:text-amber-100">
+                      {appointedMinutes}m {appointedMinutes >= 60 ? `(${Math.floor(appointedMinutes / 60)}h${appointedMinutes % 60 ? ` ${appointedMinutes % 60}m` : ''})` : ''}
+                    </span>
+                  </div>
+                  <span className="text-[10px] font-mono text-theme-muted font-bold">
+                    ({startTime} → {endTime})
+                  </span>
+                </div>
+              </div>
+
+              {/* Title Input Field */}
               <input
                 type="text"
                 placeholder="e.g. OptimusLAB Unified Architecture Audit..."
@@ -574,12 +678,62 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                   setTitle(e.target.value);
                   if (validationError) setValidationError(null);
                 }}
-                className={`w-full text-sm px-3.5 py-2 rounded-xl bg-theme-card-hover border text-theme-text placeholder-theme-muted focus:outline-none focus:ring-2 focus:ring-blue-500 font-medium ${
+                className={`w-full text-sm px-3.5 py-2.5 rounded-xl bg-theme-card-hover border text-theme-text placeholder-theme-muted focus:outline-none focus:ring-2 focus:ring-blue-500 font-semibold shadow-2xs ${
                   validationError && !title.trim() ? 'border-red-500 ring-1 ring-red-500' : 'border-theme-border'
                 }`}
                 autoFocus
               />
             </div>
+
+            {/* Recurring Task Edit Scope Switcher (When Editing a Recurring Task) */}
+            {isEditing && taskToEdit?.recurrence && taskToEdit.recurrence !== 'None' && (
+              <div className="p-3 rounded-xl border border-indigo-200 dark:border-indigo-900/60 bg-indigo-50/60 dark:bg-indigo-950/30 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-indigo-900 dark:text-indigo-200 flex items-center gap-1.5 font-display">
+                    <Repeat className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
+                    <span>Recurring Scope Protection</span>
+                  </span>
+                  <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-full bg-indigo-200 dark:bg-indigo-900 text-indigo-900 dark:text-indigo-100">
+                    Rule: {taskToEdit.recurrence}
+                  </span>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setRecurringEditScope('single')}
+                    className={`p-2.5 rounded-xl border text-left transition-all cursor-pointer ${
+                      recurringEditScope === 'single'
+                        ? 'bg-white dark:bg-slate-900 border-indigo-600 ring-2 ring-indigo-500/40 shadow-xs'
+                        : 'bg-theme-card/60 border-theme-border opacity-70 hover:opacity-100'
+                    }`}
+                  >
+                    <div className="font-bold text-theme-text text-xs flex items-center gap-1">
+                      <span>📅 Only Today / This Slot</span>
+                    </div>
+                    <div className="text-[10px] text-theme-muted mt-0.5 leading-tight">
+                      Next recurring stays fit at original schedule.
+                    </div>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setRecurringEditScope('series')}
+                    className={`p-2.5 rounded-xl border text-left transition-all cursor-pointer ${
+                      recurringEditScope === 'series'
+                        ? 'bg-white dark:bg-slate-900 border-indigo-600 ring-2 ring-indigo-500/40 shadow-xs'
+                        : 'bg-theme-card/60 border-theme-border opacity-70 hover:opacity-100'
+                    }`}
+                  >
+                    <div className="font-bold text-theme-text text-xs flex items-center gap-1">
+                      <span>🔄 All Future Occurrences</span>
+                    </div>
+                    <div className="text-[10px] text-theme-muted mt-0.5 leading-tight">
+                      Updates the master rule for all future days.
+                    </div>
+                  </button>
+                </div>
+              </div>
+            )}
 
             {/* Category & SubCategory (Moved UP: Small, compact & fast clicking) */}
             <div className="space-y-1.5 p-2.5 rounded-xl bg-theme-card-hover border border-theme-border">
@@ -612,7 +766,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                         const catObj = categories.find(cat => cat.name === c.name);
                         setSubCategory(catObj?.subCategories[0] || '');
                       }}
-                      className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all border flex items-center gap-1 transform active:scale-95 ${
+                      className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all border flex items-center gap-1 transform active:scale-95 cursor-pointer ${
                         isCatSelected
                           ? 'bg-blue-600 text-white border-blue-600 shadow-sm ring-1 ring-blue-500/20'
                           : 'bg-theme-card text-theme-muted hover:text-theme-text border-theme-border hover:border-blue-400'
@@ -623,6 +777,25 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                     </button>
                   );
                 })}
+
+                {/* Explicit Unknown Category Pill */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCategory('Unknown');
+                    setHasConfirmedCategory(true);
+                    setSubCategory('');
+                    if (validationError) setValidationError(null);
+                  }}
+                  className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all border flex items-center gap-1 transform active:scale-95 cursor-pointer ${
+                    category === 'Unknown'
+                      ? 'bg-slate-700 text-white border-slate-700 shadow-sm ring-1 ring-slate-500/30'
+                      : 'bg-theme-card text-theme-muted hover:text-theme-text border-theme-border hover:border-slate-400'
+                  }`}
+                >
+                  <Tag className="w-2.5 h-2.5 opacity-60" />
+                  <span>Unknown</span>
+                </button>
               </div>
 
               {/* SubCategory Selection (Small & Fast) */}
@@ -666,7 +839,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                           ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300'
                           : 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300'
                       }`}>
-                        {hasConfirmedPriority ? '✓ Confirmed' : '* Click to Confirm'}
+                        {hasConfirmedPriority ? '✓ Confirmed Preset' : '* Click to Confirm'}
                       </span>
                     </label>
                   </div>
@@ -680,13 +853,14 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                       { p: 'P5' as PriorityLevel, shortLabel: 'Filter' }
                     ].map(({ p, shortLabel }) => {
                       const meta = prioritySettings[p];
-                      const isSelected = priority === p && hasConfirmedPriority;
+                      const isSelected = priority === p;
+                      const isDefault = taskDefaults.defaultPriority === p;
                       return (
                         <button
                           key={p}
                           type="button"
                           onClick={() => handlePriorityChange(p)}
-                          className={`py-1.5 px-1 rounded-xl border text-center transition-all flex flex-col items-center justify-center gap-0.5 transform active:scale-95 shadow-2xs ${
+                          className={`py-1.5 px-1 rounded-xl border text-center transition-all flex flex-col items-center justify-center gap-0.5 transform active:scale-95 shadow-2xs cursor-pointer ${
                             isSelected
                               ? 'border-blue-500 shadow-sm ring-2 ring-blue-500/30 font-black scale-[1.02]'
                               : !hasConfirmedPriority
@@ -698,9 +872,14 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                             borderColor: isSelected ? meta.color : undefined
                           }}
                         >
-                          <span className="text-xs font-black tracking-tight" style={{ color: meta.color }}>
-                            {p}
-                          </span>
+                          <div className="flex items-center gap-1">
+                            <span className="text-xs font-black tracking-tight" style={{ color: meta.color }}>
+                              {p}
+                            </span>
+                            {isDefault && (
+                              <span className="text-[8px] text-amber-500 font-bold" title="Admin Default Preset">★</span>
+                            )}
+                          </div>
                           <span className="text-[10px] font-bold text-theme-text leading-tight truncate w-full">
                             {shortLabel}
                           </span>
@@ -856,7 +1035,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                   <button
                     type="button"
                     onClick={() => {
-                      const smart = getSmartNextFreeSlot(taskDate, appointedMinutes, tasks, bufferNotes, taskToEdit?.id);
+                      const smart = getSmartNextFreeSlot(taskDate, appointedMinutes, tasks, bufferNotes, taskToEdit?.id, capacitySettings.defaultBufferMinutes || 15);
                       setStartTime(smart.startTime);
                       setEndTime(smart.endTime);
                       setValidationError(null);
@@ -920,7 +1099,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                     <button
                       type="button"
                       onClick={() => {
-                        const smart = getSmartNextFreeSlot(taskDate, appointedMinutes, tasks, bufferNotes, taskToEdit?.id);
+                        const smart = getSmartNextFreeSlot(taskDate, appointedMinutes, tasks, bufferNotes, taskToEdit?.id, capacitySettings.defaultBufferMinutes || 15);
                         setStartTime(smart.startTime);
                         setEndTime(smart.endTime);
                       }}
@@ -968,6 +1147,86 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                   />
                 </div>
               </div>
+
+              {/* Automated Post-Task Buffer Time Selector */}
+              <div className="space-y-1.5 pt-1 p-3 rounded-xl bg-purple-50/40 dark:bg-purple-950/20 border border-purple-200 dark:border-purple-900/50">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="font-bold text-purple-900 dark:text-purple-300 uppercase tracking-wider text-[10px] flex items-center gap-1 font-display">
+                    <span>🟣 Automated Post-Task Break Buffer</span>
+                  </span>
+                  <span className="font-mono text-[11px] font-bold text-purple-700 dark:text-purple-300">
+                    {bufferMinutes} min {bufferMinutes === (capacitySettings.defaultBufferMinutes || 15) ? '(Admin Default)' : '(Custom Override)'}
+                  </span>
+                </div>
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  {[0, 5, 10, 15, 20, 30, 45].map((bMin) => {
+                    const isSelected = bufferMinutes === bMin;
+                    const isDefault = bMin === (capacitySettings.defaultBufferMinutes || 15);
+                    return (
+                      <button
+                        key={bMin}
+                        type="button"
+                        onClick={() => setBufferMinutes(bMin)}
+                        className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all border flex items-center gap-1 ${
+                          isSelected
+                            ? 'bg-purple-600 text-white border-purple-600 shadow-sm'
+                            : 'bg-theme-card text-theme-muted hover:text-theme-text border-theme-border hover:border-purple-400'
+                        }`}
+                      >
+                        <span>{bMin === 0 ? '0m (None)' : `${bMin}m`}</span>
+                        {isDefault && <span className="text-[9px] opacity-85 font-mono">★Default</span>}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Sleep / Night Window Conflict Warning & Avoidance Action */}
+              {sleepWindowWarning.inSleep && (
+                <div className="p-3 rounded-xl border border-indigo-300 dark:border-indigo-800 bg-indigo-50/80 dark:bg-indigo-950/60 text-indigo-950 dark:text-indigo-200 text-xs space-y-2 animate-fadeIn shadow-sm">
+                  <div className="flex items-start gap-2.5">
+                    <div className="p-1.5 rounded-lg bg-indigo-200 dark:bg-indigo-900 text-indigo-700 dark:text-indigo-300 shrink-0 mt-0.5">
+                      <Moon className="w-4 h-4" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between gap-2 flex-wrap">
+                        <span className="font-black text-indigo-950 dark:text-indigo-100 flex items-center gap-1.5">
+                          <span>🌙 Sleep Time Conflict Warning</span>
+                          <span className="text-[10px] px-1.5 py-0.2 rounded bg-indigo-200 dark:bg-indigo-800 text-indigo-900 dark:text-indigo-100 font-mono font-bold">
+                            {sleepWindowWarning.sleepStart} → {sleepWindowWarning.sleepEnd}
+                          </span>
+                        </span>
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-900 text-slate-100 dark:bg-slate-950 dark:text-indigo-300 border border-indigo-700/50">
+                          Dark Night Theme Enabled
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-indigo-800 dark:text-indigo-300 mt-1">
+                        This task is scheduled at <strong className="font-mono">{startTime} - {endTime}</strong>, which overlaps with your designated Sleep & Recovery Protocol. Working during sleep hours compromises circadian recovery.
+                      </p>
+                    </div>
+                  </div>
+                  
+                  <div className="flex items-center gap-2 pt-1 border-t border-indigo-200 dark:border-indigo-900/60 flex-wrap">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const newStart = sleepWindowWarning.sleepEnd;
+                        const newEnd = addMinutesToTime(newStart, appointedMinutes);
+                        setStartTime(newStart);
+                        setEndTime(newEnd);
+                        if (validationError) setValidationError(null);
+                      }}
+                      className="px-2.5 py-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-[10px] font-bold shadow-xs transition-colors flex items-center gap-1 cursor-pointer"
+                    >
+                      <Zap className="w-3 h-3 text-yellow-300" />
+                      <span>Avoid Sleep Time: Auto-Shift to Morning ({sleepWindowWarning.sleepEnd})</span>
+                    </button>
+                    <span className="text-[10px] text-indigo-600 dark:text-indigo-400 font-medium italic">
+                      Or proceed to save with dark night-shift theme
+                    </span>
+                  </div>
+                </div>
+              )}
 
               {/* Mandatory Schedule Checkbox & Irreplaceable Lock */}
               <div className={`mt-3 p-3 rounded-xl border transition-all ${

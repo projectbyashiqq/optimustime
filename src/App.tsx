@@ -14,8 +14,7 @@ import { AllTasksView } from './views/AllTasksView';
 import { PlansProjectsView } from './views/PlansProjectsView';
 import { CategoryView } from './views/CategoryView';
 import { AnalyticsView } from './views/AnalyticsView';
-import { KnowledgeHubView } from './views/KnowledgeHubView';
-import { ReminderCenterView } from './views/ReminderCenterView';
+import { NotesView } from './views/NotesView';
 import { AdminSettingsView } from './views/AdminSettingsView';
 import { LoginGate } from './components/LoginGate';
 import { Task } from './types';
@@ -93,11 +92,8 @@ export const AppContent: React.FC = () => {
         {activeTab === 'analytics' && (
           <AnalyticsView />
         )}
-        {activeTab === 'knowledge' && (
-          <KnowledgeHubView />
-        )}
-        {activeTab === 'reminders' && (
-          <ReminderCenterView onOpenTaskModal={handleOpenTaskModal} />
+        {activeTab === 'notes' && (
+          <NotesView onOpenTaskModal={handleOpenTaskModal} />
         )}
         {activeTab === 'settings' && (
           <AdminSettingsView />

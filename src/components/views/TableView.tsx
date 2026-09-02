@@ -8,7 +8,8 @@ import {
   isTaskInRunningSlot,
   isTaskPastDue,
   findSimultaneousTasks,
-  getDayOfWeekFromDate
+  getDayOfWeekFromDate,
+  isTaskInSleepWindow
 } from '../../utils/timeUtils';
 import { 
   Table as TableIcon, 
@@ -30,7 +31,8 @@ import {
   AlertTriangle,
   RotateCcw,
   Sparkles,
-  Lock
+  Lock,
+  Moon
 } from 'lucide-react';
 
 interface TableViewProps {
@@ -527,6 +529,7 @@ export const TableView: React.FC<TableViewProps> = ({
                   const isDone = task.status === 'Done';
                   const isWorking = task.status === 'Working';
                   const isIncomplete = task.status === 'Incomplete';
+                  const isInSleep = isTaskInSleepWindow(task, capacitySettings);
                   const isSelected = selectedTaskIds.includes(task.id);
                   const pMeta = prioritySettings[task.priority];
 
@@ -541,6 +544,8 @@ export const TableView: React.FC<TableViewProps> = ({
                           ? 'bg-emerald-500/[0.02] hover:bg-emerald-500/[0.06]'
                           : isWorking
                           ? 'bg-blue-500/[0.05] hover:bg-blue-500/[0.09]'
+                          : isInSleep
+                          ? 'bg-slate-900/90 text-slate-100 hover:bg-slate-800/90 dark:bg-slate-950 dark:hover:bg-slate-900'
                           : isIncomplete
                           ? 'bg-rose-500/[0.04] hover:bg-rose-500/[0.08]'
                           : 'hover:bg-theme-card-hover/80'
@@ -617,8 +622,14 @@ export const TableView: React.FC<TableViewProps> = ({
 
                       {/* Scheduled Slot */}
                       <td className="p-3.5 whitespace-nowrap font-mono text-[11px] font-bold text-theme-text">
-                        <div className="flex items-center gap-1.5">
+                        <div className="flex items-center gap-1.5 flex-wrap">
                           <span>{task.startTime} - {task.endTime}</span>
+                          {isInSleep && (
+                            <span className="text-[9px] font-black px-1.5 py-0.2 rounded bg-indigo-950 text-indigo-300 border border-indigo-700/60 flex items-center gap-0.5" title="Scheduled on Sleep / Recovery Window">
+                              <Moon className="w-2.5 h-2.5 text-indigo-400" />
+                              <span>SLEEP</span>
+                            </span>
+                          )}
                           {task.isMandatorySchedule && (
                             <span className="text-[9px] font-black px-1.5 py-0.2 rounded bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-800" title="Mandatory Schedule (Locked)">
                               FIXED

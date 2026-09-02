@@ -7,7 +7,8 @@ import {
   toISODateString, 
   parse12HourToMinutes, 
   isTaskScheduledForDate,
-  MonthDayInfo
+  MonthDayInfo,
+  isTaskInSleepWindow
 } from '../../utils/timeUtils';
 import { 
   ChevronLeft, 
@@ -26,7 +27,8 @@ import {
   Layers,
   Sparkles,
   ArrowRight,
-  Lock
+  Lock,
+  Moon
 } from 'lucide-react';
 
 interface MonthlyCalendarViewProps {
@@ -249,6 +251,7 @@ export const MonthlyCalendarView: React.FC<MonthlyCalendarViewProps> = ({
                   {dayTasksList.slice(0, 3).map((task) => {
                     const isDone = task.status === 'Done';
                     const isWorking = task.status === 'Working';
+                    const isInSleep = isTaskInSleepWindow(task, capacitySettings);
 
                     return (
                       <div
@@ -262,21 +265,29 @@ export const MonthlyCalendarView: React.FC<MonthlyCalendarViewProps> = ({
                             ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-500/20 line-through opacity-70'
                             : isWorking
                             ? 'bg-blue-500/20 text-blue-700 dark:text-blue-300 border-blue-400 font-bold animate-pulse'
+                            : isInSleep
+                            ? 'bg-slate-900/95 text-slate-100 dark:bg-slate-950 dark:text-slate-100 border-indigo-900/90 shadow-2xs'
                             : task.priority === 'P1'
                             ? 'bg-red-500/10 text-red-700 dark:text-red-300 border-red-500/20'
                             : task.priority === 'P2'
                             ? 'bg-orange-500/10 text-orange-700 dark:text-orange-300 border-orange-500/20'
                             : 'bg-theme-card-hover text-theme-text border-theme-border'
                         }`}
-                        title={`${task.startTime} - ${task.title}`}
+                        title={`${task.startTime} - ${task.title}${isInSleep ? ' (Sleep Window)' : ''}`}
                       >
                         <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+                          isInSleep ? 'bg-indigo-400' :
                           task.priority === 'P1' ? 'bg-red-500' :
                           task.priority === 'P2' ? 'bg-orange-500' : 'bg-blue-500'
                         }`} />
                         {task.isMandatorySchedule && (
                           <span title="Mandatory Schedule" className="inline-flex">
                             <Lock className="w-2.5 h-2.5 text-amber-500 shrink-0" />
+                          </span>
+                        )}
+                        {isInSleep && (
+                          <span title="Sleep Window" className="inline-flex">
+                            <Moon className="w-2.5 h-2.5 text-indigo-400 shrink-0" />
                           </span>
                         )}
                         <span className="truncate">{task.title}</span>

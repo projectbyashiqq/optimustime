@@ -6,6 +6,7 @@ import {
   toISODateString, 
   getDayOfWeekFromDate, 
   parse12HourToMinutes, 
+  formatMinutesTo12Hour,
   addMinutesToTime, 
   isTaskScheduledForDate, 
   TimeGap, 
@@ -14,7 +15,8 @@ import {
   findSimultaneousTasks, 
   getTaskTitleClasses,
   getBufferActivityEmoji,
-  getBufferActivityColor
+  getBufferActivityColor,
+  isTaskInSleepWindow
 } from '../utils/timeUtils';
 import { 
   Play, 
@@ -40,12 +42,14 @@ import {
   Activity, 
   X, 
   Bell, 
+  StickyNote,
   RotateCcw, 
   Zap,
   Coffee,
   Repeat,
   ShieldAlert,
-  Lock
+  Lock,
+  Moon
 } from 'lucide-react';
 import { RescheduleModal } from '../components/RescheduleModal';
 import { RecurringManagerModal } from '../components/RecurringManagerModal';
@@ -134,7 +138,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
     const existingOnDate = tasks.filter(t => t.taskDate === targetDate && t.id !== taskToMove.id && t.status !== 'Terminated');
     const sortedOnDate = [...existingOnDate].sort((a, b) => parse12HourToMinutes(b.endTime) - parse12HourToMinutes(a.endTime));
     const latestTask = sortedOnDate[0];
-    const bufferMin = latestTask?.bufferMinutes ?? 15;
+    const bufferMin = latestTask?.bufferMinutes ?? (capacitySettings.defaultBufferMinutes || 15);
     const safeStart = latestTask ? addMinutesToTime(latestTask.endTime, bufferMin) : '09:00 AM';
     const safeEnd = addMinutesToTime(safeStart, taskToMove.appointedMinutes);
 
@@ -209,7 +213,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
     tasks.filter(t => isTaskScheduledForDate(t, selectedDate)),
     capacitySettings.dayStartTime,
     capacitySettings.dayEndTime,
-    bufferNotes.filter(n => n.date === selectedDate)
+    bufferNotes.filter(n => n.date === selectedDate),
+    capacitySettings.defaultBufferMinutes || 15
   );
 
   return (
@@ -555,21 +560,22 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
         {/* Scheduled Tasks List (2 Columns on large screens) */}
         <div className="lg:col-span-2 space-y-4">
           
-          {/* Full-Day P1 Reminders for Selected Date */}
-          {dateTasks.filter(t => t.category === 'Reminder').length > 0 && (
-            <div className="p-4 rounded-2xl border border-amber-300 dark:border-amber-800/80 bg-amber-50/40 dark:bg-amber-950/20 space-y-2.5 shadow-sm">
+          {/* 1. URGENT REMINDERS & P1 ALERTS (Distinct Urgent Red-Amber Card) */}
+          {dateTasks.filter(t => t.category === 'Reminder' || (t.category === 'Notes' && t.priority === 'P1')).length > 0 && (
+            <div className="p-4 rounded-2xl border-2 border-red-400/70 dark:border-red-800/80 bg-red-50/40 dark:bg-red-950/20 space-y-2.5 shadow-sm">
               <div className="flex items-center justify-between">
-                <span className="text-xs font-black text-amber-800 dark:text-amber-300 uppercase tracking-wider flex items-center gap-1.5 font-display">
-                  <Bell className="w-4 h-4 text-amber-500" />
-                  Full-Day P1 Reminders ({dateTasks.filter(t => t.category === 'Reminder').length})
+                <span className="text-xs font-black text-red-800 dark:text-red-300 uppercase tracking-wider flex items-center gap-1.5 font-display">
+                  <Bell className="w-4 h-4 text-red-500 animate-pulse" />
+                  <span>🔔 Reminders & Urgent P1 Alerts ({dateTasks.filter(t => t.category === 'Reminder' || (t.category === 'Notes' && t.priority === 'P1')).length})</span>
                 </span>
-                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-red-100 dark:bg-red-950 text-red-700 dark:text-red-300">
-                  P1 Priority (No Time Conflict)
+                <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-red-100 dark:bg-red-950 text-red-700 dark:text-red-300 border border-red-300 dark:border-red-800 flex items-center gap-1">
+                  <Flame className="w-2.5 h-2.5 fill-red-500" />
+                  <span>P1 High Urgency</span>
                 </span>
               </div>
 
               <div className="space-y-2">
-                {dateTasks.filter(t => t.category === 'Reminder').map((rem) => {
+                {dateTasks.filter(t => t.category === 'Reminder' || (t.category === 'Notes' && t.priority === 'P1')).map((rem) => {
                   const isDone = rem.status === 'Done';
                   return (
                     <div
@@ -577,7 +583,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
                       className={`p-3 rounded-xl border flex items-center justify-between gap-3 transition-all ${
                         isDone 
                           ? 'bg-theme-card/60 border-theme-border opacity-70' 
-                          : 'bg-theme-card border-amber-200 dark:border-amber-900/60'
+                          : 'bg-theme-card border-red-200 dark:border-red-900/60 shadow-2xs hover:border-red-400'
                       }`}
                     >
                       <div className="flex items-center gap-2.5 flex-1 min-w-0">
@@ -586,15 +592,20 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
                           className={`w-5 h-5 rounded-lg border flex items-center justify-center transition-colors shrink-0 ${
                             isDone 
                               ? 'bg-emerald-500 border-emerald-600 text-white' 
-                              : 'border-amber-400 hover:border-emerald-500'
+                              : 'border-red-400 hover:border-emerald-500'
                           }`}
                         >
                           {isDone && <Check className="w-3.5 h-3.5 stroke-[3]" />}
                         </button>
                         <div className="min-w-0">
-                          <span className={`text-sm font-bold text-theme-text font-openSans truncate block ${isDone ? 'line-through text-theme-muted' : ''}`}>
-                            {rem.title}
-                          </span>
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className="text-[9px] font-black px-1.5 py-0.2 rounded bg-red-100 dark:bg-red-950 text-red-700 dark:text-red-300 font-mono">
+                              REMINDER
+                            </span>
+                            <span className={`text-sm font-bold text-theme-text font-openSans truncate ${isDone ? 'line-through text-theme-muted' : ''}`}>
+                              {rem.title}
+                            </span>
+                          </div>
                           {rem.subCategory && (
                             <span className="text-[10px] text-theme-muted font-medium">
                               {rem.subCategory}
@@ -606,8 +617,86 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
                       <div className="flex items-center gap-1.5 shrink-0">
                         <button
                           onClick={() => onOpenTaskModal(rem)}
-                          className="p-1 rounded hover:bg-theme-card-hover text-theme-muted hover:text-theme-text"
+                          className="px-2 py-1 rounded-lg bg-theme-card-hover border border-theme-border text-theme-muted hover:text-theme-text text-[10px] font-bold flex items-center gap-1"
                           title="Edit Reminder"
+                        >
+                          <Edit2 className="w-3 h-3" />
+                          <span>Edit</span>
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* 2. QUICK NOTES & THOUGHTS (Distinct Amber Sticky-Note Card) */}
+          {dateTasks.filter(t => t.category === 'Notes' && t.priority !== 'P1').length > 0 && (
+            <div className="p-4 rounded-2xl border-2 border-amber-300/80 dark:border-amber-800/80 bg-amber-50/40 dark:bg-amber-950/20 space-y-2.5 shadow-sm">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-black text-amber-900 dark:text-amber-200 uppercase tracking-wider flex items-center gap-1.5 font-display">
+                  <StickyNote className="w-4 h-4 text-amber-500" />
+                  <span>📝 Daily Notes & Context ({dateTasks.filter(t => t.category === 'Notes' && t.priority !== 'P1').length})</span>
+                </span>
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-900/60 text-amber-800 dark:text-amber-200 font-mono">
+                  Auto P5 Background
+                </span>
+              </div>
+
+              <div className="space-y-2">
+                {dateTasks.filter(t => t.category === 'Notes' && t.priority !== 'P1').map((note) => {
+                  const isDone = note.status === 'Done';
+                  return (
+                    <div
+                      key={note.id}
+                      className={`p-3 rounded-xl border flex items-center justify-between gap-3 transition-all ${
+                        isDone 
+                          ? 'bg-theme-card/60 border-theme-border opacity-70' 
+                          : 'bg-theme-card border-amber-200 dark:border-amber-900/60 shadow-2xs hover:border-amber-400'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2.5 flex-1 min-w-0">
+                        <button
+                          onClick={() => isDone ? updateTask({ ...note, status: 'Pending' }) : completeTask(note.id)}
+                          className={`w-5 h-5 rounded-lg border flex items-center justify-center transition-colors shrink-0 ${
+                            isDone 
+                              ? 'bg-emerald-500 border-emerald-600 text-white' 
+                              : 'border-amber-400 hover:border-emerald-500'
+                          }`}
+                        >
+                          {isDone && <Check className="w-3.5 h-3.5 stroke-[3]" />}
+                        </button>
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className="text-[9px] font-black px-1.5 py-0.2 rounded bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-300 font-mono">
+                              NOTE
+                            </span>
+                            <span className={`text-sm font-bold text-theme-text font-openSans truncate ${isDone ? 'line-through text-theme-muted' : ''}`}>
+                              {note.title}
+                            </span>
+                          </div>
+                          {(note.description || note.notes) && (
+                            <p className="text-[11px] text-theme-muted line-clamp-1 mt-0.5">
+                              {note.description || note.notes}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <button
+                          onClick={() => onOpenTaskModal(note)}
+                          className="px-2 py-1 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 dark:bg-blue-950 dark:hover:bg-blue-900 dark:text-blue-300 border border-blue-200 dark:border-blue-800 text-[10px] font-bold flex items-center gap-1 transition-colors cursor-pointer"
+                          title="Schedule into calendar slot"
+                        >
+                          <Clock className="w-3 h-3" />
+                          <span>Schedule</span>
+                        </button>
+                        <button
+                          onClick={() => onOpenTaskModal(note)}
+                          className="p-1 rounded hover:bg-theme-card-hover text-theme-muted hover:text-theme-text"
+                          title="Edit Note"
                         >
                           <Edit2 className="w-3.5 h-3.5" />
                         </button>
@@ -624,13 +713,13 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
             <h3 className="text-sm font-bold text-theme-text uppercase tracking-wider flex items-center gap-2">
               <span>Day Schedule Timeline</span>
               <span className="text-xs font-normal text-theme-muted">
-                ({dateTasks.filter(t => t.category !== 'Reminder' && t.status !== 'Done' && t.status !== 'Terminated').length} active • {dateTasks.filter(t => t.category !== 'Reminder' && (t.status === 'Done' || t.status === 'Terminated')).length} completed)
+                ({dateTasks.filter(t => t.category !== 'Reminder' && t.category !== 'Notes' && t.status !== 'Done' && t.status !== 'Terminated').length} active • {dateTasks.filter(t => t.category !== 'Reminder' && t.category !== 'Notes' && (t.status === 'Done' || t.status === 'Terminated')).length} completed)
               </span>
             </h3>
           </div>
 
           {/* Active Tasks Section */}
-          {dateTasks.filter(t => t.category !== 'Reminder').length === 0 ? (
+          {dateTasks.filter(t => t.category !== 'Reminder' && t.category !== 'Notes').length === 0 ? (
             <div className="glass-panel rounded-2xl p-8 text-center space-y-3">
               <div className="w-12 h-12 rounded-2xl bg-blue-50 dark:bg-blue-950/40 text-blue-500 mx-auto flex items-center justify-center">
                 <Clock className="w-6 h-6" />
@@ -680,6 +769,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
 
                       const simultaneousList = findSimultaneousTasks(task, dateTasks);
                       const isSimultaneous = simultaneousList.length > 0;
+                      const isInSleep = isTaskInSleepWindow(task, capacitySettings);
 
                       const isFirstIncomplete = isIncomplete && (idx === 0 || arr[idx - 1].status !== 'Incomplete');
 
@@ -700,9 +790,11 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
                               ? 'bg-red-50/30 dark:bg-red-950/20 border-red-300 dark:border-red-900/60 shadow-sm'
                               : isRunning
                                 ? 'bg-gradient-to-r from-blue-50/90 via-sky-50/50 to-theme-card dark:from-blue-950/60 dark:via-sky-950/30 dark:to-theme-card border-blue-500 shadow-xl shadow-blue-500/20 ring-2 ring-blue-500/60'
-                                : isSimultaneous
-                                  ? 'bg-purple-50/20 dark:bg-purple-950/10 border-purple-300 dark:border-purple-800 hover:shadow-md'
-                                  : 'bg-theme-card border-theme-border hover:border-blue-300 dark:hover:border-blue-700 hover:shadow-md'
+                                : isInSleep
+                                  ? 'bg-slate-900/95 text-slate-100 dark:bg-slate-950 dark:text-slate-100 border-indigo-900/90 shadow-md ring-1 ring-indigo-500/40 hover:border-indigo-400'
+                                  : isSimultaneous
+                                    ? 'bg-purple-50/20 dark:bg-purple-950/10 border-purple-300 dark:border-purple-800 hover:shadow-md'
+                                    : 'bg-theme-card border-theme-border hover:border-blue-300 dark:hover:border-blue-700 hover:shadow-md'
                           }`}
                         >
                           <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
@@ -733,7 +825,11 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
                                 
                                 {/* Tags & Time */}
                                 <div className="flex items-center gap-2 flex-wrap">
-                                  <span className="font-mono text-xs font-bold text-theme-text bg-theme-card-hover px-2 py-0.5 rounded border border-theme-border">
+                                  <span className={`font-mono text-xs font-bold px-2 py-0.5 rounded border ${
+                                    isInSleep 
+                                      ? 'bg-slate-800 text-indigo-200 border-indigo-700/60' 
+                                      : 'text-theme-text bg-theme-card-hover border-theme-border'
+                                  }`}>
                                     {task.startTime} - {task.endTime}
                                   </span>
                                   
@@ -741,10 +837,21 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
                                     {task.projectCode}
                                   </span>
 
-                                  <span className="text-[11px] font-semibold text-theme-muted">
-                                    {task.category}
-                                    {task.subCategory ? ` / ${task.subCategory}` : ''}
-                                  </span>
+                                  <span className={`text-[11px] font-semibold ${isInSleep ? 'text-slate-400' : 'text-theme-muted'}`}>
+                                     {task.category}
+                                     {task.subCategory ? ` / ${task.subCategory}` : ''}
+                                   </span>
+
+                                   {/* Sleep / Night Window Badge */}
+                                   {isInSleep && (
+                                     <span 
+                                       className="text-[10px] font-black px-2 py-0.5 bg-indigo-950/90 text-indigo-300 border border-indigo-700/80 rounded-full flex items-center gap-1 shadow-sm"
+                                       title={`Task scheduled on Sleep / Recovery Window (${capacitySettings?.sleepStartTime || '11:00 PM'} - ${capacitySettings?.sleepEndTime || '06:00 AM'})`}
+                                     >
+                                       <Moon className="w-2.5 h-2.5 text-indigo-400" />
+                                       <span>🌙 SLEEP TIME</span>
+                                     </span>
+                                   )}
 
                                   {/* Mandatory / Fixed Schedule Badge */}
                                   {task.isMandatorySchedule && (
@@ -1067,7 +1174,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
                                     {isDone ? (
                                       <div className="text-[11px] font-mono text-emerald-600 dark:text-emerald-400 font-semibold flex items-center gap-1">
                                         <Check className="w-3.5 h-3.5 text-emerald-500" />
-                                        <span>Execution Completed & Done • {task.totalActualMinutes || task.appointedMinutes}m (+{task.bufferMinutes}m buffer applied)</span>
+                                        <span>Execution Completed & Done • {task.totalActualMinutes || task.appointedMinutes}m (+{task.bufferMinutes ?? (capacitySettings.defaultBufferMinutes || 15)}m buffer applied)</span>
                                       </div>
                                     ) : (
                                       <div className="text-[11px] font-mono text-red-600 dark:text-red-400 font-semibold flex items-center gap-1">
@@ -1118,70 +1225,269 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
         <div className="space-y-4">
           
           {/* Dynamic Gap Finder Card */}
-          <div className="glass-panel p-5 rounded-2xl border border-theme-border space-y-3">
-            <div className="flex items-center justify-between">
-              <h3 className="text-xs font-bold text-theme-text uppercase tracking-wider flex items-center gap-1.5">
-                <Sparkles className="w-4 h-4 text-amber-500" />
-                Dynamic Gap Finder
-              </h3>
-              <span className="text-[10px] font-bold px-2 py-0.5 bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-300 rounded-full">
-                {gaps.length} Free Slots
-              </span>
-            </div>
+          {(() => {
+            const isSelectedToday = selectedDate === toISODateString(nowTime);
+            const currentMinutesFromMidnight = nowTime.getHours() * 60 + nowTime.getMinutes();
             
-            <p className="text-xs text-theme-muted leading-relaxed">
-              Scientific empty time slot analysis. Click on any slot to instantly schedule a high-ROI task into the gap.
-            </p>
+            // Detect unstarted pending tasks scheduled for past or current time on Today
+            const unstartedCurrentTasks = isSelectedToday
+              ? dateTasks.filter(t => {
+                  if (t.status !== 'Pending') return false;
+                  const sMin = parse12HourToMinutes(t.startTime);
+                  return sMin <= currentMinutesFromMidnight;
+                })
+              : [];
 
-            {gaps.length === 0 ? (
-              <div className="p-4 rounded-xl bg-theme-card-hover border border-theme-border text-center text-xs text-theme-muted">
-                Schedule is 100% time-boxed with no remaining gaps!
-              </div>
-            ) : (
-              <div className="space-y-2">
-                {gaps.map((gap, idx) => (
-                  <div
-                    key={idx}
-                    className="w-full p-3 rounded-xl border border-dashed border-blue-300 dark:border-blue-800 bg-blue-50/40 dark:bg-blue-950/20 hover:bg-blue-100/60 dark:hover:bg-blue-900/30 transition-all flex items-center justify-between gap-2"
-                  >
-                    <div>
-                      <div className="flex items-center gap-2 font-mono text-xs font-bold text-blue-700 dark:text-blue-300">
-                        <Clock className="w-3.5 h-3.5" />
-                        <span>{gap.startTime} - {gap.endTime}</span>
-                      </div>
-                      <span className="text-[11px] text-theme-muted">
-                        Available Duration: <strong>{gap.durationMinutes} min</strong>
+            return (
+              <div className="glass-panel p-5 rounded-2xl border border-theme-border space-y-3">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-xs font-bold text-theme-text uppercase tracking-wider flex items-center gap-1.5 font-display">
+                    <Sparkles className="w-4 h-4 text-amber-500" />
+                    Dynamic Gap Finder
+                  </h3>
+                  <span className="text-[10px] font-bold px-2 py-0.5 bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-300 rounded-full">
+                    {gaps.length} Free Slots
+                  </span>
+                </div>
+                
+                <p className="text-xs text-theme-muted leading-relaxed">
+                  Real-time slot analysis. Before current time: suggests buffer notes. Unstarted tasks: suggests shift or buffer. After current time: suggests scheduling tasks.
+                </p>
+
+                {/* Unstarted Task Alert in Current Slot */}
+                {isSelectedToday && unstartedCurrentTasks.length > 0 && (
+                  <div className="p-3.5 rounded-xl border border-amber-300 dark:border-amber-800 bg-amber-50/80 dark:bg-amber-950/40 space-y-2.5 animate-slide-up shadow-sm">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[11px] font-black uppercase tracking-wider text-amber-900 dark:text-amber-200 flex items-center gap-1.5 font-display">
+                        <AlertTriangle className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 animate-pulse" />
+                        <span>Current Slot Task Not Started</span>
+                      </span>
+                      <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-full bg-amber-200 dark:bg-amber-900 text-amber-900 dark:text-amber-100">
+                        {unstartedCurrentTasks.length} {unstartedCurrentTasks.length === 1 ? 'Task' : 'Tasks'}
                       </span>
                     </div>
+                    <p className="text-[11px] text-amber-900/80 dark:text-amber-300/90 leading-tight">
+                      Scheduled time has arrived but timer is not running. Start now, log elapsed idle as buffer, or shift schedule:
+                    </p>
 
-                    <div className="flex items-center gap-1">
-                      <button
-                        onClick={() => openBufferNoteModal({
-                          date: selectedDate,
-                          startTime: gap.startTime,
-                          endTime: gap.endTime,
-                          durationMinutes: gap.durationMinutes
-                        })}
-                        className="p-1.5 rounded-lg bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold shadow-sm transition-transform active:scale-95 flex items-center gap-1"
-                        title="Log what you did during this free time"
-                      >
-                        <Coffee className="w-3.5 h-3.5" />
-                        <span className="text-[10px] hidden sm:inline">Buffer Note</span>
-                      </button>
+                    <div className="space-y-2">
+                      {unstartedCurrentTasks.map(t => {
+                        const sMin = parse12HourToMinutes(t.startTime);
+                        const delayMins = Math.max(0, currentMinutesFromMidnight - sMin);
+                        const nowFormatted = formatMinutesTo12Hour(currentMinutesFromMidnight);
 
-                      <button
-                        onClick={() => onOpenTaskModal(undefined, selectedDate, gap.startTime)}
-                        className="w-7 h-7 rounded-lg bg-blue-600 hover:bg-blue-700 text-white flex items-center justify-center shadow-sm transition-transform active:scale-95"
-                        title="Fill gap with new scheduled task"
-                      >
-                        <Plus className="w-4 h-4" />
-                      </button>
+                        return (
+                          <div key={t.id} className="p-2.5 rounded-lg bg-white/95 dark:bg-slate-900/95 border border-amber-200 dark:border-amber-900/60 space-y-2 shadow-2xs">
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="min-w-0">
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                  <span className="font-mono text-xs font-bold text-blue-600 dark:text-blue-400">{t.projectCode}</span>
+                                  <span className="text-xs font-bold text-theme-text truncate">{t.title}</span>
+                                </div>
+                                <div className="text-[10px] font-mono text-amber-800 dark:text-amber-300 font-semibold mt-0.5">
+                                  Slot: {t.startTime} - {t.endTime} ({t.appointedMinutes}m) • <span className="font-bold">Overdue by {delayMins}m</span>
+                                </div>
+                              </div>
+                            </div>
+
+                            <div className="flex items-center gap-1.5 flex-wrap pt-1.5 border-t border-amber-100 dark:border-amber-900/40">
+                              <button
+                                onClick={() => startTask(t.id)}
+                                className="px-2.5 py-1 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-[11px] font-bold flex items-center gap-1 shadow-xs transition-transform active:scale-95 cursor-pointer"
+                                title="Start task timer right now"
+                              >
+                                <Play className="w-3 h-3 fill-white" />
+                                <span>Start Now</span>
+                              </button>
+
+                              <button
+                                onClick={() => openBufferNoteModal({
+                                  date: selectedDate,
+                                  startTime: t.startTime,
+                                  endTime: nowFormatted,
+                                  durationMinutes: Math.max(5, delayMins),
+                                  relatedTaskId: t.id,
+                                  relatedTaskTitle: t.title,
+                                  activityTag: 'Break / Rest',
+                                  notes: `Idle delay before starting ${t.title}`
+                                })}
+                                className="px-2.5 py-1 rounded-lg bg-amber-500 hover:bg-amber-600 text-white text-[11px] font-bold flex items-center gap-1 shadow-xs transition-transform active:scale-95 cursor-pointer"
+                                title="Log elapsed unstarted time as a Buffer Note"
+                              >
+                                <Coffee className="w-3 h-3" />
+                                <span>Log Buffer ({delayMins}m)</span>
+                              </button>
+
+                              <button
+                                onClick={() => setReschedulingTask(t)}
+                                className="px-2 py-1 rounded-lg bg-purple-100 hover:bg-purple-200 text-purple-800 dark:bg-purple-950 dark:hover:bg-purple-900 dark:text-purple-300 border border-purple-300 dark:border-purple-800 text-[11px] font-bold flex items-center gap-1 transition-colors cursor-pointer"
+                                title="Shift / Reschedule task"
+                              >
+                                <RotateCcw className="w-3 h-3" />
+                                <span>Reschedule</span>
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
                     </div>
                   </div>
-                ))}
+                )}
+
+                {gaps.length === 0 ? (
+                  <div className="p-4 rounded-xl bg-theme-card-hover border border-theme-border text-center text-xs text-theme-muted">
+                    Schedule is 100% time-boxed with no remaining gaps!
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {gaps.map((gap, idx) => {
+                      const gStartMin = parse12HourToMinutes(gap.startTime);
+                      let gEndMin = parse12HourToMinutes(gap.endTime);
+                      if (gEndMin < gStartMin) gEndMin += 1440;
+
+                      const isPastGap = isSelectedToday ? (gEndMin <= currentMinutesFromMidnight) : (selectedDate < toISODateString(nowTime));
+                      const isCurrentGap = isSelectedToday && (gStartMin <= currentMinutesFromMidnight && currentMinutesFromMidnight < gEndMin);
+                      const isFutureGap = isSelectedToday ? (gStartMin >= currentMinutesFromMidnight) : (selectedDate > toISODateString(nowTime));
+
+                      return (
+                        <div
+                          key={idx}
+                          className={`w-full p-3 rounded-xl border transition-all flex flex-col gap-2 ${
+                            isCurrentGap
+                              ? 'border-emerald-400 dark:border-emerald-600 bg-gradient-to-r from-emerald-50/70 via-sky-50/50 to-blue-50/70 dark:from-emerald-950/40 dark:via-sky-950/30 dark:to-blue-950/40 ring-2 ring-emerald-400/40 shadow-sm'
+                              : isPastGap
+                              ? 'border-dashed border-amber-300 dark:border-amber-800/80 bg-amber-50/40 dark:bg-amber-950/20'
+                              : 'border-dashed border-blue-300 dark:border-blue-800/80 bg-blue-50/40 dark:bg-blue-950/20 hover:bg-blue-100/50'
+                          }`}
+                        >
+                          <div className="flex items-start justify-between gap-2">
+                            <div>
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <span className={`font-mono text-xs font-bold flex items-center gap-1 ${
+                                  isCurrentGap ? 'text-emerald-700 dark:text-emerald-300' :
+                                  isPastGap ? 'text-amber-800 dark:text-amber-300' :
+                                  'text-blue-700 dark:text-blue-300'
+                                }`}>
+                                  <Clock className="w-3.5 h-3.5" />
+                                  <span>{gap.startTime} - {gap.endTime}</span>
+                                </span>
+
+                                {isCurrentGap && (
+                                  <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-emerald-600 text-white shadow-xs animate-pulse">
+                                    ⚡ Free Right Now
+                                  </span>
+                                )}
+
+                                {isPastGap && (
+                                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-200 dark:bg-amber-900/80 text-amber-800 dark:text-amber-200 border border-amber-300 dark:border-amber-700">
+                                    ⏳ Past Free Window
+                                  </span>
+                                )}
+
+                                {isFutureGap && (
+                                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800">
+                                    ✨ Upcoming Slot
+                                  </span>
+                                )}
+                              </div>
+
+                              <div className="text-[11px] text-theme-muted mt-0.5">
+                                Available: <strong>{gap.durationMinutes} min</strong> • {
+                                  isCurrentGap
+                                    ? 'Active window right now. Suggestion: Start a task now or log current break.'
+                                    : isPastGap
+                                    ? 'Past time without tasks. Suggestion: Add buffer note to account for your day.'
+                                    : 'Future free opening. Suggestion: Schedule a high-ROI task into this slot.'
+                                }
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Action Buttons based on temporal state */}
+                          <div className="flex items-center justify-end gap-1.5 pt-1 border-t border-theme-border/40 flex-wrap">
+                            {isPastGap ? (
+                              <>
+                                <button
+                                  onClick={() => openBufferNoteModal({
+                                    date: selectedDate,
+                                    startTime: gap.startTime,
+                                    endTime: gap.endTime,
+                                    durationMinutes: gap.durationMinutes
+                                  })}
+                                  className="px-3 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold shadow-sm transition-transform active:scale-95 flex items-center gap-1.5 cursor-pointer"
+                                  title="Log what you did during this past free window"
+                                >
+                                  <Coffee className="w-3.5 h-3.5" />
+                                  <span>+ Add Buffer Note</span>
+                                </button>
+
+                                <button
+                                  onClick={() => onOpenTaskModal(undefined, selectedDate, gap.startTime)}
+                                  className="p-1.5 rounded-xl bg-theme-card hover:bg-theme-card-hover border border-theme-border text-theme-muted hover:text-theme-text text-xs transition-colors cursor-pointer"
+                                  title="Add retroactively scheduled task"
+                                >
+                                  <Plus className="w-3.5 h-3.5" />
+                                </button>
+                              </>
+                            ) : isCurrentGap ? (
+                              <>
+                                <button
+                                  onClick={() => onOpenTaskModal(undefined, selectedDate, formatMinutesTo12Hour(currentMinutesFromMidnight))}
+                                  className="px-3 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold shadow-sm transition-transform active:scale-95 flex items-center gap-1.5 cursor-pointer"
+                                  title="Schedule and start task now"
+                                >
+                                  <Plus className="w-3.5 h-3.5 stroke-[3]" />
+                                  <span>+ Start Task Now</span>
+                                </button>
+
+                                <button
+                                  onClick={() => openBufferNoteModal({
+                                    date: selectedDate,
+                                    startTime: gap.startTime,
+                                    endTime: gap.endTime,
+                                    durationMinutes: gap.durationMinutes
+                                  })}
+                                  className="px-3 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold shadow-sm transition-transform active:scale-95 flex items-center gap-1.5 cursor-pointer"
+                                  title="Log current break activity"
+                                >
+                                  <Coffee className="w-3.5 h-3.5" />
+                                  <span>Log Break Note</span>
+                                </button>
+                              </>
+                            ) : (
+                              <>
+                                <button
+                                  onClick={() => onOpenTaskModal(undefined, selectedDate, gap.startTime)}
+                                  className="px-3 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold shadow-sm transition-transform active:scale-95 flex items-center gap-1.5 cursor-pointer"
+                                  title="Fill gap with new scheduled task"
+                                >
+                                  <Plus className="w-3.5 h-3.5 stroke-[3]" />
+                                  <span>+ Schedule Task</span>
+                                </button>
+
+                                <button
+                                  onClick={() => openBufferNoteModal({
+                                    date: selectedDate,
+                                    startTime: gap.startTime,
+                                    endTime: gap.endTime,
+                                    durationMinutes: gap.durationMinutes
+                                  })}
+                                  className="p-1.5 rounded-xl bg-theme-card hover:bg-theme-card-hover border border-theme-border text-theme-muted hover:text-amber-500 text-xs transition-colors cursor-pointer"
+                                  title="Pre-log planned buffer note"
+                                >
+                                  <Coffee className="w-3.5 h-3.5" />
+                                </button>
+                              </>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
-            )}
-          </div>
+            );
+          })()}
 
           {/* Buffer & Free-Time Notes Card for Selected Date */}
           <div className="glass-panel p-5 rounded-2xl border border-theme-border space-y-3">

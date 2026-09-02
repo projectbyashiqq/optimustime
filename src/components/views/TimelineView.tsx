@@ -9,7 +9,8 @@ import {
   findScheduleGaps,
   TimeGap,
   toISODateString,
-  getTaskTitleClasses
+  getTaskTitleClasses,
+  isTaskInSleepWindow
 } from '../../utils/timeUtils';
 import { 
   Play, 
@@ -27,7 +28,8 @@ import {
   Hourglass,
   Layers,
   ArrowRight,
-  Lock
+  Lock,
+  Moon
 } from 'lucide-react';
 
 interface TimelineViewProps {
@@ -75,7 +77,8 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
       dayTasks, 
       capacitySettings.dayStartTime, 
       capacitySettings.dayEndTime,
-      bufferNotes.filter(n => n.date === selectedDate)
+      bufferNotes.filter(n => n.date === selectedDate),
+      capacitySettings.defaultBufferMinutes || 15
     );
   }, [dayTasks, capacitySettings, bufferNotes, selectedDate]);
 
@@ -206,6 +209,7 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
               const isWorking = task.status === 'Working';
               const isDone = task.status === 'Done';
               const isInSlot = isTaskInRunningSlot(task.taskDate, task.startTime, task.endTime);
+              const isInSleep = isTaskInSleepWindow(task, capacitySettings);
               const pMeta = prioritySettings[task.priority];
 
               // Check if there is an empty gap preceding this task
@@ -250,6 +254,8 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
                         ? 'bg-emerald-500 border-emerald-300 shadow-sm shadow-emerald-500/40'
                         : isWorking
                         ? 'bg-blue-600 border-white ring-4 ring-blue-500/30 animate-pulse'
+                        : isInSleep
+                        ? 'bg-indigo-950 border-indigo-400 ring-2 ring-indigo-500/50 shadow-md'
                         : isInSlot
                         ? 'bg-amber-500 border-white ring-2 ring-amber-500/30'
                         : 'bg-theme-card border-theme-border group-hover:border-blue-500'
@@ -260,6 +266,8 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
                         ? 'bg-emerald-50/40 dark:bg-emerald-950/20 border-emerald-200 dark:border-emerald-900/40 opacity-85'
                         : isWorking
                         ? 'bg-blue-50/80 dark:bg-blue-950/50 border-blue-400 dark:border-blue-700 shadow-md ring-2 ring-blue-500/20'
+                        : isInSleep
+                        ? 'bg-slate-900/95 text-slate-100 dark:bg-slate-950 dark:text-slate-100 border-indigo-900/90 shadow-md ring-1 ring-indigo-500/40 hover:border-indigo-400'
                         : 'bg-theme-card border-theme-border hover:bg-theme-card-hover hover:border-blue-400/60 shadow-sm'
                     }`}>
                       
@@ -288,6 +296,15 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
                             {task.category} {task.subCategory ? `• ${task.subCategory}` : ''}
                           </span>
 
+                          {isInSleep && (
+                            <span 
+                              className="text-[10px] font-black px-2 py-0.5 bg-indigo-950 text-indigo-300 border border-indigo-700/80 rounded-full flex items-center gap-1 shadow-sm"
+                              title="Scheduled on Sleep / Recovery Window"
+                            >
+                              <Moon className="w-2.5 h-2.5 text-indigo-400" />
+                              <span>🌙 SLEEP TIME</span>
+                            </span>
+                          )}
                           {task.isMandatorySchedule && (
                             <span 
                               className="text-[10px] font-black px-2 py-0.5 bg-amber-100 dark:bg-amber-950/80 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-700/80 rounded-full flex items-center gap-1 shadow-sm"
