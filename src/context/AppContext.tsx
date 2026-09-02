@@ -423,13 +423,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         }
 
         const prop = proposalMap.get(t.id);
-        if (!prop || prop.action === 'keep') return t;
+        // If no proposal, or action is keep, or user didn't approve permission -> leave unchanged
+        if (!prop || prop.action === 'keep' || prop.approved === false) {
+          return t;
+        }
 
         const isRecurring = t.recurrence && t.recurrence !== 'None';
 
         if (isRecurring) {
-          // If task is recurring, DO NOT modify future recurring schedule!
-          // Exclude the emergency date from recurring series and create a standalone instance for the shifted day
+          // Exclude this emergency date from the recurring series and spawn a standalone single instance
           const existingExcluded = t.excludedDates || [];
           const updatedMaster = {
             ...t,
@@ -438,11 +440,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
           const singleDayInstance: Task = {
             ...t,
-            id: `task_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`,
+            id: `task_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
             taskDate: prop.proposedDate,
             dayOfWeek: getDayOfWeekFromDate(prop.proposedDate),
             startTime: prop.proposedStartTime,
             endTime: prop.proposedEndTime,
+            appointedMinutes: prop.proposedDurationMinutes || t.appointedMinutes,
             recurrence: 'None',
             selectedDays: undefined,
             excludedDates: undefined,
@@ -462,7 +465,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             taskDate: prop.proposedDate,
             dayOfWeek: getDayOfWeekFromDate(prop.proposedDate),
             startTime: prop.proposedStartTime,
-            endTime: prop.proposedEndTime
+            endTime: prop.proposedEndTime,
+            appointedMinutes: prop.proposedDurationMinutes || t.appointedMinutes
+          };
+        } else if (prop.action === 'compress') {
+          return {
+            ...t,
+            taskDate: prop.proposedDate,
+            dayOfWeek: getDayOfWeekFromDate(prop.proposedDate),
+            startTime: prop.proposedStartTime,
+            endTime: prop.proposedEndTime,
+            appointedMinutes: prop.proposedDurationMinutes || t.appointedMinutes
           };
         } else if (prop.action === 'defer_tomorrow') {
           return {
@@ -471,6 +484,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             dayOfWeek: getDayOfWeekFromDate(prop.proposedDate),
             startTime: prop.proposedStartTime,
             endTime: prop.proposedEndTime,
+            appointedMinutes: prop.proposedDurationMinutes || t.appointedMinutes,
             status: 'Pending' as TaskStatus
           };
         }
@@ -489,11 +503,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         emergencyType: plan.emergencyType,
         newDate: plan.date,
         durationMinutes: plan.durationMinutes,
-        proposalsCount: proposals.length,
+        proposalsCount: proposals.filter(p => p.approved && p.action !== 'keep').length,
         reason: plan.notes || plan.emergencyType
       }
     });
 
+    playNotificationChime('alert');
     setIsEmergencyModalOpen(false);
     setEmergencyModalParams(null);
   }, [logLifeEvent]);

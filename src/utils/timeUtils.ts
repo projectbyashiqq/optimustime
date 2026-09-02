@@ -1067,17 +1067,46 @@ export function get24HourContinuousTimeline(
  * Intelligent Emergency Cascading Reschedule Engine
  * Calculates optimal shift times or tomorrow-deferrals for all downstream tasks
  * when an uncontrollable emergency buffer occurs.
+ * Strictly guarantees:
+ * 1. Mandatory Schedules (isMandatorySchedule: true) NEVER MOVE or shift.
+ * 2. Flexible tasks cascade around the emergency buffer and around mandatory tasks.
+ * 3. Overflows past dayEndTime are deferred to tomorrow conflict-free.
+ */
+/**
+ * Intelligent Emergency Cascading Reschedule Engine
+ * Calculates optimal shift times for all impacted downstream tasks when an emergency buffer occurs.
+ * 
+ * CORE RULES:
+ * 1. Mandatory Schedules (isMandatorySchedule: true) are 100% anchored and NEVER move.
+ * 2. Flexible tasks are scheduled by default on TODAY starting immediately after the emergency buffer.
+ * 3. Downstream flexible tasks cascade sequentially around emergency and mandatory blocks.
+ * 4. Only tasks that exceed dayEndTime (e.g. 11:00 PM) are deferred to tomorrow conflict-free.
+ */
+/**
+ * Intelligent Emergency Cascading Reschedule Engine
+ * Calculates optimal shift times for all impacted downstream tasks when an emergency buffer occurs.
+ * 
+ * CORE RULES:
+ * 1. Mandatory Schedules (isMandatorySchedule: true) are 100% anchored and NEVER move.
+ * 2. Flexible tasks are scheduled by default on TODAY starting immediately after the emergency buffer.
+ * 3. Downstream flexible tasks cascade sequentially around emergency and mandatory blocks.
+ * 4. Only tasks that exceed dayEndTime (e.g. 11:00 PM) are deferred to tomorrow conflict-free.
  */
 export function calculateEmergencyReschedule(
   emergencyStart: string,
   emergencyDuration: number,
   dateStr: string,
-  allDayTasks: any[],
-  capacitySettings: { dayStartTime: string; dayEndTime: string }
+  allTasks: any[],
+  capacitySettings?: { dayStartTime?: string; dayEndTime?: string }
 ): import('../types').TaskRescheduleProposal[] {
   const emergencyStartMin = parse12HourToMinutes(emergencyStart);
   const emergencyEndMin = emergencyStartMin + emergencyDuration;
-  const dayEndMin = parse12HourToMinutes(capacitySettings.dayEndTime);
+  
+  // Safe normalization of waking hours: default to 11:00 PM (1380 mins)
+  const rawDayEnd = capacitySettings?.dayEndTime || '11:00 PM';
+  const dayEndMin = parse12HourToMinutes(rawDayEnd) || 1380;
+  const rawDayStart = capacitySettings?.dayStartTime || '06:00 AM';
+  const dayStartMin = parse12HourToMinutes(rawDayStart) || 360;
 
   // Tomorrow's date string
   const [y, m, d] = dateStr.split('-').map(Number);
@@ -1086,15 +1115,18 @@ export function calculateEmergencyReschedule(
   const tomorrowDateStr = toISODateString(tomDate);
 
   // Active tasks on this date (respecting recurring series, excluding done, terminated, or existing emergency buffer)
-  const activeTasks = allDayTasks.filter(t => 
+  const activeTasks = allTasks.filter(t => 
     isTaskScheduledForDate(t, dateStr) &&
     t.status !== 'Done' && 
     t.status !== 'Terminated' && 
-    !t.isEmergencyBuffer
+    !t.isEmergencyBuffer &&
+    t.startTime && 
+    t.endTime &&
+    t.startTime !== 'All Day'
   ).sort((a, b) => parse12HourToMinutes(a.startTime) - parse12HourToMinutes(b.startTime));
 
   // Existing active tasks on tomorrow's date to guarantee ZERO overlaps if anything overflows
-  const simulatedTomorrowTasks: any[] = allDayTasks.filter(t =>
+  const simulatedTomorrowTasks: any[] = allTasks.filter(t =>
     isTaskScheduledForDate(t, tomorrowDateStr) &&
     t.status !== 'Done' &&
     t.status !== 'Terminated' &&
@@ -1110,16 +1142,17 @@ export function calculateEmergencyReschedule(
   for (const task of activeTasks) {
     const origStartMin = parse12HourToMinutes(task.startTime);
     const origEndMin = parse12HourToMinutes(task.endTime);
-    const taskDuration = task.appointedMinutes || (origEndMin - origStartMin);
-    const buffer = task.bufferMinutes || 5;
+    const taskDuration = task.appointedMinutes || Math.max(15, origEndMin - origStartMin);
+    const buffer = task.bufferMinutes ?? 5;
+    const isMandatory = !!task.isMandatorySchedule;
 
-    // 1. If task ends before emergency starts, it is 100% unaffected
+    // 1. If task ends strictly before emergency starts, it is unaffected
     if (origEndMin <= emergencyStartMin) {
       continue;
     }
 
     // 2. If task is locked with a Mandatory Schedule, it is 100% fixed and NEVER moves
-    if (task.isMandatorySchedule) {
+    if (isMandatory) {
       proposals.push({
         taskId: task.id,
         taskTitle: task.title,
@@ -1128,12 +1161,18 @@ export function calculateEmergencyReschedule(
         currentDate: dateStr,
         currentStartTime: task.startTime,
         currentEndTime: task.endTime,
+        currentDurationMinutes: taskDuration,
         proposedDate: dateStr,
         proposedStartTime: task.startTime,
         proposedEndTime: task.endTime,
-        action: 'keep'
+        proposedDurationMinutes: taskDuration,
+        action: 'keep',
+        approved: false,
+        isMandatory: true,
+        notes: '🔒 Mandatory Schedule (Anchored • Never Shifts)'
       });
-      // Advance cascade cursor past mandatory task if needed so non-mandatory tasks don't overlap it
+
+      // Advance cascade cursor past mandatory task if needed
       if (origEndMin > currentCascadeCursor) {
         currentCascadeCursor = Math.max(currentCascadeCursor, origEndMin + buffer);
       }
@@ -1141,10 +1180,10 @@ export function calculateEmergencyReschedule(
     }
 
     // 3. For flexible (non-mandatory) tasks:
-    // Start at original time if after cascade cursor, or shift forward to currentCascadeCursor
-    let candidateStartMin = Math.max(origStartMin, currentCascadeCursor);
+    // Schedule sequentially on TODAY starting after emergency cursor
+    let candidateStartMin = Math.max(currentCascadeCursor, dayStartMin);
 
-    // If candidate slot collides with any mandatory task on this day, jump past the mandatory task
+    // Jump past any overlapping mandatory tasks on this day
     let collisionWithMandatory = true;
     while (collisionWithMandatory) {
       collisionWithMandatory = false;
@@ -1152,9 +1191,8 @@ export function calculateEmergencyReschedule(
       for (const mand of mandatoryTasks) {
         const mStart = parse12HourToMinutes(mand.startTime);
         const mEnd = parse12HourToMinutes(mand.endTime);
-        // If candidate slot overlaps with mandatory task
         if (candidateStartMin < mEnd && candidateEndMin > mStart) {
-          candidateStartMin = mEnd + (mand.bufferMinutes || 5);
+          candidateStartMin = mEnd + (mand.bufferMinutes ?? 5);
           collisionWithMandatory = true;
           break;
         }
@@ -1163,44 +1201,34 @@ export function calculateEmergencyReschedule(
 
     const candidateEndMin = candidateStartMin + taskDuration;
 
-    // Check if the candidate slot fits on the same day before dayEndTime
+    // Check if the candidate slot fits on TODAY before dayEndTime
     if (candidateEndMin <= dayEndMin) {
-      // If the candidate start is identical to the original start time, keep as unchanged
-      if (candidateStartMin === origStartMin) {
-        proposals.push({
-          taskId: task.id,
-          taskTitle: task.title,
-          projectCode: task.projectCode,
-          priority: task.priority,
-          currentDate: dateStr,
-          currentStartTime: task.startTime,
-          currentEndTime: task.endTime,
-          proposedDate: dateStr,
-          proposedStartTime: task.startTime,
-          proposedEndTime: task.endTime,
-          action: 'keep'
-        });
-      } else {
-        const delayMins = candidateStartMin - origStartMin;
-        proposals.push({
-          taskId: task.id,
-          taskTitle: task.title,
-          projectCode: task.projectCode,
-          priority: task.priority,
-          currentDate: dateStr,
-          currentStartTime: task.startTime,
-          currentEndTime: task.endTime,
-          proposedDate: dateStr,
-          proposedStartTime: formatMinutesTo12Hour(candidateStartMin),
-          proposedEndTime: formatMinutesTo12Hour(candidateEndMin),
-          action: 'shift_same_day',
-          delayMinutes: delayMins
-        });
-      }
+      const isShifted = candidateStartMin !== origStartMin;
+      const delayMins = candidateStartMin - origStartMin;
+
+      proposals.push({
+        taskId: task.id,
+        taskTitle: task.title,
+        projectCode: task.projectCode,
+        priority: task.priority,
+        currentDate: dateStr,
+        currentStartTime: task.startTime,
+        currentEndTime: task.endTime,
+        currentDurationMinutes: taskDuration,
+        proposedDate: dateStr,
+        proposedStartTime: formatMinutesTo12Hour(candidateStartMin),
+        proposedEndTime: formatMinutesTo12Hour(candidateEndMin),
+        proposedDurationMinutes: taskDuration,
+        action: isShifted ? 'shift_same_day' : 'keep',
+        approved: isShifted,
+        delayMinutes: isShifted ? delayMins : 0,
+        isMandatory: false,
+        notes: isShifted ? `Shifted to ${formatMinutesTo12Hour(candidateStartMin)} today` : 'Slot unaffected'
+      });
 
       currentCascadeCursor = candidateEndMin + buffer;
     } else {
-      // Overflows past dayEndMin or Full Day emergency -> intelligently find non-overlapping free slot on tomorrow
+      // Overflows past dayEndMin -> defer to tomorrow conflict-free
       const tomSlot = getSmartNextFreeSlot(
         tomorrowDateStr,
         taskDuration,
@@ -1218,13 +1246,17 @@ export function calculateEmergencyReschedule(
         currentDate: dateStr,
         currentStartTime: task.startTime,
         currentEndTime: task.endTime,
+        currentDurationMinutes: taskDuration,
         proposedDate: tomorrowDateStr,
         proposedStartTime: tomSlot.startTime,
         proposedEndTime: tomSlot.endTime,
-        action: 'defer_tomorrow'
+        proposedDurationMinutes: taskDuration,
+        action: 'defer_tomorrow',
+        approved: true,
+        isMandatory: false,
+        notes: `Day overflow -> Tomorrow (${tomorrowDateStr})`
       });
 
-      // Register into simulated pool so subsequent deferred tasks won't overlap with this one!
       simulatedTomorrowTasks.push({
         id: task.id,
         taskDate: tomorrowDateStr,
@@ -1238,6 +1270,242 @@ export function calculateEmergencyReschedule(
   }
 
   return proposals;
+}
+
+/**
+ * Batch Strategy 1: Shift all flexible tasks forward by custom delay minutes
+ */
+export function calculateBatchShiftProposals(
+  currentProposals: import('../types').TaskRescheduleProposal[],
+  delayMins: number,
+  emergencyEndMin: number,
+  dateStr: string,
+  allTasks: any[],
+  capacitySettings?: { dayStartTime?: string; dayEndTime?: string }
+): import('../types').TaskRescheduleProposal[] {
+  const rawDayEnd = capacitySettings?.dayEndTime || '11:00 PM';
+  const dayEndMin = parse12HourToMinutes(rawDayEnd) || 1380;
+  const [y, m, d] = dateStr.split('-').map(Number);
+  const tomDate = new Date(y, m - 1, d);
+  tomDate.setDate(tomDate.getDate() + 1);
+  const tomorrowStr = toISODateString(tomDate);
+
+  const tomorrowTasks = allTasks.filter(t => 
+    isTaskScheduledForDate(t, tomorrowStr) && 
+    t.status !== 'Done' && 
+    t.status !== 'Terminated' && 
+    !t.isEmergencyBuffer
+  );
+  const simulatedTomorrowPool: any[] = [...tomorrowTasks];
+  const mandatoryTasks = allTasks.filter(t => isTaskScheduledForDate(t, dateStr) && t.isMandatorySchedule);
+
+  let cascadeCursor = emergencyEndMin;
+
+  return currentProposals.map(p => {
+    if (p.isMandatory) return p;
+
+    const origTask = allTasks.find(t => t.id === p.taskId);
+    const origStartMin = parse12HourToMinutes(p.currentStartTime);
+    const dur = p.proposedDurationMinutes || p.currentDurationMinutes;
+    const buffer = origTask?.bufferMinutes ?? 5;
+
+    // Shift forward from original start time, but never before emergencyEndMin or previous cascadeCursor
+    let newStartMin = Math.max(origStartMin + delayMins, cascadeCursor);
+
+    // Avoid collision with mandatory tasks
+    let collision = true;
+    while (collision) {
+      collision = false;
+      const newEndMin = newStartMin + dur;
+      for (const mand of mandatoryTasks) {
+        const mStart = parse12HourToMinutes(mand.startTime);
+        const mEnd = parse12HourToMinutes(mand.endTime);
+        if (newStartMin < mEnd && newEndMin > mStart) {
+          newStartMin = mEnd + (mand.bufferMinutes ?? 5);
+          collision = true;
+          break;
+        }
+      }
+    }
+
+    const newEndMin = newStartMin + dur;
+
+    if (newEndMin <= dayEndMin) {
+      cascadeCursor = newEndMin + buffer;
+      return {
+        ...p,
+        proposedDate: dateStr,
+        proposedStartTime: formatMinutesTo12Hour(newStartMin),
+        proposedEndTime: formatMinutesTo12Hour(newEndMin),
+        proposedDurationMinutes: dur,
+        action: 'shift_same_day',
+        approved: true,
+        delayMinutes: newStartMin - origStartMin,
+        notes: `Shifted +${newStartMin - origStartMin}m today`
+      };
+    } else {
+      const tomSlot = getSmartNextFreeSlot(
+        tomorrowStr,
+        dur,
+        simulatedTomorrowPool,
+        [],
+        p.taskId,
+        buffer
+      );
+
+      simulatedTomorrowPool.push({
+        id: p.taskId,
+        taskDate: tomorrowStr,
+        startTime: tomSlot.startTime,
+        endTime: tomSlot.endTime,
+        appointedMinutes: dur,
+        bufferMinutes: buffer,
+        status: 'Pending'
+      });
+
+      return {
+        ...p,
+        proposedDate: tomorrowStr,
+        proposedStartTime: tomSlot.startTime,
+        proposedEndTime: tomSlot.endTime,
+        proposedDurationMinutes: dur,
+        action: 'defer_tomorrow',
+        approved: true,
+        notes: `Moved to Tomorrow (${tomorrowStr})`
+      };
+    }
+  });
+}
+
+/**
+ * Batch Strategy 2: Defer all flexible tasks to a Target Date (Tomorrow +1d or +2d)
+ */
+export function calculateBatchDeferToTomorrowProposals(
+  currentProposals: import('../types').TaskRescheduleProposal[],
+  dateStr: string,
+  allTasks: any[],
+  daysOffset = 1
+): import('../types').TaskRescheduleProposal[] {
+  const [y, m, d] = dateStr.split('-').map(Number);
+  const targetDate = new Date(y, m - 1, d);
+  targetDate.setDate(targetDate.getDate() + daysOffset);
+  const targetDateStr = toISODateString(targetDate);
+
+  const targetDayTasks = allTasks.filter(t => 
+    isTaskScheduledForDate(t, targetDateStr) && 
+    t.status !== 'Done' && 
+    t.status !== 'Terminated' && 
+    !t.isEmergencyBuffer
+  );
+  const simulatedPool: any[] = [...targetDayTasks];
+
+  return currentProposals.map(p => {
+    if (p.isMandatory) return p;
+
+    const origTask = allTasks.find(t => t.id === p.taskId);
+    const dur = p.proposedDurationMinutes || p.currentDurationMinutes;
+    const buffer = origTask?.bufferMinutes ?? 5;
+
+    const slot = getSmartNextFreeSlot(
+      targetDateStr,
+      dur,
+      simulatedPool,
+      [],
+      p.taskId,
+      buffer
+    );
+
+    simulatedPool.push({
+      id: p.taskId,
+      taskDate: targetDateStr,
+      startTime: slot.startTime,
+      endTime: slot.endTime,
+      appointedMinutes: dur,
+      bufferMinutes: buffer,
+      status: 'Pending'
+    });
+
+    const dayLabel = daysOffset === 1 ? 'Tomorrow' : `+${daysOffset} Days`;
+
+    return {
+      ...p,
+      proposedDate: targetDateStr,
+      proposedStartTime: slot.startTime,
+      proposedEndTime: slot.endTime,
+      proposedDurationMinutes: dur,
+      action: 'defer_tomorrow',
+      approved: true,
+      notes: `Deferred to ${dayLabel} (${targetDateStr})`
+    };
+  });
+}
+
+/**
+ * Batch Strategy 3: Compress duration of flexible tasks to squeeze into remaining today's time
+ */
+export function calculateBatchCompressProposals(
+  currentProposals: import('../types').TaskRescheduleProposal[],
+  emergencyEndMin: number,
+  dateStr: string,
+  allTasks: any[],
+  capacitySettings?: { dayStartTime?: string; dayEndTime?: string },
+  compressRatio = 0.5 // Default: compress to 50% (minimum 15 mins)
+): import('../types').TaskRescheduleProposal[] {
+  const rawDayEnd = capacitySettings?.dayEndTime || '11:00 PM';
+  const dayEndMin = parse12HourToMinutes(rawDayEnd) || 1380;
+  const mandatoryTasks = allTasks.filter(t => isTaskScheduledForDate(t, dateStr) && t.isMandatorySchedule);
+
+  let cascadeCursor = emergencyEndMin;
+
+  return currentProposals.map(p => {
+    if (p.isMandatory) return p;
+
+    const origTask = allTasks.find(t => t.id === p.taskId);
+    const origDur = p.currentDurationMinutes;
+    const compressedDur = Math.max(15, Math.round((origDur * compressRatio) / 5) * 5);
+    const buffer = origTask?.bufferMinutes ?? 5;
+
+    let newStartMin = cascadeCursor;
+
+    // Jump past mandatory
+    let collision = true;
+    while (collision) {
+      collision = false;
+      const newEndMin = newStartMin + compressedDur;
+      for (const mand of mandatoryTasks) {
+        const mStart = parse12HourToMinutes(mand.startTime);
+        const mEnd = parse12HourToMinutes(mand.endTime);
+        if (newStartMin < mEnd && newEndMin > mStart) {
+          newStartMin = mEnd + (mand.bufferMinutes ?? 5);
+          collision = true;
+          break;
+        }
+      }
+    }
+
+    const newEndMin = newStartMin + compressedDur;
+
+    if (newEndMin <= dayEndMin) {
+      cascadeCursor = newEndMin + buffer;
+      return {
+        ...p,
+        proposedDate: dateStr,
+        proposedStartTime: formatMinutesTo12Hour(newStartMin),
+        proposedEndTime: formatMinutesTo12Hour(newEndMin),
+        proposedDurationMinutes: compressedDur,
+        action: 'compress',
+        approved: true,
+        notes: `Compressed ${origDur}m ➔ ${compressedDur}m`
+      };
+    } else {
+      return {
+        ...p,
+        action: 'hold',
+        approved: true,
+        notes: 'Cannot fit even after compression ➔ Hold'
+      };
+    }
+  });
 }
 
 export interface RecommendedSlot {

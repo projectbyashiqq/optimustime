@@ -139,6 +139,8 @@ export interface EmergencyCategoryItem {
   isSystem?: boolean;
 }
 
+export type TaskRescheduleAction = 'shift_same_day' | 'defer_tomorrow' | 'compress' | 'hold' | 'keep';
+
 export interface TaskRescheduleProposal {
   taskId: string;
   taskTitle: string;
@@ -147,11 +149,16 @@ export interface TaskRescheduleProposal {
   currentDate: string;
   currentStartTime: string;
   currentEndTime: string;
+  currentDurationMinutes: number;
   proposedDate: string;
   proposedStartTime: string;
   proposedEndTime: string;
-  action: 'shift_same_day' | 'defer_tomorrow' | 'hold' | 'keep';
+  proposedDurationMinutes: number;
+  action: TaskRescheduleAction;
+  approved: boolean; // User permission checkbox
   delayMinutes?: number;
+  isMandatory?: boolean;
+  notes?: string;
 }
 
 export interface Category {
