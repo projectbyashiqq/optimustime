@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { useApp } from '../context/AppContext';
 import { Task, BufferStatusNote, DaySlice24, SignalNoiseType } from '../types';
 import { 
@@ -74,6 +74,7 @@ export const TimeTracker24View: React.FC<TimeTracker24ViewProps> = ({ onOpenTask
   } = useApp();
 
   const [selectedDate, setSelectedDate] = useState<string>(toISODateString(new Date()));
+  const trackerDateInputRef = useRef<HTMLInputElement>(null);
   const [filterType, setFilterType] = useState<'ALL' | 'SIGNAL' | 'NOISE' | 'WORK' | 'BUFFERS' | 'GAPS'>('ALL');
   const [viewMode, setViewMode] = useState<'timeline' | 'diary'>('diary');
   const [searchQuery, setSearchQuery] = useState('');
@@ -318,15 +319,31 @@ export const TimeTracker24View: React.FC<TimeTracker24ViewProps> = ({ onOpenTask
         {/* Date Selector & Action Buttons */}
         <div className="flex items-center gap-2 sm:gap-3 flex-wrap self-stretch xl:self-auto justify-between sm:justify-start">
           
-          <div className="flex items-center gap-2 bg-theme-card-hover px-3 py-2 rounded-2xl border border-theme-border">
-            <Calendar className="w-4 h-4 text-blue-500 shrink-0" />
+          <div 
+            onClick={() => {
+              try {
+                trackerDateInputRef.current?.showPicker();
+              } catch {
+                trackerDateInputRef.current?.focus();
+              }
+            }}
+            className="flex items-center gap-2 bg-theme-card-hover hover:bg-theme-card hover:border-blue-500 px-3 py-2 rounded-2xl border border-theme-border cursor-pointer transition-all shadow-2xs group active:scale-98"
+            title="Click anywhere to open full calendar"
+          >
+            <Calendar className="w-4 h-4 text-blue-500 shrink-0 group-hover:scale-110 transition-transform" />
             <input
+              ref={trackerDateInputRef}
               type="date"
               value={selectedDate}
               onChange={(e) => setSelectedDate(e.target.value)}
+              onClick={(e) => {
+                try {
+                  (e.target as HTMLInputElement).showPicker?.();
+                } catch {}
+              }}
               className="font-bold text-xs sm:text-sm text-theme-text bg-transparent focus:outline-none cursor-pointer"
             />
-            <span className="text-[10px] font-black px-1.5 py-0.5 rounded-md bg-theme-card text-theme-muted border border-theme-border font-mono">
+            <span className="text-[10px] font-black px-1.5 py-0.5 rounded-md bg-theme-card text-theme-muted border border-theme-border font-mono group-hover:text-theme-text group-hover:border-blue-400/50">
               {dayOfWeek.slice(0, 3)}
             </span>
           </div>

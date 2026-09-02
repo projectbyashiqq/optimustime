@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useApp } from '../context/AppContext';
 import { 
   Task, 
@@ -103,6 +103,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
   const [title, setTitle] = useState(taskToEdit?.title || '');
   const [description, setDescription] = useState(taskToEdit?.description || '');
   const [taskDate, setTaskDate] = useState(taskToEdit?.taskDate || initialDate || toISODateString(new Date()));
+  const taskDateInputRef = useRef<HTMLInputElement>(null);
   const [priority, setPriority] = useState<PriorityLevel>(
     taskToEdit?.priority || taskDefaults.defaultPriority || 'P1'
   );
@@ -1307,19 +1308,35 @@ export const TaskModal: React.FC<TaskModalProps> = ({
               )}
 
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1">
-                <div>
-                  <label className="text-[11px] font-bold text-theme-text flex items-center gap-1 mb-1">
-                    <Calendar className="w-3.5 h-3.5 text-blue-500" />
+                <div 
+                  onClick={() => {
+                    try {
+                      taskDateInputRef.current?.showPicker();
+                    } catch {
+                      taskDateInputRef.current?.focus();
+                    }
+                  }}
+                  className="cursor-pointer group"
+                  title="Click to open calendar"
+                >
+                  <label className="text-[11px] font-bold text-theme-text flex items-center gap-1 mb-1 cursor-pointer">
+                    <Calendar className="w-3.5 h-3.5 text-blue-500 group-hover:scale-110 transition-transform" />
                     <span>Task Date</span>
                   </label>
                   <input
+                    ref={taskDateInputRef}
                     type="date"
                     value={taskDate}
                     onChange={(e) => {
                       setTaskDate(e.target.value);
                       if (validationError) setValidationError(null);
                     }}
-                    className="w-full text-xs px-2.5 py-2 rounded-lg bg-theme-card border border-theme-border text-theme-text focus:outline-none focus:ring-1 focus:ring-blue-500 font-mono"
+                    onClick={(e) => {
+                      try {
+                        (e.target as HTMLInputElement).showPicker?.();
+                      } catch {}
+                    }}
+                    className="w-full text-xs px-2.5 py-2 rounded-lg bg-theme-card border border-theme-border text-theme-text focus:outline-none focus:ring-1 focus:ring-blue-500 font-mono cursor-pointer hover:border-blue-500 transition-colors"
                   />
                 </div>
 

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useApp } from '../context/AppContext';
 import { Task, PriorityLevel, TaskStatus } from '../types';
 import { 
@@ -92,6 +92,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
 
   const [dashboardMode, setDashboardMode] = useState<DashboardMode>('time');
   const [selectedDate, setSelectedDate] = useState<string>(toISODateString(new Date()));
+  const dateInputRef = useRef<HTMLInputElement>(null);
   const [showPriorityBacklog, setShowPriorityBacklog] = useState(false);
   const [showCompletedSection, setShowCompletedSection] = useState(true);
   const [reschedulingTask, setReschedulingTask] = useState<Task | null>(null);
@@ -229,15 +230,31 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
         
         {/* Left Side: Date Selector, Quick Chips & Action */}
         <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5 max-w-full">
-          <div className="flex items-center gap-1.5 bg-theme-card-hover px-2 py-1 rounded-xl border border-theme-border shrink-0">
-            <Calendar className="w-3.5 h-3.5 text-blue-500 shrink-0" />
+          <div 
+            onClick={() => {
+              try {
+                dateInputRef.current?.showPicker();
+              } catch {
+                dateInputRef.current?.focus();
+              }
+            }}
+            className="flex items-center gap-1.5 bg-theme-card-hover hover:bg-theme-card hover:border-blue-500 px-2 py-1 rounded-xl border border-theme-border shrink-0 cursor-pointer transition-all shadow-2xs group active:scale-98"
+            title="Click anywhere to open full calendar"
+          >
+            <Calendar className="w-3.5 h-3.5 text-blue-500 shrink-0 group-hover:scale-110 transition-transform" />
             <input
+              ref={dateInputRef}
               type="date"
               value={selectedDate}
               onChange={(e) => setSelectedDate(e.target.value)}
+              onClick={(e) => {
+                try {
+                  (e.target as HTMLInputElement).showPicker?.();
+                } catch {}
+              }}
               className="font-bold text-xs text-theme-text bg-transparent focus:outline-none cursor-pointer"
             />
-            <span className="text-[9px] font-bold px-1 py-0.2 rounded bg-theme-card text-theme-muted border border-theme-border font-mono">
+            <span className="text-[9px] font-bold px-1 py-0.2 rounded bg-theme-card text-theme-muted border border-theme-border font-mono group-hover:text-theme-text group-hover:border-blue-400/50">
               {dayOfWeek.slice(0, 3)}
             </span>
           </div>
