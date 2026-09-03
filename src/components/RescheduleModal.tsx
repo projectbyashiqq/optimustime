@@ -72,9 +72,15 @@ export const RescheduleModal: React.FC<RescheduleModalProps> = ({
       undefined,
       false,
       15,
-      { date: task.taskDate, startTime: task.startTime }
+      { 
+        date: task.taskDate, 
+        startTime: task.startTime, 
+        endTime: task.endTime,
+        id: task.id,
+        simultaneousWithIds: task.simultaneousWithIds
+      }
     );
-  }, [task.appointedMinutes, allTasks, capacitySettings, task.id, task.taskDate, task.startTime]);
+  }, [task.appointedMinutes, allTasks, capacitySettings, task.id, task.taskDate, task.startTime, task.endTime, task.simultaneousWithIds]);
 
   const [anchorDate, setAnchorDate] = useState<string>(() => {
     if (suggestedNextSlot && suggestedNextSlot.date >= todayStr) {
@@ -138,7 +144,13 @@ export const RescheduleModal: React.FC<RescheduleModalProps> = ({
       task.id,
       capacitySettings.sleepStartTime,
       capacitySettings.sleepEndTime,
-      { date: task.taskDate, startTime: task.startTime }
+      { 
+        date: task.taskDate, 
+        startTime: task.startTime, 
+        endTime: task.endTime,
+        id: task.id,
+        simultaneousWithIds: task.simultaneousWithIds
+      }
     );
 
     let dayLabel = `+${days} Days`;
@@ -223,9 +235,15 @@ export const RescheduleModal: React.FC<RescheduleModalProps> = ({
       task.id,
       capacitySettings.sleepStartTime,
       capacitySettings.sleepEndTime,
-      { date: task.taskDate, startTime: task.startTime }
+      { 
+        date: task.taskDate, 
+        startTime: task.startTime, 
+        endTime: task.endTime,
+        id: task.id,
+        simultaneousWithIds: task.simultaneousWithIds
+      }
     );
-  }, [customDate, task.appointedMinutes, allTasks, capacitySettings, todayStr, currentMinutes, task.id]);
+  }, [customDate, task.appointedMinutes, allTasks, capacitySettings, todayStr, currentMinutes, task.id, task.taskDate, task.startTime, task.endTime, task.simultaneousWithIds]);
 
   // Auto-select the suggested optimal next slot by default
   React.useEffect(() => {
@@ -673,6 +691,11 @@ export const RescheduleModal: React.FC<RescheduleModalProps> = ({
                                     <span>{period?.emoji || '⏰'}</span>
                                     <span>{period?.name || slot.period}</span>
                                   </span>
+                                  {slot.isSimultaneousSlot && (
+                                    <span className="text-[9px] font-black px-1.5 py-0.2 rounded bg-purple-100 dark:bg-purple-950 text-purple-700 dark:text-purple-300 border border-purple-300 dark:border-purple-800 flex items-center gap-0.5 shadow-2xs">
+                                      <Zap className="w-2.5 h-2.5 fill-current" /> Simultaneous
+                                    </span>
+                                  )}
                                 </div>
                                 <div className="flex items-center gap-1.5 shrink-0">
                                   <span className={`text-[10px] font-bold font-mono px-1.5 py-0.5 rounded ${
@@ -758,6 +781,11 @@ export const RescheduleModal: React.FC<RescheduleModalProps> = ({
                                     <span>{period?.emoji || '⏰'}</span>
                                     <span>{period?.name || slot.period}</span>
                                   </span>
+                                  {slot.isSimultaneousSlot && (
+                                    <span className="text-[9px] font-black px-1.5 py-0.2 rounded bg-purple-100 dark:bg-purple-950 text-purple-700 dark:text-purple-300 border border-purple-300 dark:border-purple-800 flex items-center gap-0.5 shadow-2xs">
+                                      <Zap className="w-2.5 h-2.5 fill-current" /> Simultaneous
+                                    </span>
+                                  )}
                                 </div>
                                 <div className="flex items-center gap-1.5 shrink-0">
                                   <span className={`text-[10px] font-bold font-mono px-1.5 py-0.5 rounded ${
@@ -872,6 +900,13 @@ export const RescheduleModal: React.FC<RescheduleModalProps> = ({
                                   </div>
 
                                   <div className="flex items-center gap-1.5 shrink-0">
+                                    {slot.isSimultaneousSlot && (
+                                      <span className="text-[9px] font-black px-1.5 py-0.5 rounded-full bg-purple-100 dark:bg-purple-950 text-purple-700 dark:text-purple-300 border border-purple-300 dark:border-purple-700 flex items-center gap-0.5 shadow-2xs">
+                                        <Zap className="w-2.5 h-2.5 fill-current" />
+                                        SIMULTANEOUS
+                                      </span>
+                                    )}
+
                                     {isSuggested && (
                                       <span className="text-[9px] font-black px-1.5 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-700 flex items-center gap-0.5 shadow-2xs">
                                         <Zap className="w-2.5 h-2.5 fill-current" />
@@ -1043,11 +1078,19 @@ export const RescheduleModal: React.FC<RescheduleModalProps> = ({
                                 <span className="truncate">{period?.name || `${slot.period} Slot`}</span>
                               </span>
                             </div>
-                            {isSelected && (
-                              <div className="w-4 h-4 rounded-full bg-emerald-600 text-white flex items-center justify-center shrink-0">
-                                <Check className="w-2.5 h-2.5 stroke-[3]" />
-                              </div>
-                            )}
+                            <div className="flex items-center gap-1.5 shrink-0">
+                              {slot.isSimultaneousSlot && (
+                                <span className="text-[9px] font-black px-1.5 py-0.5 rounded-full bg-purple-100 dark:bg-purple-950 text-purple-700 dark:text-purple-300 border border-purple-300 dark:border-purple-700 flex items-center gap-0.5 shadow-2xs">
+                                  <Zap className="w-2.5 h-2.5 fill-current" />
+                                  SIMULTANEOUS
+                                </span>
+                              )}
+                              {isSelected && (
+                                <div className="w-4 h-4 rounded-full bg-emerald-600 text-white flex items-center justify-center shrink-0">
+                                  <Check className="w-2.5 h-2.5 stroke-[3]" />
+                                </div>
+                              )}
+                            </div>
                           </div>
                           <div className="text-xs font-mono font-bold text-theme-text">
                             {slot.startTime} - {slot.endTime}

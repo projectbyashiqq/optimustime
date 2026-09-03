@@ -550,16 +550,27 @@ export interface AvailableSlotResult {
   isRedLine: boolean;
   period?: 'Morning' | 'Afternoon' | 'Evening';
   reason?: string;
+  isSimultaneousSlot?: boolean;
+  simultaneousTaskTitle?: string;
+}
+
+export interface CurrentTaskSlotInfo {
+  date: string;
+  startTime: string;
+  endTime?: string;
+  id?: string;
+  simultaneousWithIds?: string[];
 }
 
 /**
  * Finds MULTIPLE conflict-free available slots on a target date, strictly within waking hours [dayStartTime, dayEndTime],
  * completely avoiding sleep time, respecting existing tasks + buffers.
+ * ONLY Free Time Zones and Simultaneous Tasks Zones are available.
  */
 export function findAllAvailableSlotsOnDate(
   dateStr: string,
   durationMinutes: number,
-  allTasks: Array<{ taskDate: string; startTime: string; endTime: string; bufferMinutes?: number; status: string; recurrence?: string; selectedDays?: string[]; id?: string }>,
+  allTasks: Array<{ taskDate: string; startTime: string; endTime: string; bufferMinutes?: number; status: string; recurrence?: string; selectedDays?: string[]; id?: string; title?: string; simultaneousWithIds?: string[] }>,
   dayStartTime = '06:00 AM',
   dayEndTime = '11:00 PM',
   earliestAllowedMinutes?: number,
@@ -567,7 +578,7 @@ export function findAllAvailableSlotsOnDate(
   ignoreTaskId?: string,
   sleepStartTime = '11:00 PM',
   sleepEndTime = '06:00 AM',
-  currentTaskSlot?: { date: string; startTime: string }
+  currentTaskSlot?: CurrentTaskSlotInfo
 ): AvailableSlotResult[] {
   const now = new Date();
   const todayStr = toISODateString(now);
@@ -593,8 +604,7 @@ export function findAllAvailableSlotsOnDate(
     // If there is an active running task right now, no slot can start before that task completes
     const activeWorkingTask = allTasks.find(t => 
       t.status === 'Working' && 
-      isTaskScheduledForDate(t, todayStr) &&
-      (!ignoreTaskId || t.id !== ignoreTaskId)
+      isTaskScheduledForDate(t, todayStr)
     );
     if (activeWorkingTask) {
       let aEnd = parse12HourToMinutes(activeWorkingTask.endTime);
@@ -613,16 +623,41 @@ export function findAllAvailableSlotsOnDate(
     return [];
   }
 
-  // Filter active tasks occurring on dateStr (using isTaskScheduledForDate, excluding ignored task)
-  const dayTasks = allTasks.filter(t => 
-    (!ignoreTaskId || t.id !== ignoreTaskId) &&
-    isTaskScheduledForDate(t, dateStr) && 
-    t.status !== 'Terminated' && 
-    t.status !== 'Done' && 
-    t.startTime && 
-    t.endTime &&
-    t.startTime !== 'All Day'
-  );
+  const targetTaskId = currentTaskSlot?.id || ignoreTaskId;
+  const targetSimultaneousIds = currentTaskSlot?.simultaneousWithIds || [];
+
+  // Filter tasks that block available time:
+  // ONLY FREE TIME ZONES AND SIMULTANEOUS TASKS ZONES ARE AVAILABLE.
+  // 1. Any non-simultaneous task on dateStr blocks.
+  // 2. Any task explicitly marked simultaneousWithIds DOES NOT block (this is an allowed simultaneous zone).
+  // 3. For the task being rescheduled itself: on its current date, its current slot [startTime, endTime] is occupied,
+  //    so candidate slots cannot partially overlap with the task itself (e.g. 12:10 AM - 01:44 AM overlapping 12:52 AM).
+  const dayTasks = allTasks.filter(t => {
+    if (!isTaskScheduledForDate(t, dateStr)) return false;
+    if (t.status === 'Terminated' || t.status === 'Done') return false;
+    if (!t.startTime || !t.endTime || t.startTime === 'All Day') return false;
+
+    // If this is the target task being rescheduled:
+    if (targetTaskId && t.id === targetTaskId) {
+      if (currentTaskSlot && dateStr === currentTaskSlot.date) {
+        return true; // Keep as occupied block on its current date!
+      }
+      return false; // On other dates, it is not present
+    }
+
+    // Check if t is explicitly simultaneous with target task
+    const isSimultaneous = Boolean(
+      (targetSimultaneousIds.length > 0 && t.id && targetSimultaneousIds.includes(t.id)) ||
+      (t.simultaneousWithIds && targetTaskId && t.simultaneousWithIds.includes(targetTaskId))
+    );
+
+    // Simultaneous tasks DO NOT block (they form an allowed simultaneous tasks zone)
+    if (isSimultaneous) {
+      return false;
+    }
+
+    return true;
+  });
 
   const scheduledMinutesOnDay = dayTasks.reduce((sum, t) => {
     return sum + Math.max(15, diffTimeInMinutes(t.startTime, t.endTime));
@@ -683,63 +718,72 @@ export function findAllAvailableSlotsOnDate(
   const remainingCapacity = Math.max(0, (14 * 60) - scheduledMinutesOnDay - durationMinutes);
   const isRedLine = (scheduledMinutesOnDay + durationMinutes) > (14 * 60);
 
-  for (const gap of gaps) {
-    if (results.length >= maxSlotsPerDay) break;
+  // Helper to validate candidate slot:
+  // Must be strictly within free time zone or simultaneous tasks zone,
+  // never overlapping with system sleep, past times, or the current task's existing slot
+  const tryAddCandidateSlot = (startMin: number): boolean => {
+    if (results.length >= maxSlotsPerDay) return false;
+    const endMin = startMin + durationMinutes;
+    const startStr = formatMinutesTo12Hour(startMin);
+    const endStr = formatMinutesTo12Hour(endMin);
 
-    // Add earliest slot in this gap
-    const slot1Start = gap.start;
-    const slot1End = slot1Start + durationMinutes;
-    const startStr1 = formatMinutesTo12Hour(slot1Start);
-    const endStr1 = formatMinutesTo12Hour(slot1End);
+    if (isTimeInSleepWindow(startStr, endStr, sleepStartTime, sleepEndTime)) {
+      return false;
+    }
 
-    // Strictly avoid system sleep time, past time, and task's own existing slot when rescheduling
-    if (!isTimeInSleepWindow(startStr1, endStr1, sleepStartTime, sleepEndTime)) {
-      if (!isToday || slot1Start >= minFutureMinutes) {
-        if (!currentTaskSlot || dateStr !== currentTaskSlot.date || startStr1 !== currentTaskSlot.startTime) {
-          const period1: 'Morning' | 'Afternoon' | 'Evening' = 
-            (slot1Start % 1440) < 720 ? 'Morning' : (slot1Start % 1440) < 1020 ? 'Afternoon' : 'Evening';
+    if (isToday && startMin < minFutureMinutes) {
+      return false;
+    }
 
-          results.push({
-            date: dateStr,
-            dayOfWeek,
-            startTime: startStr1,
-            endTime: endStr1,
-            scheduledMinutesOnDay,
-            remainingCapacityMinutes: remainingCapacity,
-            isRedLine,
-            period: period1
-          });
-        }
+    // If on current task's scheduled date:
+    // Strictly prevent any overlap with the current task's own slot (e.g. 12:10 AM - 01:44 AM overlapping 12:52 AM)
+    if (currentTaskSlot && dateStr === currentTaskSlot.date && currentTaskSlot.startTime) {
+      const curEndStr = currentTaskSlot.endTime || addMinutesToTime(currentTaskSlot.startTime, durationMinutes);
+      if (checkOverlap(startStr, endStr, currentTaskSlot.startTime, curEndStr)) {
+        return false;
       }
     }
 
+    // Check if slot overlaps with any simultaneous task
+    const simTask = allTasks.find(t => {
+      if (!isTaskScheduledForDate(t, dateStr)) return false;
+      if (t.status === 'Terminated' || t.status === 'Done') return false;
+      if (!t.startTime || !t.endTime || t.startTime === 'All Day') return false;
+      const isSim = Boolean(
+        (targetSimultaneousIds.length > 0 && t.id && targetSimultaneousIds.includes(t.id)) ||
+        (t.simultaneousWithIds && targetTaskId && t.simultaneousWithIds.includes(targetTaskId))
+      );
+      if (!isSim) return false;
+      return checkOverlap(startStr, endStr, t.startTime, t.endTime);
+    });
+
+    const period: 'Morning' | 'Afternoon' | 'Evening' = 
+      (startMin % 1440) < 720 ? 'Morning' : (startMin % 1440) < 1020 ? 'Afternoon' : 'Evening';
+
+    results.push({
+      date: dateStr,
+      dayOfWeek,
+      startTime: startStr,
+      endTime: endStr,
+      scheduledMinutesOnDay,
+      remainingCapacityMinutes: remainingCapacity,
+      isRedLine,
+      period,
+      isSimultaneousSlot: Boolean(simTask),
+      simultaneousTaskTitle: simTask ? (simTask as any).title : undefined
+    });
+    return true;
+  };
+
+  for (const gap of gaps) {
+    if (results.length >= maxSlotsPerDay) break;
+    tryAddCandidateSlot(gap.start);
+
     // If gap is large enough, add intermediate step slots (e.g. +30m or +60m)
     const step = Math.max(30, durationMinutes >= 90 ? 60 : 30);
-    let nextStart = slot1Start + step;
+    let nextStart = gap.start + step;
     while (nextStart + durationMinutes <= gap.end && results.length < maxSlotsPerDay) {
-      const nextEnd = nextStart + durationMinutes;
-      const nextStartStr = formatMinutesTo12Hour(nextStart);
-      const nextEndStr = formatMinutesTo12Hour(nextEnd);
-
-      if (!isTimeInSleepWindow(nextStartStr, nextEndStr, sleepStartTime, sleepEndTime)) {
-        if (!isToday || nextStart >= minFutureMinutes) {
-          if (!currentTaskSlot || dateStr !== currentTaskSlot.date || nextStartStr !== currentTaskSlot.startTime) {
-            const periodNext: 'Morning' | 'Afternoon' | 'Evening' = 
-              (nextStart % 1440) < 720 ? 'Morning' : (nextStart % 1440) < 1020 ? 'Afternoon' : 'Evening';
-
-            results.push({
-              date: dateStr,
-              dayOfWeek,
-              startTime: nextStartStr,
-              endTime: nextEndStr,
-              scheduledMinutesOnDay,
-              remainingCapacityMinutes: remainingCapacity,
-              isRedLine,
-              period: periodNext
-            });
-          }
-        }
-      }
+      tryAddCandidateSlot(nextStart);
       nextStart += step;
     }
   }
@@ -1992,13 +2036,13 @@ export interface SuggestedNextSlotResult {
  */
 export function findNextAvailableSlot(
   taskDurationMinutes: number,
-  allTasks: Array<{ taskDate: string; startTime: string; endTime: string; bufferMinutes?: number; status: string; recurrence?: string; selectedDays?: string[]; excludedDates?: string[]; id?: string }>,
+  allTasks: Array<{ taskDate: string; startTime: string; endTime: string; bufferMinutes?: number; status: string; recurrence?: string; selectedDays?: string[]; excludedDates?: string[]; id?: string; simultaneousWithIds?: string[] }>,
   capacitySettings?: { dayStartTime?: string; dayEndTime?: string; sleepStartTime?: string; sleepEndTime?: string },
   ignoreTaskId?: string,
   startDateStr?: string,
   preferPm = false,
   bufferGap = 15,
-  currentTaskSlot?: { date: string; startTime: string }
+  currentTaskSlot?: CurrentTaskSlotInfo
 ): SuggestedNextSlotResult | null {
   const now = new Date();
   const todayStr = toISODateString(now);
@@ -2013,6 +2057,9 @@ export function findNextAvailableSlot(
 
   // If a startDateStr was requested that is in the future, start counting from that date
   const baseDate = startDateStr && startDateStr > todayStr ? new Date(startDateStr + 'T00:00:00') : new Date();
+
+  const targetTaskId = currentTaskSlot?.id || ignoreTaskId;
+  const targetSimultaneousIds = currentTaskSlot?.simultaneousWithIds || [];
 
   // Scan up to 60 days to find earliest available slot
   for (let offset = 0; offset <= 60; offset++) {
@@ -2046,8 +2093,7 @@ export function findNextAvailableSlot(
       // If there is an active running task right now, no slot can start before that task completes
       const activeWorkingTask = allTasks.find(t => 
         t.status === 'Working' && 
-        isTaskScheduledForDate(t, todayStr) &&
-        (!ignoreTaskId || t.id !== ignoreTaskId)
+        isTaskScheduledForDate(t, todayStr)
       );
       if (activeWorkingTask) {
         let aEnd = parse12HourToMinutes(activeWorkingTask.endTime);
@@ -2073,16 +2119,33 @@ export function findNextAvailableSlot(
       }
     }
 
-    // Filter active tasks on dateStr
-    const dayTasks = allTasks.filter(t => 
-      (!ignoreTaskId || t.id !== ignoreTaskId) &&
-      isTaskScheduledForDate(t, dateStr) && 
-      t.status !== 'Terminated' && 
-      t.status !== 'Done' && 
-      t.startTime && 
-      t.endTime &&
-      t.startTime !== 'All Day'
-    );
+    // Filter tasks that block available time:
+    // Only non-simultaneous tasks block.
+    // On currentTaskSlot.date, currentTaskSlot blocks so candidate slot cannot partially overlap.
+    const dayTasks = allTasks.filter(t => {
+      if (!isTaskScheduledForDate(t, dateStr)) return false;
+      if (t.status === 'Terminated' || t.status === 'Done') return false;
+      if (!t.startTime || !t.endTime || t.startTime === 'All Day') return false;
+
+      // If t is the task being rescheduled:
+      if (targetTaskId && t.id === targetTaskId) {
+        if (currentTaskSlot && dateStr === currentTaskSlot.date) {
+          return true; // Keep as occupied block on its current date!
+        }
+        return false;
+      }
+
+      // If simultaneous with target task, it does not block (simultaneous tasks zone)
+      const isSimultaneous = Boolean(
+        (targetSimultaneousIds.length > 0 && t.id && targetSimultaneousIds.includes(t.id)) ||
+        (t.simultaneousWithIds && targetTaskId && t.simultaneousWithIds.includes(targetTaskId))
+      );
+      if (isSimultaneous) {
+        return false;
+      }
+
+      return true;
+    });
 
     // Merge intervals
     const intervals = dayTasks.map(t => {
@@ -2111,6 +2174,30 @@ export function findNextAvailableSlot(
       }
     }
 
+    // Helper to validate slot candidate
+    const isValidCandidate = (startMin: number): boolean => {
+      const slotStartStr = formatMinutesTo12Hour(startMin);
+      const slotEndStr = formatMinutesTo12Hour(startMin + taskDurationMinutes);
+
+      if (isTimeInSleepWindow(slotStartStr, slotEndStr, sleepStartStr, sleepEndStr)) {
+        return false;
+      }
+
+      if (isToday && startMin < curHourMin + 5) {
+        return false;
+      }
+
+      // If on current task's scheduled date, prevent any overlap with the current task's own slot
+      if (currentTaskSlot && dateStr === currentTaskSlot.date && currentTaskSlot.startTime) {
+        const curEndStr = currentTaskSlot.endTime || addMinutesToTime(currentTaskSlot.startTime, taskDurationMinutes);
+        if (checkOverlap(slotStartStr, slotEndStr, currentTaskSlot.startTime, curEndStr)) {
+          return false;
+        }
+      }
+
+      return true;
+    };
+
     // Look for first gap that fits taskDurationMinutes outside sleep window
     let cursor = earliestAllowed;
     let foundSlot: { start: number; end: number } | null = null;
@@ -2120,17 +2207,9 @@ export function findNextAvailableSlot(
         const gapStart = Math.max(cursor, earliestAllowed);
         const gapEnd = Math.min(block.start, wakingEndMin);
         if (gapEnd - gapStart >= taskDurationMinutes) {
-          const slotStartStr = formatMinutesTo12Hour(gapStart);
-          const slotEndStr = formatMinutesTo12Hour(gapStart + taskDurationMinutes);
-          if (!isTimeInSleepWindow(slotStartStr, slotEndStr, sleepStartStr, sleepEndStr)) {
-            if (!isToday || gapStart >= curHourMin + 5) {
-              if (currentTaskSlot && dateStr === currentTaskSlot.date && slotStartStr === currentTaskSlot.startTime) {
-                // Skip the task's existing slot when rescheduling
-              } else {
-                foundSlot = { start: gapStart, end: gapStart + taskDurationMinutes };
-                break;
-              }
-            }
+          if (isValidCandidate(gapStart)) {
+            foundSlot = { start: gapStart, end: gapStart + taskDurationMinutes };
+            break;
           }
         }
       }
@@ -2140,16 +2219,8 @@ export function findNextAvailableSlot(
     if (!foundSlot && cursor < wakingEndMin) {
       const gapStart = Math.max(cursor, earliestAllowed);
       if (wakingEndMin - gapStart >= taskDurationMinutes) {
-        const slotStartStr = formatMinutesTo12Hour(gapStart);
-        const slotEndStr = formatMinutesTo12Hour(gapStart + taskDurationMinutes);
-        if (!isTimeInSleepWindow(slotStartStr, slotEndStr, sleepStartStr, sleepEndStr)) {
-          if (!isToday || gapStart >= curHourMin + 5) {
-            if (currentTaskSlot && dateStr === currentTaskSlot.date && slotStartStr === currentTaskSlot.startTime) {
-              // Skip the task's existing slot when rescheduling
-            } else {
-              foundSlot = { start: gapStart, end: gapStart + taskDurationMinutes };
-            }
-          }
+        if (isValidCandidate(gapStart)) {
+          foundSlot = { start: gapStart, end: gapStart + taskDurationMinutes };
         }
       }
     }
