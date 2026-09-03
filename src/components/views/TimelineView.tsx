@@ -1,6 +1,6 @@
 import React, { useMemo } from 'react';
 import { useApp } from '../../context/AppContext';
-import { Task, PriorityLevel, TaskStatus } from '../../types';
+import { Task, PriorityLevel, TaskStatus, BufferStatusNote } from '../../types';
 import { 
   parse12HourToMinutes, 
   formatMinutesTo12Hour, 
@@ -10,7 +10,9 @@ import {
   TimeGap,
   toISODateString,
   getTaskTitleClasses,
-  isTaskInSleepWindow
+  isTaskInSleepWindow,
+  getBufferActivityEmoji,
+  addMinutesToTime
 } from '../../utils/timeUtils';
 import { 
   Play, 
@@ -29,7 +31,9 @@ import {
   Layers,
   ArrowRight,
   Lock,
-  Moon
+  Moon,
+  Coffee,
+  Sparkles
 } from 'lucide-react';
 
 interface TimelineViewProps {
@@ -37,6 +41,10 @@ interface TimelineViewProps {
   onOpenTaskModal: (task?: Task, date?: string, startTime?: string) => void;
   onOpenRescheduleModal?: (task: Task) => void;
 }
+
+type TimelineItem = 
+  | { kind: 'task'; task: Task; startMin: number; endMin: number }
+  | { kind: 'buffer_note'; note: BufferStatusNote; startMin: number; endMin: number };
 
 export const TimelineView: React.FC<TimelineViewProps> = ({
   selectedDate,
@@ -53,7 +61,9 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
     updateTask, 
     deleteTask,
     requestDeleteTask,
-    bufferNotes
+    bufferNotes,
+    openBufferNoteModal,
+    deleteBufferNote
   } = useApp();
 
   const now = new Date();
@@ -66,6 +76,35 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
       .sort((a, b) => parse12HourToMinutes(a.startTime) - parse12HourToMinutes(b.startTime));
   }, [tasks, selectedDate]);
 
+  // Filter buffer notes for selected date
+  const dayBufferNotes = useMemo(() => {
+    return bufferNotes.filter(n => n.date === selectedDate)
+      .sort((a, b) => parse12HourToMinutes(a.startTime) - parse12HourToMinutes(b.startTime));
+  }, [bufferNotes, selectedDate]);
+
+  // Combined Chronological Items (Tasks & Buffer Notes)
+  const timelineItems = useMemo((): TimelineItem[] => {
+    const taskItems: TimelineItem[] = dayTasks.map(t => ({
+      kind: 'task',
+      task: t,
+      startMin: parse12HourToMinutes(t.startTime),
+      endMin: parse12HourToMinutes(t.endTime)
+    }));
+
+    const bufferItems: TimelineItem[] = dayBufferNotes.map(n => ({
+      kind: 'buffer_note',
+      note: n,
+      startMin: parse12HourToMinutes(n.startTime),
+      endMin: parse12HourToMinutes(n.endTime)
+    }));
+
+    return [...taskItems, ...bufferItems].sort((a, b) => {
+      if (a.startMin !== b.startMin) return a.startMin - b.startMin;
+      if (a.kind !== b.kind) return a.kind === 'task' ? -1 : 1;
+      return a.endMin - b.endMin;
+    });
+  }, [dayTasks, dayBufferNotes]);
+
   // Capacity boundaries
   const startDayMin = parse12HourToMinutes(capacitySettings.dayStartTime || '06:00 AM');
   const endDayMin = parse12HourToMinutes(capacitySettings.dayEndTime || '11:00 PM');
@@ -77,10 +116,10 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
       dayTasks, 
       capacitySettings.dayStartTime, 
       capacitySettings.dayEndTime,
-      bufferNotes.filter(n => n.date === selectedDate),
+      dayBufferNotes,
       capacitySettings.defaultBufferMinutes || 15
     );
-  }, [dayTasks, capacitySettings, bufferNotes, selectedDate]);
+  }, [dayTasks, capacitySettings, dayBufferNotes]);
 
   // Generate hourly time ticks from startDay to endDay
   const timeTicks = useMemo(() => {
@@ -108,17 +147,27 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
             <span>Interactive Chronological Timeline Track</span>
           </h3>
           <p className="text-xs text-theme-muted mt-0.5">
-            Visual progression of scheduled blocks, buffer margins, active timers & open schedule gaps for {selectedDate}.
+            Visual progression of scheduled blocks, logged buffer notes, active timers & open schedule gaps for {selectedDate}.
           </p>
         </div>
 
-        <button
-          onClick={() => onOpenTaskModal(undefined, selectedDate)}
-          className="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold shadow-sm flex items-center gap-1.5 transition-all"
-        >
-          <Plus className="w-3.5 h-3.5 stroke-[3]" />
-          <span>Add Task to Timeline</span>
-        </button>
+        <div className="flex items-center gap-2 flex-wrap">
+          <button
+            onClick={() => openBufferNoteModal({ date: selectedDate })}
+            className="px-3.5 py-1.5 bg-amber-500 hover:bg-amber-600 text-white rounded-xl text-xs font-bold shadow-sm flex items-center gap-1.5 transition-all cursor-pointer"
+          >
+            <Coffee className="w-3.5 h-3.5" />
+            <span>Log Buffer Note</span>
+          </button>
+
+          <button
+            onClick={() => onOpenTaskModal(undefined, selectedDate)}
+            className="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold shadow-sm flex items-center gap-1.5 transition-all cursor-pointer"
+          >
+            <Plus className="w-3.5 h-3.5 stroke-[3]" />
+            <span>Add Task to Timeline</span>
+          </button>
+        </div>
       </div>
 
       {/* Main Timeline Board */}
@@ -128,7 +177,7 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
         <div className="space-y-2">
           <div className="flex items-center justify-between text-[11px] font-bold text-theme-muted uppercase tracking-wider">
             <span>Day Overview ({capacitySettings.dayStartTime} → {capacitySettings.dayEndTime})</span>
-            <span>{dayTasks.length} Scheduled Blocks</span>
+            <span>{dayTasks.length} Tasks • {dayBufferNotes.length} Buffer Logs</span>
           </div>
 
           <div className="relative h-10 w-full bg-theme-card-hover rounded-xl border border-theme-border/80 overflow-hidden">
@@ -174,6 +223,26 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
               );
             })}
 
+            {/* Buffer Note blocks on mini ruler */}
+            {dayBufferNotes.map((b) => {
+              const startM = parse12HourToMinutes(b.startTime);
+              const endM = parse12HourToMinutes(b.endTime);
+              const left = Math.max(0, Math.min(100, ((startM - startDayMin) / totalDaySpan) * 100));
+              const width = Math.max(1, Math.min(100 - left, ((endM - startM) / totalDaySpan) * 100));
+
+              return (
+                <div
+                  key={b.id}
+                  onClick={() => openBufferNoteModal({ existingNote: b })}
+                  title={`☕ ${b.activityTag}: ${b.notes || 'Buffer Time'} (${b.startTime} - ${b.endTime})`}
+                  className="absolute top-1 bottom-1 rounded-lg cursor-pointer transition-all border border-amber-400 bg-amber-400/90 hover:bg-amber-300 text-amber-950 shadow-sm flex items-center justify-center font-bold text-[9px] overflow-hidden"
+                  style={{ left: `${left}%`, width: `${width}%` }}
+                >
+                  <span>☕</span>
+                </div>
+              );
+            })}
+
             {/* Current Time Indicator on Mini Ruler */}
             {isSelectedDateToday && currentMinutesFromMidnight >= startDayMin && currentMinutesFromMidnight <= endDayMin && (
               <div
@@ -189,46 +258,161 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
         {/* Detailed Vertical Chronological Timeline Track */}
         <div className="relative pl-6 sm:pl-8 space-y-4 before:absolute before:left-3 sm:before:left-4 before:top-2 before:bottom-2 before:w-0.5 before:bg-theme-border">
           
-          {dayTasks.length === 0 ? (
+          {timelineItems.length === 0 ? (
             <div className="p-10 text-center rounded-2xl bg-theme-card-hover/40 border border-dashed border-theme-border space-y-3">
               <Clock className="w-8 h-8 text-theme-muted mx-auto opacity-40" />
-              <h5 className="text-sm font-bold text-theme-text">No Tasks Scheduled for {selectedDate}</h5>
+              <h5 className="text-sm font-bold text-theme-text">No Tasks or Buffer Logs for {selectedDate}</h5>
               <p className="text-xs text-theme-muted max-w-sm mx-auto">
-                Your timeline is completely open. Click "Schedule Task" to add your first time-box for today.
+                Your timeline is completely open. Schedule a task or log a free-time buffer to account for your day.
               </p>
-              <button
-                onClick={() => onOpenTaskModal(undefined, selectedDate, capacitySettings.dayStartTime)}
-                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold shadow-md inline-flex items-center gap-1.5"
-              >
-                <Plus className="w-3.5 h-3.5 stroke-[3]" />
-                <span>Schedule First Block</span>
-              </button>
+              <div className="flex items-center justify-center gap-2">
+                <button
+                  onClick={() => openBufferNoteModal({ date: selectedDate })}
+                  className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-xl text-xs font-bold shadow-md inline-flex items-center gap-1.5 cursor-pointer"
+                >
+                  <Coffee className="w-3.5 h-3.5" />
+                  <span>Log Buffer Note</span>
+                </button>
+                <button
+                  onClick={() => onOpenTaskModal(undefined, selectedDate, capacitySettings.dayStartTime)}
+                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold shadow-md inline-flex items-center gap-1.5 cursor-pointer"
+                >
+                  <Plus className="w-3.5 h-3.5 stroke-[3]" />
+                  <span>Schedule Task</span>
+                </button>
+              </div>
             </div>
           ) : (
-            dayTasks.map((task, idx) => {
+            timelineItems.map((item, idx) => {
+              // Preceding gap check
+              const prevItem = timelineItems[idx - 1];
+              let gapBeforeMin = 0;
+              let gapStartTime = '';
+              if (prevItem) {
+                if (item.startMin > prevItem.endMin) {
+                  gapBeforeMin = item.startMin - prevItem.endMin;
+                  gapStartTime = formatMinutesTo12Hour(prevItem.endMin);
+                }
+              }
+
+              // RENDER BUFFER NOTE
+              if (item.kind === 'buffer_note') {
+                const note = item.note;
+                return (
+                  <React.Fragment key={`buf-item-${note.id}`}>
+                    {/* Gap indicator */}
+                    {gapBeforeMin >= 15 && (
+                      <div className="relative flex items-center gap-2 py-1 -ml-4 pl-4 text-xs font-mono text-theme-muted">
+                        <div className="w-2 h-2 rounded-full bg-theme-border -ml-1 shrink-0" />
+                        <div className="flex-1 border-b border-dashed border-theme-border flex items-center justify-between pr-2">
+                          <span className="text-[10px] text-theme-muted font-bold">
+                            ⏳ Open Schedule Gap: {gapBeforeMin} mins ({gapStartTime} → {note.startTime})
+                          </span>
+                          <button
+                            onClick={() => openBufferNoteModal({ date: selectedDate, startTime: gapStartTime, durationMinutes: gapBeforeMin })}
+                            className="text-[10px] font-bold text-amber-600 dark:text-amber-400 hover:underline flex items-center gap-1 cursor-pointer"
+                          >
+                            <Coffee className="w-3 h-3" /> Log Buffer Note
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Buffer Note Timeline Item */}
+                    <div className="relative group">
+                      {/* Node Dot on Timeline */}
+                      <div className="absolute -left-[27px] sm:-left-[35px] top-4 w-4 h-4 rounded-full border-2 border-amber-300 dark:border-amber-700 bg-amber-500 shadow-sm shadow-amber-500/40 flex items-center justify-center text-[8px] text-white">
+                        ☕
+                      </div>
+
+                      <div className="p-4 rounded-2xl border border-amber-300 dark:border-amber-800/80 bg-amber-50/60 dark:bg-amber-950/30 hover:border-amber-400 transition-all shadow-sm space-y-2">
+                        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="text-[10px] font-black px-2 py-0.5 rounded font-mono bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200 flex items-center gap-1">
+                              <span>{getBufferActivityEmoji(note.activityTag)}</span>
+                              <span>{note.activityTag}</span>
+                            </span>
+
+                            <span className="text-xs font-mono font-bold text-amber-800 dark:text-amber-300 flex items-center gap-1">
+                              <Clock className="w-3.5 h-3.5 text-amber-600" />
+                              <span>{note.startTime} - {note.endTime} ({note.durationMinutes}m)</span>
+                            </span>
+
+                            {note.energyLevel !== undefined && (
+                              <span className="text-[10px] font-bold px-1.5 py-0.2 rounded bg-theme-card border border-theme-border text-theme-muted">
+                                ⚡ Energy: {note.energyLevel}/5
+                              </span>
+                            )}
+
+                            {note.signalNoise && (
+                              <span className={`text-[9px] font-black px-1.5 py-0.2 rounded-full ${
+                                note.signalNoise === 'signal'
+                                  ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300'
+                                  : 'bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300'
+                              }`}>
+                                {note.signalNoise.toUpperCase()}
+                              </span>
+                            )}
+
+                            {note.relatedTaskTitle && (
+                              <span className="text-[10px] text-theme-muted font-medium italic">
+                                Post-Task Buffer: {note.relatedTaskTitle}
+                              </span>
+                            )}
+                          </div>
+
+                          <div className="flex items-center gap-1">
+                            <button
+                              onClick={() => openBufferNoteModal({ existingNote: note })}
+                              className="p-1.5 rounded-lg hover:bg-theme-card-hover text-theme-muted hover:text-amber-600 transition-colors cursor-pointer"
+                              title="Edit Buffer Note"
+                            >
+                              <Edit2 className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              onClick={() => deleteBufferNote(note.id)}
+                              className="p-1.5 rounded-lg hover:bg-red-50 dark:hover:bg-red-950/40 text-theme-muted hover:text-red-500 transition-colors cursor-pointer"
+                              title="Delete Buffer Note"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </div>
+
+                        {note.notes ? (
+                          <p className="text-xs text-theme-text font-medium bg-theme-card/70 p-2.5 rounded-xl border border-theme-border/60">
+                            "{note.notes}"
+                          </p>
+                        ) : (
+                          <p className="text-xs text-theme-muted italic">
+                            Buffer / free-time block logged without additional journal details.
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  </React.Fragment>
+                );
+              }
+
+              // RENDER TASK ITEM
+              const task = item.task;
               const isWorking = task.status === 'Working';
               const isDone = task.status === 'Done';
               const isInSlot = isTaskInRunningSlot(task.taskDate, task.startTime, task.endTime);
               const isInSleep = isTaskInSleepWindow(task, capacitySettings);
               const pMeta = prioritySettings[task.priority];
 
-              // Check if there is an empty gap preceding this task
-              const prevTask = dayTasks[idx - 1];
-              let gapBeforeMin = 0;
-              let gapStartTime = '';
-              if (prevTask) {
-                const prevEnd = parse12HourToMinutes(prevTask.endTime);
-                const currStart = parse12HourToMinutes(task.startTime);
-                if (currStart > prevEnd) {
-                  gapBeforeMin = currStart - prevEnd;
-                  gapStartTime = prevTask.endTime;
-                }
-              }
+              // Check if post-task buffer has been logged as a user buffer note
+              const taskEndM = parse12HourToMinutes(task.endTime);
+              const taskBufMin = task.bufferMinutes !== undefined ? task.bufferMinutes : (capacitySettings.defaultBufferMinutes || 15);
+              const matchingBufferNote = dayBufferNotes.find(n => 
+                n.relatedTaskId === task.id ||
+                (parse12HourToMinutes(n.startTime) < taskEndM + taskBufMin && parse12HourToMinutes(n.endTime) > taskEndM)
+              );
 
               return (
-                <React.Fragment key={task.id}>
-                  
-                  {/* Schedule Gap Alert & Quick Fill Pill */}
+                <React.Fragment key={`task-item-${task.id}`}>
+                  {/* Gap Alert & Quick Fill Pill */}
                   {gapBeforeMin >= 15 && (
                     <div className="relative flex items-center gap-2 py-1 -ml-4 pl-4 text-xs font-mono text-theme-muted">
                       <div className="w-2 h-2 rounded-full bg-theme-border -ml-1 shrink-0" />
@@ -236,12 +420,20 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
                         <span className="text-[10px] text-theme-muted font-bold">
                           ⏳ Open Schedule Gap: {gapBeforeMin} mins ({gapStartTime} → {task.startTime})
                         </span>
-                        <button
-                          onClick={() => onOpenTaskModal(undefined, selectedDate, gapStartTime)}
-                          className="text-[10px] font-bold text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-1"
-                        >
-                          <Plus className="w-3 h-3" /> Fill Gap
-                        </button>
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => openBufferNoteModal({ date: selectedDate, startTime: gapStartTime, durationMinutes: gapBeforeMin })}
+                            className="text-[10px] font-bold text-amber-600 dark:text-amber-400 hover:underline flex items-center gap-1 cursor-pointer"
+                          >
+                            <Coffee className="w-3 h-3" /> Log Buffer Note
+                          </button>
+                          <button
+                            onClick={() => onOpenTaskModal(undefined, selectedDate, gapStartTime)}
+                            className="text-[10px] font-bold text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-1 cursor-pointer"
+                          >
+                            <Plus className="w-3 h-3" /> Fill Task
+                          </button>
+                        </div>
                       </div>
                     </div>
                   )}
@@ -331,7 +523,10 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
 
                       {/* Title & Description */}
                       <div className="mt-2 space-y-1">
-                        <h4 className={getTaskTitleClasses(task.title, isDone, isInSleep)}>
+                        <h4 
+                          onClick={() => onOpenTaskModal(task)}
+                          className={`${getTaskTitleClasses(task.title, isDone, isInSleep)} cursor-pointer hover:text-blue-600 transition-colors`}
+                        >
                           {task.title}
                         </h4>
                         {task.description && (
@@ -340,6 +535,48 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
                           </p>
                         )}
                       </div>
+
+                      {/* Post-task Buffer Section */}
+                      {taskBufMin > 0 && (
+                        <div className="mt-2.5 pt-2 border-t border-dashed border-theme-border flex items-center justify-between text-xs flex-wrap gap-2">
+                          <div className="flex items-center gap-2 text-theme-muted">
+                            <span className="font-mono font-bold text-[11px] text-purple-600 dark:text-purple-400">
+                              🟣 {taskBufMin}m Buffer Margin ({task.endTime} → {addMinutesToTime(task.endTime, taskBufMin)})
+                            </span>
+                          </div>
+
+                          {matchingBufferNote ? (
+                            <div className="flex items-center gap-2">
+                              <span className="text-[11px] text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/60 px-2 py-0.5 rounded-lg border border-amber-200 dark:border-amber-800 flex items-center gap-1 font-medium">
+                                <span>☕ Logged:</span>
+                                <strong>{matchingBufferNote.activityTag}</strong>
+                                {matchingBufferNote.notes && <span className="truncate max-w-[120px]">("{matchingBufferNote.notes}")</span>}
+                              </span>
+                              <button
+                                onClick={() => openBufferNoteModal({ existingNote: matchingBufferNote })}
+                                className="text-[11px] font-bold text-amber-600 hover:underline cursor-pointer"
+                              >
+                                Edit Note
+                              </button>
+                            </div>
+                          ) : (
+                            <button
+                              onClick={() => openBufferNoteModal({
+                                date: selectedDate,
+                                startTime: task.endTime,
+                                endTime: addMinutesToTime(task.endTime, taskBufMin),
+                                durationMinutes: taskBufMin,
+                                relatedTaskId: task.id,
+                                relatedTaskTitle: task.title
+                              })}
+                              className="text-[11px] font-bold text-purple-600 dark:text-purple-400 hover:underline flex items-center gap-1 cursor-pointer"
+                            >
+                              <Coffee className="w-3.5 h-3.5" />
+                              <span>+ Log Buffer Note</span>
+                            </button>
+                          )}
+                        </div>
+                      )}
 
                       {/* Bottom Action Line & Metrics */}
                       <div className="mt-3 pt-2.5 border-t border-theme-border/60 flex flex-wrap items-center justify-between gap-3 text-xs">
@@ -350,7 +587,6 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
                               Logged Time: {task.totalActualMinutes}m
                             </span>
                           )}
-                          <span>Buffer: {task.bufferMinutes}m</span>
                           {(task.subtasks || []).length > 0 && (
                             <span>{task.subtasks.filter(s => s.isCompleted).length}/{task.subtasks.length} Subtasks</span>
                           )}
@@ -362,7 +598,7 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
                             isWorking ? (
                               <button
                                 onClick={() => pauseTask(task.id)}
-                                className="px-3 py-1 bg-amber-500 hover:bg-amber-600 text-white rounded-lg font-bold text-[11px] flex items-center gap-1 shadow-sm"
+                                className="px-3 py-1 bg-amber-500 hover:bg-amber-600 text-white rounded-lg font-bold text-[11px] flex items-center gap-1 shadow-sm cursor-pointer"
                               >
                                 <Pause className="w-3 h-3" />
                                 <span>Pause</span>
@@ -370,7 +606,7 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
                             ) : (
                               <button
                                 onClick={() => startTask(task.id)}
-                                className="px-3 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-bold text-[11px] flex items-center gap-1 shadow-sm"
+                                className="px-3 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-bold text-[11px] flex items-center gap-1 shadow-sm cursor-pointer"
                               >
                                 <Play className="w-3 h-3" />
                                 <span>Start</span>
@@ -381,7 +617,7 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
                           {!isDone ? (
                             <button
                               onClick={() => completeTask(task.id)}
-                              className="p-1.5 rounded-lg border border-theme-border hover:bg-emerald-50 hover:text-emerald-600 text-theme-muted transition-colors"
+                              className="p-1.5 rounded-lg border border-theme-border hover:bg-emerald-50 hover:text-emerald-600 text-theme-muted transition-colors cursor-pointer"
                               title="Mark Done"
                             >
                               <Check className="w-3.5 h-3.5" />
@@ -389,7 +625,7 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
                           ) : (
                             <button
                               onClick={() => updateTask({ ...task, status: 'Pending' })}
-                              className="p-1.5 rounded-lg text-emerald-600 bg-emerald-100 dark:bg-emerald-950 hover:bg-emerald-200"
+                              className="p-1.5 rounded-lg text-emerald-600 bg-emerald-100 dark:bg-emerald-950 hover:bg-emerald-200 cursor-pointer"
                               title="Reopen"
                             >
                               <CheckCircle2 className="w-3.5 h-3.5" />
@@ -398,7 +634,7 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
 
                           <button
                             onClick={() => onOpenTaskModal(task)}
-                            className="p-1.5 rounded-lg border border-theme-border hover:bg-theme-card-hover text-theme-muted hover:text-theme-text transition-colors"
+                            className="p-1.5 rounded-lg border border-theme-border hover:bg-theme-card-hover text-theme-muted hover:text-theme-text transition-colors cursor-pointer"
                             title="Edit"
                           >
                             <Edit2 className="w-3.5 h-3.5" />
@@ -406,7 +642,7 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
 
                           <button
                             onClick={() => requestDeleteTask(task, selectedDate)}
-                            className="p-1.5 rounded-lg border border-theme-border hover:bg-rose-50 hover:text-rose-600 text-theme-muted transition-colors"
+                            className="p-1.5 rounded-lg border border-theme-border hover:bg-rose-50 hover:text-rose-600 text-theme-muted transition-colors cursor-pointer"
                             title="Delete"
                           >
                             <Trash2 className="w-3.5 h-3.5" />

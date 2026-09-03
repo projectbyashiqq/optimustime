@@ -372,14 +372,14 @@ export const AdminSettingsView: React.FC = () => {
 
         <button
           onClick={() => {
-            if (confirm('Reset entire system state to default rich demo data?')) {
+            if (confirm('Are you sure you want to empty all tasks, notes, buffer logs, and projects, and reset to clean default settings?')) {
               resetToDefaultData();
             }
           }}
-          className="flex items-center gap-1.5 px-3.5 py-2 bg-theme-card-hover hover:bg-red-50 dark:hover:bg-red-950/40 text-theme-muted hover:text-red-500 border border-theme-border text-xs font-bold rounded-xl transition-colors"
+          className="flex items-center gap-1.5 px-3.5 py-2 bg-theme-card-hover hover:bg-red-50 dark:hover:bg-red-950/40 text-theme-muted hover:text-red-500 border border-theme-border text-xs font-bold rounded-xl transition-colors cursor-pointer"
         >
           <RotateCcw className="w-3.5 h-3.5" />
-          <span>Reset to Demo Data</span>
+          <span>Clear All Tasks & Reset Defaults</span>
         </button>
       </div>
 

@@ -253,6 +253,7 @@ export const Day24HourView: React.FC<Day24HourViewProps> = ({
               <div
                 key={note.id}
                 onClick={() => openBufferNoteModal({
+                  existingNote: note,
                   id: note.id,
                   date: note.date,
                   startTime: note.startTime,
@@ -294,6 +295,15 @@ export const Day24HourView: React.FC<Day24HourViewProps> = ({
             const topPx = (endM / 60) * HOUR_HEIGHT;
             const heightPx = Math.max(16, (bufMin / 60) * HOUR_HEIGHT - 2);
             const bufEnd12h = addMinutesToTime(task.endTime, bufMin);
+
+            // Check if user already logged a buffer note during this window
+            const existingBufferNote = dayBufferNotes.find(n => 
+              n.relatedTaskId === task.id || 
+              (parse12HourToMinutes(n.startTime) < endM + bufMin && parse12HourToMinutes(n.endTime) > endM)
+            );
+
+            // If already logged, don't show an overlapping blank break buffer box
+            if (existingBufferNote) return null;
 
             return (
               <div

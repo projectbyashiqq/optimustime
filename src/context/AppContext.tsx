@@ -245,7 +245,7 @@ interface AppContextType {
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
-const STORAGE_KEY = 'optimustime_app_state_v1';
+const STORAGE_KEY = 'optimustime_app_state_v2';
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   // Load state from LocalStorage or Fallback
@@ -2450,18 +2450,23 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, [setTheme]);
 
   const resetToDefaultData = useCallback(() => {
-    // Save rollback snapshot of current state before wiping to demo defaults
+    // Save rollback snapshot of current state before wiping to clean defaults
     const currentFullBackup = exportStateJson();
     saveRollbackSnapshot(currentFullBackup);
     setCanRollback(true);
 
-    setTasks(INITIAL_TASKS);
+    setTasks([]);
     setCategories(INITIAL_CATEGORIES);
     setCapacitySettings(DEFAULT_CAPACITY);
     setPrioritySettings(DEFAULT_PRIORITIES);
-    setReminders(INITIAL_REMINDERS);
-    setKnowledge(INITIAL_KNOWLEDGE);
-    setBufferNotes(INITIAL_BUFFER_NOTES);
+    setDefaultTaskSettings(DEFAULT_TASK_PRESETS);
+    setReminders([]);
+    setKnowledge([]);
+    setBufferNotes([]);
+    setBufferCategories(INITIAL_BUFFER_CATEGORIES);
+    setEmergencyCategories(INITIAL_EMERGENCY_CATEGORIES);
+    setPlanProjects([]);
+    setAuditLogs([]);
     setTheme('light');
   }, [exportStateJson, setTheme]);
 

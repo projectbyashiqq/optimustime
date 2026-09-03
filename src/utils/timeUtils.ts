@@ -923,15 +923,27 @@ export function get24HourContinuousTimeline(
       const bufStart = clampedEnd;
       const bufEnd = Math.min(1440, bufStart + buf);
       if (bufEnd > bufStart) {
-        rawIntervals.push({
-          start: bufStart,
-          end: bufEnd,
-          type: 'task_buffer',
-          title: `Buffer (${t.projectCode})`,
-          task: t,
-          signalNoise: 'signal',
-          snReason: 'Mindful post-task transition buffer'
+        // Check if user already logged a buffer note during this post-task window
+        const matchingNote = dayBufferNotes.find(n => {
+          if (n.relatedTaskId === t.id) return true;
+          const s = parse12HourToMinutes(n.startTime);
+          let e = parse12HourToMinutes(n.endTime);
+          if (e <= s) e += 1440;
+          return s < bufEnd && e > bufStart;
         });
+
+        // Only add placeholder task_buffer if NOT already logged as a user buffer note!
+        if (!matchingNote) {
+          rawIntervals.push({
+            start: bufStart,
+            end: bufEnd,
+            type: 'task_buffer',
+            title: `Buffer (${t.projectCode})`,
+            task: t,
+            signalNoise: 'signal',
+            snReason: 'Mindful post-task transition buffer'
+          });
+        }
       }
     }
   }
@@ -1017,11 +1029,18 @@ export function get24HourContinuousTimeline(
   }
 
   // Sort all intervals chronologically by start time.
-  // Prioritize user tasks and buffer notes over auto-sleep if their start times coincide.
+  // Explicit priority: user buffer notes & tasks MUST take precedence over auto-sleep and generic task buffers
   rawIntervals.sort((a, b) => {
     if (a.start !== b.start) return a.start - b.start;
-    if (a.type === 'sleep' && b.type !== 'sleep') return 1;
-    if (b.type === 'sleep' && a.type !== 'sleep') return -1;
+    const typePriority = (type: DaySlice24['type']) => {
+      if (type === 'buffer_note') return 1;
+      if (type.startsWith('work_')) return 2;
+      if (type === 'task_buffer') return 3;
+      if (type === 'sleep') return 4;
+      return 5;
+    };
+    const diff = typePriority(a.type) - typePriority(b.type);
+    if (diff !== 0) return diff;
     return b.end - a.end;
   });
 

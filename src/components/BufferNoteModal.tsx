@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useApp } from '../context/AppContext';
 import { BufferCategoryItem, BufferStatusNote, SignalNoiseType } from '../types';
 import { detectSignalVsNoise } from '../utils/signalNoiseUtils';
@@ -33,6 +33,7 @@ export const BufferNoteModal: React.FC = () => {
   const { 
     bufferNoteModalState, 
     closeBufferNoteModal, 
+    bufferNotes,
     addBufferNote, 
     updateBufferNote, 
     deleteBufferNote,
@@ -44,7 +45,24 @@ export const BufferNoteModal: React.FC = () => {
   } = useApp();
 
   const { isOpen, initialData } = bufferNoteModalState;
-  const isEditing = !!initialData?.existingNote;
+
+  // Centralized resolution of existing note: by object, by id, by task+date, or by date+startTime
+  const existingNote = useMemo(() => {
+    if (!initialData) return undefined;
+    if (initialData.existingNote) return initialData.existingNote;
+    if (initialData.id) return bufferNotes.find(n => n.id === initialData.id);
+    if (initialData.relatedTaskId && initialData.date) {
+      const byTask = bufferNotes.find(n => n.relatedTaskId === initialData.relatedTaskId && n.date === initialData.date);
+      if (byTask) return byTask;
+    }
+    if (initialData.date && initialData.startTime) {
+      const byTime = bufferNotes.find(n => n.date === initialData.date && n.startTime === initialData.startTime);
+      if (byTime) return byTime;
+    }
+    return undefined;
+  }, [initialData, bufferNotes]);
+
+  const isEditing = !!existingNote;
 
   const todayStr = toISODateString(new Date());
 
@@ -73,28 +91,27 @@ export const BufferNoteModal: React.FC = () => {
     energyLevel
   });
 
-  // Sync state whenever modal opens or initialData changes
+  // Sync state whenever modal opens or initialData / existingNote changes
   useEffect(() => {
     if (isOpen) {
       setIsManagingCategories(false);
       setEditingCategory(null);
-      if (initialData?.existingNote) {
-        const note = initialData.existingNote;
-        setDate(note.date);
-        setStartTime(note.startTime);
-        setEndTime(note.endTime);
-        setActivityTag(note.activityTag);
-        setNotes(note.notes || '');
-        setEnergyLevel(note.energyLevel ?? 4);
-        if (note.signalNoise) {
-          setSignalNoise(note.signalNoise);
+      if (existingNote) {
+        setDate(existingNote.date);
+        setStartTime(existingNote.startTime);
+        setEndTime(existingNote.endTime);
+        setActivityTag(existingNote.activityTag);
+        setNotes(existingNote.notes || '');
+        setEnergyLevel(existingNote.energyLevel ?? 4);
+        if (existingNote.signalNoise) {
+          setSignalNoise(existingNote.signalNoise);
           setManualOverrideSN(true);
         } else {
           const detected = detectSignalVsNoise({
-            title: note.activityTag,
-            notes: note.notes,
-            tag: note.activityTag,
-            energyLevel: note.energyLevel
+            title: existingNote.activityTag,
+            notes: existingNote.notes,
+            tag: existingNote.activityTag,
+            energyLevel: existingNote.energyLevel
           });
           setSignalNoise(detected.type);
           setManualOverrideSN(false);
@@ -122,7 +139,7 @@ export const BufferNoteModal: React.FC = () => {
         setManualOverrideSN(false);
       }
     }
-  }, [isOpen, initialData, todayStr, bufferCategories]);
+  }, [isOpen, existingNote, initialData, todayStr, bufferCategories]);
 
   // Update auto-suggested signal/noise when notes or tag change if user hasn't locked a manual choice
   const handleTagSelect = (tag: string) => {
@@ -161,9 +178,9 @@ export const BufferNoteModal: React.FC = () => {
 
   const handleSaveNote = (e: React.FormEvent) => {
     e.preventDefault();
-    if (isEditing && initialData?.existingNote) {
+    if (isEditing && existingNote) {
       updateBufferNote({
-        ...initialData.existingNote,
+        ...existingNote,
         date,
         startTime,
         endTime,
@@ -191,8 +208,8 @@ export const BufferNoteModal: React.FC = () => {
   };
 
   const handleDeleteNote = () => {
-    if (initialData?.existingNote) {
-      deleteBufferNote(initialData.existingNote.id);
+    if (existingNote) {
+      deleteBufferNote(existingNote.id);
       closeBufferNoteModal();
     }
   };
