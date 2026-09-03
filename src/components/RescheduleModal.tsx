@@ -61,15 +61,15 @@ export const RescheduleModal: React.FC<RescheduleModalProps> = ({
     return toISODateString(d);
   })();
 
-  // 1. Calculate the ideal conflict-free NEXT AVAILABLE slot (even if next day, avoiding sleep time)
-  // Strictly avoid the task's existing slot so we never suggest the same time back to the user
+  // 1. Calculate the ideal conflict-free NEXT AVAILABLE slot strictly starting from TOMORROW
+  // Rescheduling does not work in Today; only Tomorrow and future dates are acceptable
   const suggestedNextSlot = useMemo(() => {
     return findNextAvailableSlot(
       task.appointedMinutes,
       allTasks,
       capacitySettings,
       task.id,
-      undefined,
+      tomorrowStr, // Strictly start from Tomorrow onwards!
       false,
       15,
       { 
@@ -80,24 +80,24 @@ export const RescheduleModal: React.FC<RescheduleModalProps> = ({
         simultaneousWithIds: task.simultaneousWithIds
       }
     );
-  }, [task.appointedMinutes, allTasks, capacitySettings, task.id, task.taskDate, task.startTime, task.endTime, task.simultaneousWithIds]);
+  }, [task.appointedMinutes, allTasks, capacitySettings, task.id, task.taskDate, task.startTime, task.endTime, task.simultaneousWithIds, tomorrowStr]);
 
   const [anchorDate, setAnchorDate] = useState<string>(() => {
-    if (suggestedNextSlot && suggestedNextSlot.date >= todayStr) {
+    if (suggestedNextSlot && suggestedNextSlot.date >= tomorrowStr) {
       return suggestedNextSlot.date;
     }
-    if (task.taskDate && task.taskDate >= todayStr) {
+    if (task.taskDate && task.taskDate >= tomorrowStr) {
       return task.taskDate;
     }
-    return todayStr;
+    return tomorrowStr;
   });
   const [selectedSlot, setSelectedSlot] = useState<AvailableSlotResult | null>(null);
   const [selectedDayFilter, setSelectedDayFilter] = useState<number | 'ALL'>('ALL');
   const [customDate, setCustomDate] = useState<string>(() => {
-    if (suggestedNextSlot && suggestedNextSlot.date >= todayStr) {
+    if (suggestedNextSlot && suggestedNextSlot.date >= tomorrowStr) {
       return suggestedNextSlot.date;
     }
-    if (task.taskDate && task.taskDate >= todayStr) {
+    if (task.taskDate && task.taskDate >= tomorrowStr) {
       return task.taskDate;
     }
     return tomorrowStr;
@@ -113,25 +113,9 @@ export const RescheduleModal: React.FC<RescheduleModalProps> = ({
     const target = new Date(parts[0], parts[1] - 1, parts[2] + days);
     const dateStr = toISODateString(target);
     const dayOfWeek = getDayOfWeekFromDate(dateStr);
-    const isToday = (dateStr === todayStr);
-    const isPast = (dateStr < todayStr);
-    let earliestAllowed = isToday ? currentMinutes + 5 : undefined;
-
-    // If an active task is running right now, no reschedule slot can start during its window
-    if (isToday) {
-      const activeWorkingTask = allTasks.find(t => 
-        t.status === 'Working' && 
-        isTaskScheduledForDate(t, todayStr) && 
-        t.id !== task.id
-      );
-      if (activeWorkingTask) {
-        const aStart = parse12HourToMinutes(activeWorkingTask.startTime);
-        let aEnd = parse12HourToMinutes(activeWorkingTask.endTime);
-        if (aEnd < aStart) aEnd += 1440;
-        const aEndWithBuf = aEnd + (activeWorkingTask.bufferMinutes !== undefined ? activeWorkingTask.bufferMinutes : 15);
-        earliestAllowed = Math.max(earliestAllowed ?? aEndWithBuf, aEndWithBuf);
-      }
-    }
+    // Strictly block Today and earlier: Reschedule does not work in Today; only Tomorrow onwards is acceptable!
+    const isPast = (dateStr < tomorrowStr);
+    const earliestAllowed = undefined;
 
     const slots = isPast ? [] : findAllAvailableSlotsOnDate(
       dateStr,
@@ -153,22 +137,19 @@ export const RescheduleModal: React.FC<RescheduleModalProps> = ({
       }
     );
 
-    let dayLabel = `+${days} Days`;
+    let dayLabel = `+${days + 1} Days`;
     let subLabel = `${dayOfWeek.slice(0, 3)}, ${dateStr}`;
     
-    if (dateStr === task.taskDate && days === 0) {
-      dayLabel = `Task Date (${dayOfWeek.slice(0, 3)})`;
-      subLabel = `${dateStr} (Current)`;
-    } else if (dateStr === todayStr) {
-      dayLabel = 'Today';
-      subLabel = `Remaining (${dayOfWeek.slice(0, 3)})`;
-    } else if (dateStr === tomorrowStr) {
+    if (dateStr === tomorrowStr) {
       dayLabel = 'Tomorrow';
       subLabel = `Full Day (${dayOfWeek.slice(0, 3)})`;
+    } else if (dateStr === task.taskDate && days === 0) {
+      dayLabel = `Task Date (${dayOfWeek.slice(0, 3)})`;
+      subLabel = `${dateStr} (Current)`;
     } else if (days === 1) {
-      dayLabel = `Next Day (+1d)`;
+      dayLabel = `+2 Days (+2d)`;
       subLabel = `${dayOfWeek.slice(0, 3)}, ${dateStr.slice(5)}`;
-    } else if (days === 7) {
+    } else if (days === 6 || days === 7) {
       dayLabel = `+1 Week (+7d)`;
       subLabel = `${dayOfWeek.slice(0, 3)}, ${dateStr.slice(5)}`;
     }
@@ -221,16 +202,14 @@ export const RescheduleModal: React.FC<RescheduleModalProps> = ({
 
   // Custom date slots calculation (multiple slots on custom chosen date)
   const customSlots = useMemo(() => {
-    if (!customDate || customDate < todayStr) return [];
-    const isToday = customDate === todayStr;
-    const earliest = isToday ? currentMinutes + 5 : undefined;
+    if (!customDate || customDate < tomorrowStr) return [];
     return findAllAvailableSlotsOnDate(
       customDate,
       task.appointedMinutes,
       allTasks,
       capacitySettings.dayStartTime,
       capacitySettings.dayEndTime,
-      earliest,
+      undefined,
       6,
       task.id,
       capacitySettings.sleepStartTime,
@@ -243,7 +222,7 @@ export const RescheduleModal: React.FC<RescheduleModalProps> = ({
         simultaneousWithIds: task.simultaneousWithIds
       }
     );
-  }, [customDate, task.appointedMinutes, allTasks, capacitySettings, todayStr, currentMinutes, task.id, task.taskDate, task.startTime, task.endTime, task.simultaneousWithIds]);
+  }, [customDate, task.appointedMinutes, allTasks, capacitySettings, tomorrowStr, task.id, task.taskDate, task.startTime, task.endTime, task.simultaneousWithIds]);
 
   // Auto-select the suggested optimal next slot by default
   React.useEffect(() => {
@@ -261,18 +240,22 @@ export const RescheduleModal: React.FC<RescheduleModalProps> = ({
       if (suggestedNextSlot.date > anchorDate) {
         setAnchorDate(suggestedNextSlot.date);
       }
-    } else if (!selectedSlot || selectedSlot.date < todayStr) {
+    } else if (!selectedSlot || selectedSlot.date < tomorrowStr) {
       for (const day of weekDaysData) {
-        if (day.dateStr >= todayStr && day.slots.length > 0) {
+        if (day.dateStr >= tomorrowStr && day.slots.length > 0) {
           setSelectedSlot(day.slots[0]);
           break;
         }
       }
     }
-  }, [suggestedNextSlot, weekDaysData, selectedSlot, todayStr]);
+  }, [suggestedNextSlot, weekDaysData, selectedSlot, tomorrowStr]);
 
   const handleApplyReschedule = () => {
     if (!selectedSlot) return;
+    if (selectedSlot.date < tomorrowStr) {
+      alert('Reschedule only works from Tomorrow onwards. Today cannot be rescheduled.');
+      return;
+    }
     onConfirmReschedule(task, selectedSlot.date, selectedSlot.startTime, selectedSlot.endTime, recurringScope);
     onClose();
   };
@@ -466,14 +449,14 @@ export const RescheduleModal: React.FC<RescheduleModalProps> = ({
         <div className="flex items-center justify-between p-2.5 rounded-2xl bg-theme-card-hover border border-theme-border flex-wrap gap-2 text-xs shrink-0">
           <div className="flex items-center gap-2">
             <Calendar className="w-4 h-4 text-blue-500 shrink-0" />
-            <span className="font-bold text-theme-text">Target Base Date:</span>
+            <span className="font-bold text-theme-text">Target Date (Tomorrow+):</span>
             <input 
               type="date"
-              min={todayStr}
+              min={tomorrowStr}
               value={anchorDate}
               onChange={(e) => {
                 if (e.target.value) {
-                  const val = e.target.value < todayStr ? todayStr : e.target.value;
+                  const val = e.target.value < tomorrowStr ? tomorrowStr : e.target.value;
                   setAnchorDate(val);
                   setSelectedSlot(null);
                 }
@@ -483,7 +466,7 @@ export const RescheduleModal: React.FC<RescheduleModalProps> = ({
           </div>
 
           <div className="flex items-center gap-1.5 flex-wrap">
-            {task.taskDate && task.taskDate >= todayStr && (
+            {task.taskDate && task.taskDate >= tomorrowStr && (
               <button
                 type="button"
                 onClick={() => {
@@ -500,26 +483,11 @@ export const RescheduleModal: React.FC<RescheduleModalProps> = ({
               </button>
             )}
 
-            {task.taskDate && task.taskDate < todayStr && (
-              <span className="px-2.5 py-1 rounded-lg font-bold text-amber-600 dark:text-amber-400 bg-amber-500/10 border border-amber-500/30 text-[11px] flex items-center gap-1">
-                ⚠️ Past Task ({task.taskDate}) → Moving to Future
+            {task.taskDate && task.taskDate < tomorrowStr && (
+              <span className="px-2.5 py-1 rounded-lg font-bold text-blue-600 dark:text-blue-400 bg-blue-500/10 border border-blue-500/30 text-[11px] flex items-center gap-1">
+                📅 Rescheduling from {task.taskDate === todayStr ? 'Today' : task.taskDate} → Tomorrow+
               </span>
             )}
-            
-            <button
-              type="button"
-              onClick={() => {
-                setAnchorDate(todayStr);
-                setSelectedSlot(null);
-              }}
-              className={`px-2.5 py-1 rounded-lg font-bold transition-all border ${
-                anchorDate === todayStr
-                  ? 'bg-blue-600 text-white border-blue-600 shadow-sm'
-                  : 'bg-theme-card text-theme-muted hover:text-theme-text border-theme-border'
-              }`}
-            >
-              Today
-            </button>
 
             <button
               type="button"
@@ -534,6 +502,34 @@ export const RescheduleModal: React.FC<RescheduleModalProps> = ({
               }`}
             >
               Tomorrow
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                const parts = tomorrowStr.split('-').map(Number);
+                const nextDay = new Date(parts[0], parts[1] - 1, parts[2] + 1);
+                const dStr = toISODateString(nextDay);
+                setAnchorDate(dStr);
+                setSelectedSlot(null);
+              }}
+              className="px-2.5 py-1 rounded-lg font-bold transition-all border bg-theme-card text-theme-muted hover:text-theme-text border-theme-border"
+            >
+              +2 Days
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                const parts = tomorrowStr.split('-').map(Number);
+                const nextWeek = new Date(parts[0], parts[1] - 1, parts[2] + 6);
+                const dStr = toISODateString(nextWeek);
+                setAnchorDate(dStr);
+                setSelectedSlot(null);
+              }}
+              className="px-2.5 py-1 rounded-lg font-bold transition-all border bg-theme-card text-theme-muted hover:text-theme-text border-theme-border"
+            >
+              +1 Week
             </button>
           </div>
         </div>
@@ -723,6 +719,9 @@ export const RescheduleModal: React.FC<RescheduleModalProps> = ({
                       <div className="text-[9px] text-theme-muted font-mono">
                         ↓ {task.endTime}
                       </div>
+                      <div className="text-[9px] font-bold text-red-600/90 dark:text-red-400/90 font-mono">
+                        ({task.taskDate === todayStr ? 'Today' : task.taskDate})
+                      </div>
                       {(() => {
                         const curPeriod = getTimePeriodForTime(task.startTime, timePeriodSettings);
                         return (
@@ -855,11 +854,9 @@ export const RescheduleModal: React.FC<RescheduleModalProps> = ({
                         }`}>
                           {hasSlots 
                             ? `${dayGroup.slots.length} Slots Available` 
-                            : dayGroup.dateStr === todayStr 
-                              ? 'No time left today' 
-                              : dayGroup.dateStr < todayStr 
-                                ? 'Past Date' 
-                                : 'Fully Booked'}
+                            : dayGroup.dateStr < tomorrowStr 
+                              ? 'Today/Past (Reschedule starts Tomorrow)' 
+                              : 'Fully Booked'}
                         </span>
                       </div>
 
@@ -1045,7 +1042,7 @@ export const RescheduleModal: React.FC<RescheduleModalProps> = ({
                 <input
                   type="date"
                   value={customDate}
-                  min={toISODateString(new Date())}
+                  min={tomorrowStr}
                   onChange={(e) => setCustomDate(e.target.value)}
                   className="w-full px-3.5 py-2.5 rounded-xl border border-theme-border bg-theme-card text-theme-text text-sm font-semibold focus:outline-none focus:border-emerald-500"
                 />
@@ -1104,10 +1101,16 @@ export const RescheduleModal: React.FC<RescheduleModalProps> = ({
                 <div className="p-4 rounded-2xl bg-red-50/50 dark:bg-red-950/20 border border-red-300 dark:border-red-800 text-center space-y-1">
                   <div className="text-xs font-bold text-red-600 dark:text-red-400 flex items-center justify-center gap-1">
                     <AlertCircle className="w-4 h-4" />
-                    <span>No available time slots found on selected date.</span>
+                    <span>
+                      {customDate < tomorrowStr 
+                        ? 'Reschedule only works from Tomorrow onwards. Today is not acceptable.' 
+                        : 'No available time slots found on selected date.'}
+                    </span>
                   </div>
                   <p className="text-[11px] text-theme-muted">
-                    This day is full during waking hours ({capacitySettings.dayStartTime} - {capacitySettings.dayEndTime}).
+                    {customDate < tomorrowStr 
+                      ? 'Please pick Tomorrow or a future date to reschedule this task.' 
+                      : `This day is full during waking hours (${capacitySettings.dayStartTime} - ${capacitySettings.dayEndTime}).`}
                   </p>
                 </div>
               )}
