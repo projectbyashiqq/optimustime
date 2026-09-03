@@ -13,6 +13,7 @@ import {
   findSimultaneousTasks
 } from '../utils/timeUtils';
 import { PlanProjectModal } from '../components/PlanProjectModal';
+import { RescheduleModal } from '../components/RescheduleModal';
 import { 
   Target, 
   Briefcase, 
@@ -59,7 +60,9 @@ export const PlansProjectsView: React.FC<PlansProjectsViewProps> = ({ onOpenTask
     updateTask, 
     assignTaskToPlanProject,
     prioritySettings,
-    categories
+    categories,
+    capacitySettings,
+    rescheduleTask
   } = useApp();
 
   // Active Bar Tab: 'plan' | 'project'
@@ -75,8 +78,25 @@ export const PlansProjectsView: React.FC<PlansProjectsViewProps> = ({ onOpenTask
   const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null);
   const [assignExistingModalOpen, setAssignExistingModalOpen] = useState(false);
   const [nowTime, setNowTime] = useState<Date>(new Date());
+  const [reschedulingTask, setReschedulingTask] = useState<Task | null>(null);
 
   const todayStr = toISODateString(new Date());
+
+  const handleConfirmReschedule = (taskToReschedule: Task, newDate: string, newStartTime: string, newEndTime: string, scope: 'single' | 'series' = 'single') => {
+    if (taskToReschedule.recurrence && taskToReschedule.recurrence !== 'None' && scope === 'single') {
+      rescheduleTask(taskToReschedule.id, newDate, newStartTime);
+    } else {
+      updateTask({
+        ...taskToReschedule,
+        taskDate: newDate,
+        dayOfWeek: getDayOfWeekFromDate(newDate),
+        startTime: newStartTime,
+        endTime: newEndTime,
+        status: 'Pending'
+      });
+    }
+    setReschedulingTask(null);
+  };
 
   // Filter folders by active bar (PLANS vs PROJECTS) and search/status
   const currentFolders = useMemo(() => {
@@ -838,6 +858,14 @@ export const PlansProjectsView: React.FC<PlansProjectsViewProps> = ({ onOpenTask
                             value={task.status}
                             onChange={(e) => {
                               const newSt = e.target.value as TaskStatus;
+                              if (newSt === 'Reschedule') {
+                                if (task.isMandatorySchedule) {
+                                  alert(`🔒 Mandatory Schedule: "${task.title}" is a locked fixed event and cannot be rescheduled.`);
+                                  return;
+                                }
+                                setReschedulingTask(task);
+                                return;
+                              }
                               if (newSt === 'Done') completeTask(task.id);
                               else if (newSt === 'Working') startTask(task.id);
                               else if (newSt === 'Hold') pauseTask(task.id);
@@ -1006,6 +1034,17 @@ export const PlansProjectsView: React.FC<PlansProjectsViewProps> = ({ onOpenTask
             </div>
           </div>
         </div>
+      )}
+
+      {/* Intelligent Reschedule Modal */}
+      {reschedulingTask && (
+        <RescheduleModal
+          task={reschedulingTask}
+          allTasks={tasks}
+          capacitySettings={capacitySettings}
+          onConfirmReschedule={handleConfirmReschedule}
+          onClose={() => setReschedulingTask(null)}
+        />
       )}
 
     </div>

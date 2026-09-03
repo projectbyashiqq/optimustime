@@ -2,7 +2,9 @@ import React, { useState, useMemo } from 'react';
 import { Task, CapacitySettings } from '../types';
 import { 
   findAllAvailableSlotsOnDate,
-  findAvailableSlotOnDate, 
+  findAvailableSlotOnDate,
+  findNextAvailableSlot,
+  SuggestedNextSlotResult,
   AvailableSlotResult, 
   toISODateString, 
   addMinutesToTime, 
@@ -25,7 +27,8 @@ import {
   Sun,
   Moon,
   Sunrise,
-  CalendarDays
+  CalendarDays,
+  ShieldCheck
 } from 'lucide-react';
 
 interface RescheduleModalProps {
@@ -53,7 +56,20 @@ export const RescheduleModal: React.FC<RescheduleModalProps> = ({
     return toISODateString(d);
   })();
 
+  // 1. Calculate the ideal conflict-free NEXT AVAILABLE slot (even if next day, avoiding sleep time)
+  const suggestedNextSlot = useMemo(() => {
+    return findNextAvailableSlot(
+      task.appointedMinutes,
+      allTasks,
+      capacitySettings,
+      task.id
+    );
+  }, [task.appointedMinutes, allTasks, capacitySettings, task.id]);
+
   const [anchorDate, setAnchorDate] = useState<string>(() => {
+    if (suggestedNextSlot && suggestedNextSlot.date >= todayStr) {
+      return suggestedNextSlot.date;
+    }
     if (task.taskDate && task.taskDate >= todayStr) {
       return task.taskDate;
     }
@@ -62,6 +78,9 @@ export const RescheduleModal: React.FC<RescheduleModalProps> = ({
   const [selectedSlot, setSelectedSlot] = useState<AvailableSlotResult | null>(null);
   const [selectedDayFilter, setSelectedDayFilter] = useState<number | 'ALL'>('ALL');
   const [customDate, setCustomDate] = useState<string>(() => {
+    if (suggestedNextSlot && suggestedNextSlot.date >= todayStr) {
+      return suggestedNextSlot.date;
+    }
     if (task.taskDate && task.taskDate >= todayStr) {
       return task.taskDate;
     }
@@ -90,7 +109,9 @@ export const RescheduleModal: React.FC<RescheduleModalProps> = ({
       capacitySettings.dayEndTime,
       earliestAllowed,
       6, // Up to 6 distinct slots per day
-      task.id
+      task.id,
+      capacitySettings.sleepStartTime,
+      capacitySettings.sleepEndTime
     );
 
     let dayLabel = `+${days} Days`;
@@ -148,7 +169,9 @@ export const RescheduleModal: React.FC<RescheduleModalProps> = ({
         capacitySettings.dayStartTime,
         capacitySettings.dayEndTime,
         earliest,
-        task.id
+        task.id,
+        capacitySettings.sleepStartTime,
+        capacitySettings.sleepEndTime
       );
       if (slot) {
         results.push(slot);
@@ -170,13 +193,29 @@ export const RescheduleModal: React.FC<RescheduleModalProps> = ({
       capacitySettings.dayEndTime,
       earliest,
       6,
-      task.id
+      task.id,
+      capacitySettings.sleepStartTime,
+      capacitySettings.sleepEndTime
     );
   }, [customDate, task.appointedMinutes, allTasks, capacitySettings, todayStr, currentMinutes, task.id]);
 
-  // Auto-select the first available FUTURE slot
+  // Auto-select the suggested optimal next slot by default
   React.useEffect(() => {
-    if (!selectedSlot || selectedSlot.date < todayStr) {
+    if (suggestedNextSlot && !selectedSlot) {
+      setSelectedSlot({
+        date: suggestedNextSlot.date,
+        dayOfWeek: suggestedNextSlot.dayOfWeek,
+        startTime: suggestedNextSlot.startTime,
+        endTime: suggestedNextSlot.endTime,
+        scheduledMinutesOnDay: 0,
+        remainingCapacityMinutes: 600,
+        isRedLine: false,
+        period: suggestedNextSlot.period
+      });
+      if (suggestedNextSlot.date > anchorDate) {
+        setAnchorDate(suggestedNextSlot.date);
+      }
+    } else if (!selectedSlot || selectedSlot.date < todayStr) {
       for (const day of weekDaysData) {
         if (day.dateStr >= todayStr && day.slots.length > 0) {
           setSelectedSlot(day.slots[0]);
@@ -184,7 +223,7 @@ export const RescheduleModal: React.FC<RescheduleModalProps> = ({
         }
       }
     }
-  }, [weekDaysData, selectedSlot, todayStr]);
+  }, [suggestedNextSlot, weekDaysData, selectedSlot, todayStr]);
 
   const handleApplyReschedule = () => {
     if (!selectedSlot) return;
@@ -273,6 +312,56 @@ export const RescheduleModal: React.FC<RescheduleModalProps> = ({
                 Entire Series
               </button>
             </div>
+          </div>
+        )}
+
+        {/* Suggested Next Available Time Slot Hero Card */}
+        {suggestedNextSlot && (
+          <div className="p-3.5 sm:p-4 rounded-2xl bg-gradient-to-r from-emerald-500/15 via-blue-500/10 to-indigo-500/15 border-2 border-emerald-500/50 dark:border-emerald-500/40 shadow-lg shadow-emerald-500/10 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shrink-0 animate-fade-in">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-emerald-600 to-teal-600 flex items-center justify-center text-white shrink-0 shadow-md shadow-emerald-600/30">
+                <Zap className="w-5 h-5 fill-current" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-[11px] font-black uppercase tracking-wider text-emerald-700 dark:text-emerald-300 flex items-center gap-1">
+                    <Sparkles className="w-3.5 h-3.5 text-emerald-500" />
+                    Suggested Next Available Slot
+                  </span>
+                  <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950/80 text-emerald-700 dark:text-emerald-300 border border-emerald-300/60 dark:border-emerald-700/60">
+                    {suggestedNextSlot.isNextDay ? (suggestedNextSlot.daysOffset === 1 ? '🌅 Next Day (+1d)' : `📅 In ${suggestedNextSlot.daysOffset} Days`) : '⚡ Today'}
+                  </span>
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-indigo-100 dark:bg-indigo-950/80 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 flex items-center gap-1">
+                    <ShieldCheck className="w-3 h-3 text-indigo-500" />
+                    Sleep Time Protected ({capacitySettings.sleepStartTime || '11:00 PM'} - {capacitySettings.sleepEndTime || '06:00 AM'})
+                  </span>
+                </div>
+                <div className="text-sm sm:text-base font-black font-display text-theme-text mt-0.5 flex items-center gap-2 flex-wrap">
+                  <span>{suggestedNextSlot.date} ({suggestedNextSlot.dayOfWeek})</span>
+                  <span className="text-emerald-600 dark:text-emerald-400 font-mono font-black">
+                    • {suggestedNextSlot.startTime} - {suggestedNextSlot.endTime}
+                  </span>
+                  <span className="text-xs font-normal text-theme-muted">
+                    ({suggestedNextSlot.durationMinutes} mins)
+                  </span>
+                </div>
+                <p className="text-[11px] text-theme-muted mt-0.5">
+                  {suggestedNextSlot.reason}
+                </p>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => {
+                onConfirmReschedule(task, suggestedNextSlot.date, suggestedNextSlot.startTime, suggestedNextSlot.endTime, recurringScope);
+                onClose();
+              }}
+              className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white text-xs font-black shadow-lg shadow-emerald-500/25 transition-all transform active:scale-95 flex items-center justify-center gap-1.5 shrink-0 cursor-pointer"
+            >
+              <Check className="w-4 h-4 stroke-[3]" />
+              <span>Confirm This Slot</span>
+            </button>
           </div>
         )}
 
@@ -490,6 +579,7 @@ export const RescheduleModal: React.FC<RescheduleModalProps> = ({
                         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5">
                           {dayGroup.slots.map((slot, sIdx) => {
                             const isSelected = selectedSlot?.date === slot.date && selectedSlot?.startTime === slot.startTime;
+                            const isSuggested = suggestedNextSlot?.date === slot.date && suggestedNextSlot?.startTime === slot.startTime;
 
                             return (
                               <button
@@ -499,7 +589,9 @@ export const RescheduleModal: React.FC<RescheduleModalProps> = ({
                                 className={`p-3 rounded-xl border text-left transition-all relative flex flex-col justify-between gap-2 cursor-pointer ${
                                   isSelected
                                     ? 'bg-blue-50/90 dark:bg-blue-950/80 border-blue-500 shadow-md ring-2 ring-blue-500/40'
-                                    : 'bg-theme-card-hover/70 hover:bg-theme-card-hover border-theme-border hover:border-blue-400 dark:hover:border-blue-600'
+                                    : isSuggested
+                                      ? 'bg-emerald-50/50 dark:bg-emerald-950/30 border-emerald-400/80 hover:border-emerald-500'
+                                      : 'bg-theme-card-hover/70 hover:bg-theme-card-hover border-theme-border hover:border-blue-400 dark:hover:border-blue-600'
                                 }`}
                               >
                                 <div className="flex items-center justify-between gap-1.5 w-full">
@@ -510,15 +602,24 @@ export const RescheduleModal: React.FC<RescheduleModalProps> = ({
                                     </span>
                                   </div>
 
-                                  {isSelected ? (
-                                    <div className="w-5 h-5 rounded-full bg-blue-600 text-white flex items-center justify-center shrink-0">
-                                      <Check className="w-3 h-3 stroke-[3]" />
-                                    </div>
-                                  ) : (
-                                    <span className="text-[10px] font-mono text-theme-muted font-semibold">
-                                      Slot #{sIdx + 1}
-                                    </span>
-                                  )}
+                                  <div className="flex items-center gap-1">
+                                    {isSuggested && (
+                                      <span className="text-[9px] font-black px-1.5 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-700 flex items-center gap-0.5">
+                                        <Zap className="w-2.5 h-2.5 fill-current" />
+                                        RECOMMENDED NEXT
+                                      </span>
+                                    )}
+
+                                    {isSelected ? (
+                                      <div className="w-5 h-5 rounded-full bg-blue-600 text-white flex items-center justify-center shrink-0">
+                                        <Check className="w-3 h-3 stroke-[3]" />
+                                      </div>
+                                    ) : (
+                                      <span className="text-[10px] font-mono text-theme-muted font-semibold">
+                                        Slot #{sIdx + 1}
+                                      </span>
+                                    )}
+                                  </div>
                                 </div>
 
                                 <div>
