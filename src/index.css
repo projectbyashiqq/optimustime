@@ -162,18 +162,150 @@ input[type="date"]::-webkit-calendar-picker-indicator:hover {
   transform: scale(1.15);
 }
 
-/* Typography & Font Smoothing */
+/* =========================================================================
+   GOD-LEVEL PRO BUTTON SYSTEM (Apple / Linear / Raycast Caliber)
+   ========================================================================= */
+
+.btn-pro {
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-family: 'Outfit', sans-serif;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  user-select: none;
+  position: relative;
+  overflow: hidden;
+  transition: all 180ms cubic-bezier(0.16, 1, 0.3, 1);
+  -webkit-tap-highlight-color: transparent;
+}
+
+.btn-pro:active {
+  transform: scale(0.96) translateY(0.5px);
+}
+
+/* Primary Pro Button (Electric Sapphire / Royal Blue) */
+.btn-pro-primary {
+  background: linear-gradient(180deg, #3B82F6 0%, #2563EB 100%);
+  color: #FFFFFF !important;
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  border-bottom-color: rgba(0, 0, 0, 0.25);
+  box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.35), 0 2px 8px -1px rgba(37, 99, 235, 0.45);
+}
+.btn-pro-primary:hover {
+  filter: brightness(1.1);
+  box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.45), 0 4px 14px 0 rgba(37, 99, 235, 0.55);
+  transform: translateY(-1px);
+}
+
+/* Success Pro Button (Emerald Mint / Done) */
+.btn-pro-success {
+  background: linear-gradient(180deg, #10B981 0%, #059669 100%);
+  color: #FFFFFF !important;
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  border-bottom-color: rgba(0, 0, 0, 0.25);
+  box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.35), 0 2px 8px -1px rgba(16, 185, 129, 0.45);
+}
+.btn-pro-success:hover {
+  filter: brightness(1.1);
+  box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.45), 0 4px 14px 0 rgba(16, 185, 129, 0.55);
+  transform: translateY(-1px);
+}
+
+/* Warning Pro Button (Amber Dusk / Pause / Hold) */
+.btn-pro-warning {
+  background: linear-gradient(180deg, #F59E0B 0%, #D97706 100%);
+  color: #FFFFFF !important;
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  border-bottom-color: rgba(0, 0, 0, 0.25);
+  box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.35), 0 2px 8px -1px rgba(245, 158, 11, 0.45);
+}
+.btn-pro-warning:hover {
+  filter: brightness(1.1);
+  box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.45), 0 4px 14px 0 rgba(245, 158, 11, 0.55);
+  transform: translateY(-1px);
+}
+
+/* Danger Pro Button (Crimson Glow / Delete / Terminate) */
+.btn-pro-danger {
+  background: linear-gradient(180deg, #EF4444 0%, #DC2626 100%);
+  color: #FFFFFF !important;
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  border-bottom-color: rgba(0, 0, 0, 0.25);
+  box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.35), 0 2px 8px -1px rgba(239, 68, 68, 0.45);
+}
+.btn-pro-danger:hover {
+  filter: brightness(1.1);
+  box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.45), 0 4px 14px 0 rgba(239, 68, 68, 0.55);
+  transform: translateY(-1px);
+}
+
+/* Secondary / Glass Pro Button */
+.btn-pro-glass {
+  background: var(--color-card);
+  color: var(--color-text);
+  border: 1px solid var(--color-border);
+  box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.08), 0 1px 3px 0 rgba(0, 0, 0, 0.05);
+}
+.btn-pro-glass:hover {
+  background: var(--color-card-hover);
+  border-color: var(--color-muted);
+  transform: translateY(-1px);
+}
+
+/* Icon Action Button (Tactile 34x34) */
+.btn-pro-icon {
+  width: 2.125rem;
+  height: 2.125rem;
+  border-radius: 0.625rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--color-card);
+  border: 1px solid var(--color-border);
+  color: var(--color-muted);
+  transition: all 180ms cubic-bezier(0.16, 1, 0.3, 1);
+  cursor: pointer;
+  box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.04);
+}
+.btn-pro-icon:hover {
+  color: var(--color-text);
+  background: var(--color-card-hover);
+  border-color: var(--color-muted);
+  transform: translateY(-1px);
+  box-shadow: 0 3px 8px -1px rgba(0, 0, 0, 0.08);
+}
+.btn-pro-icon:active {
+  transform: scale(0.92);
+}
+
+/* =========================================================================
+   PRO TYPOGRAPHY ENHANCEMENTS
+   ========================================================================= */
+
+/* Tabular figures for jitter-free counters, timers & dates */
+.font-mono,
+.tabular-nums,
+[data-timer],
+input[type="time"] {
+  font-feature-settings: "tnum" 1, "zero" 1;
+  font-variant-numeric: tabular-nums slashed-zero;
+}
+
+/* Display Titles & Hero Headings */
+h1, h2, h3, .font-display {
+  font-family: 'Outfit', sans-serif;
+  letter-spacing: -0.025em;
+  font-feature-settings: "cv05" 1, "ss01" 1;
+}
+
+/* Linear-grade crisp text rendering */
 body {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
-  font-feature-settings: "cv02", "cv03", "cv04", "cv11";
   letter-spacing: -0.015em;
-}
-
-h1, h2, h3, .font-display {
-  font-family: 'Outfit', sans-serif;
-  letter-spacing: -0.025em;
 }
 
 /* Ambient glow & pulsing 3px left accent bar for active working card (Pristine Dark Theme Readability) */
@@ -202,5 +334,6 @@ h1, h2, h3, .font-display {
   box-shadow: 0 0 10px 2px rgba(59, 130, 246, 0.75);
   z-index: 10;
 }
+
 
 

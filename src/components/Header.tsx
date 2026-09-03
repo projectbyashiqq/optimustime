@@ -279,21 +279,21 @@ export const Header: React.FC<HeaderProps> = ({ onOpenNewTaskModal }) => {
             {/* Primary New Task CTA */}
             <button
               onClick={onOpenNewTaskModal}
-              className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 bg-gradient-to-r from-blue-600 to-sky-500 hover:from-blue-700 hover:to-sky-600 text-white text-xs font-bold rounded-lg shadow-md shadow-blue-500/25 transition-all transform active:scale-95 cursor-pointer shrink-0 whitespace-nowrap"
+              className="btn-pro btn-pro-primary flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-xl shadow-md shrink-0 whitespace-nowrap"
               title="Create New Task"
             >
-              <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
-              <span className="hidden md:inline">New Task</span>
+              <Plus className="w-4 h-4 stroke-[2.5]" />
+              <span className="hidden sm:inline">New Task</span>
             </button>
 
             {/* Quick Lock / Logout Button */}
             {securitySettings.isPasswordProtected && (
               <button
                 onClick={logout}
-                className="p-1.5 rounded-lg bg-theme-card-hover border border-theme-border text-theme-muted hover:text-red-600 hover:border-red-300 dark:hover:border-red-800 transition-colors text-xs flex items-center gap-1 cursor-pointer"
+                className="btn-pro-icon hover:text-red-600 hover:border-red-300 dark:hover:border-red-800 text-xs"
                 title="Lock System / Sign Out"
               >
-                <Lock className="w-4 h-4" />
+                <Lock className="w-3.5 h-3.5" />
               </button>
             )}
 

@@ -410,16 +410,16 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
             </span>
           </div>
 
-          <div className="flex items-center gap-0.5">
+          <div className="flex items-center gap-1">
             <button
               onClick={() => {
                 const d = new Date();
                 setSelectedDate(toISODateString(d));
               }}
-              className={`px-2 py-1 rounded-xl text-xs font-bold transition-all ${
+              className={`btn-pro px-3 py-1 rounded-xl text-xs ${
                 selectedDate === toISODateString(new Date())
-                  ? 'bg-blue-600 text-white shadow-sm'
-                  : 'bg-theme-card-hover text-theme-muted hover:text-theme-text border border-theme-border'
+                  ? 'btn-pro-primary'
+                  : 'btn-pro-glass text-theme-muted hover:text-theme-text'
               }`}
             >
               Today
@@ -431,7 +431,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
                 d.setDate(d.getDate() + 1);
                 setSelectedDate(toISODateString(d));
               }}
-              className="px-2 py-1 rounded-xl text-xs font-semibold bg-theme-card-hover text-theme-muted hover:text-theme-text border border-theme-border transition-colors"
+              className="btn-pro btn-pro-glass px-3 py-1 rounded-xl text-xs text-theme-muted hover:text-theme-text font-semibold"
             >
               Tomorrow
             </button>
@@ -441,16 +441,16 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
           {morningReviewTasks.length > 0 && (
             <button
               onClick={() => setIsMorningReviewOpen(prev => !prev)}
-              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-xs font-bold transition-all shadow-sm ${
+              className={`btn-pro flex items-center gap-1.5 px-3 py-1 rounded-xl text-xs font-bold transition-all ${
                 isMorningReviewOpen
-                  ? 'bg-gradient-to-r from-amber-500 to-orange-500 text-white ring-1 ring-amber-400/50'
-                  : 'bg-amber-100 dark:bg-amber-950/70 text-amber-900 dark:text-amber-200 hover:bg-amber-200 dark:hover:bg-amber-900 border border-amber-300 dark:border-amber-800'
+                  ? 'btn-pro-warning ring-1 ring-amber-400/60'
+                  : 'btn-pro-glass border-amber-300 dark:border-amber-800 text-amber-900 dark:text-amber-200 hover:bg-amber-100 dark:hover:bg-amber-950/60'
               }`}
               title="Review Unfinished Tasks from Yesterday (Granular Manual Control)"
             >
               <Sunrise className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
               <span className="hidden md:inline">Morning Review</span>
-              <span className={`text-[9px] font-black px-1.5 py-0.2 rounded-full ${
+              <span className={`text-[11px] font-mono font-bold px-1.5 py-0.2 rounded-full ${
                 isMorningReviewOpen ? 'bg-white/30 text-white' : 'bg-amber-500 text-white'
               }`}>
                 {morningReviewTasks.length}
@@ -1277,63 +1277,63 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
                                 <div className="flex items-center gap-1.5">
                                   <button
                                     onClick={() => pauseTask(task.id)}
-                                    className="p-2 rounded-xl bg-amber-500 text-white hover:bg-amber-600 transition-colors shadow-sm"
-                                    title="Pause"
+                                    className="btn-pro btn-pro-warning p-2 rounded-xl shadow-sm"
+                                    title="Pause Task"
                                   >
                                     <Pause className="w-4 h-4" />
                                   </button>
                                   <button
                                     onClick={() => completeTask(task.id)}
-                                    className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-emerald-500 text-white hover:bg-emerald-600 text-xs font-bold transition-colors shadow-sm"
+                                    className="btn-pro btn-pro-success flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs shadow-sm"
                                   >
-                                    <CheckCircle2 className="w-4 h-4" />
+                                    <CheckCircle2 className="w-4 h-4 stroke-[2.5]" />
                                     <span>Done</span>
                                   </button>
                                 </div>
                               ) : (
                                 <button
                                   onClick={() => startTask(task.id)}
-                                  className="flex items-center gap-1 px-3.5 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold shadow-sm transition-all transform active:scale-95"
+                                  className="btn-pro btn-pro-primary flex items-center gap-1.5 px-4 py-1.5 rounded-xl text-xs shadow-sm"
                                 >
-                                  <Play className="w-3.5 h-3.5 fill-white" />
+                                  <Play className="w-3.5 h-3.5 fill-white stroke-[2]" />
                                   <span>Start</span>
                                 </button>
                               )}
 
-                              {task.isMandatorySchedule ? (
-                                <button
-                                  disabled
-                                  className="p-1.5 rounded-lg opacity-40 text-theme-muted cursor-not-allowed"
-                                  title="🔒 Mandatory Schedule: Locked & Non-Reschedulable"
-                                >
-                                  <Lock className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
-                                </button>
-                              ) : (
-                                <button
-                                  onClick={() => setReschedulingTask(task)}
-                                  className="p-1.5 rounded-lg hover:bg-purple-50 dark:hover:bg-purple-950/40 text-theme-muted hover:text-purple-600 transition-colors"
-                                  title="Reschedule Task / Find Slot"
-                                >
-                                  <RotateCcw className="w-3.5 h-3.5" />
-                                </button>
-                              )}
+                                {task.isMandatorySchedule ? (
+                                  <button
+                                    disabled
+                                    className="p-1.5 rounded-lg opacity-40 text-theme-muted cursor-not-allowed"
+                                    title="🔒 Mandatory Schedule: Locked & Non-Reschedulable"
+                                  >
+                                    <Lock className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
+                                  </button>
+                                ) : (
+                                  <button
+                                    onClick={() => setReschedulingTask(task)}
+                                    className="btn-pro-icon hover:text-purple-600 hover:border-purple-300 dark:hover:border-purple-800"
+                                    title="Reschedule Task / Find Slot"
+                                  >
+                                    <RotateCcw className="w-3.5 h-3.5" />
+                                  </button>
+                                )}
 
-                              <button
-                                onClick={() => onOpenTaskModal(task)}
-                                className="p-1.5 rounded-lg hover:bg-theme-card-hover text-theme-muted hover:text-theme-text transition-colors"
-                                title="Edit Task"
-                              >
-                                <Edit2 className="w-3.5 h-3.5" />
-                              </button>
+                                <button
+                                  onClick={() => onOpenTaskModal(task)}
+                                  className="btn-pro-icon"
+                                  title="Edit Task"
+                                >
+                                  <Edit2 className="w-3.5 h-3.5" />
+                                </button>
 
-                              <button
-                                onClick={() => requestDeleteTask(task, selectedDate)}
-                                className="p-1.5 rounded-lg hover:bg-red-50 dark:hover:bg-red-950/40 text-theme-muted hover:text-red-500 transition-colors"
-                                title="Delete Task / Occurrence"
-                              >
-                                <Trash2 className="w-3.5 h-3.5" />
-                              </button>
-                            </div>
+                                <button
+                                  onClick={() => requestDeleteTask(task, selectedDate)}
+                                  className="btn-pro-icon hover:text-red-600 hover:border-red-300 dark:hover:border-red-800"
+                                  title="Delete Task / Occurrence"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
 
                           </div>
                         </div>
