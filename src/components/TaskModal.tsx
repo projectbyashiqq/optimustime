@@ -1264,7 +1264,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                       );
                       setStartTime(smart.startTime);
                       setEndTime(smart.endTime);
-                      if (smart.crossesMidnight && smart.dateStr) {
+                      if (smart.dateStr && smart.dateStr !== taskDate) {
                         setTaskDate(smart.dateStr);
                       }
                       setValidationError(null);
@@ -1340,7 +1340,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                         );
                         setStartTime(smart.startTime);
                         setEndTime(smart.endTime);
-                        if (smart.crossesMidnight && smart.dateStr) {
+                        if (smart.dateStr && smart.dateStr !== taskDate) {
                           setTaskDate(smart.dateStr);
                         }
                       }}
@@ -1543,7 +1543,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                         );
                         setStartTime(smart.startTime);
                         setEndTime(smart.endTime);
-                        if (smart.crossesMidnight && smart.dateStr) {
+                        if (smart.dateStr && smart.dateStr !== taskDate) {
                           setTaskDate(smart.dateStr);
                         }
                         if (validationError) setValidationError(null);

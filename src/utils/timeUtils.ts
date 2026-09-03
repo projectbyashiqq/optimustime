@@ -553,18 +553,45 @@ export interface AvailableSlotResult {
 export function findAllAvailableSlotsOnDate(
   dateStr: string,
   durationMinutes: number,
-  allTasks: Array<{ taskDate: string; startTime: string; endTime: string; bufferMinutes?: number; status: string; recurrence?: string; selectedDays?: string[] }>,
+  allTasks: Array<{ taskDate: string; startTime: string; endTime: string; bufferMinutes?: number; status: string; recurrence?: string; selectedDays?: string[]; id?: string }>,
   dayStartTime = '06:00 AM',
   dayEndTime = '11:00 PM',
   earliestAllowedMinutes?: number,
-  maxSlotsPerDay = 5
+  maxSlotsPerDay = 5,
+  ignoreTaskId?: string
 ): AvailableSlotResult[] {
+  const now = new Date();
+  const todayStr = toISODateString(now);
+
+  // Strictly reject past dates - rescheduling or scheduling in the past is not permitted
+  if (dateStr < todayStr) {
+    return [];
+  }
+
   const dayStartMin = parse12HourToMinutes(dayStartTime);
   let dayEndMin = parse12HourToMinutes(dayEndTime);
   if (dayEndMin <= dayStartMin) dayEndMin += 1440;
 
-  // Filter active tasks occurring on dateStr (using isTaskScheduledForDate)
+  // If target date is TODAY, ensure earliest possible minute is strictly in the future (at least now + 5 mins)
+  const isToday = dateStr === todayStr;
+  const currentMinutes = now.getHours() * 60 + now.getMinutes();
+  const minFutureMinutes = currentMinutes + 5;
+
+  let effectiveEarliest = earliestAllowedMinutes;
+  if (isToday) {
+    effectiveEarliest = Math.max(earliestAllowedMinutes ?? minFutureMinutes, minFutureMinutes);
+  }
+
+  const effectiveStart = Math.max(dayStartMin, effectiveEarliest ?? dayStartMin);
+
+  // If the earliest start time cannot fit the duration before dayEndMin, no slots can exist today
+  if (effectiveStart + durationMinutes > dayEndMin) {
+    return [];
+  }
+
+  // Filter active tasks occurring on dateStr (using isTaskScheduledForDate, excluding ignored task)
   const dayTasks = allTasks.filter(t => 
+    (!ignoreTaskId || t.id !== ignoreTaskId) &&
     isTaskScheduledForDate(t, dateStr) && 
     t.status !== 'Terminated' && 
     t.status !== 'Done' && 
@@ -601,8 +628,7 @@ export function findAllAvailableSlotsOnDate(
     }
   }
 
-  // Find all free gaps strictly within waking hours (without sleep time)
-  const effectiveStart = Math.max(dayStartMin, earliestAllowedMinutes ?? dayStartMin);
+  // Find all free gaps strictly within waking hours [effectiveStart, dayEndMin]
   let cursor = effectiveStart;
   const gaps: { start: number; end: number }[] = [];
 
@@ -679,10 +705,11 @@ export function findAllAvailableSlotsOnDate(
 export function findAvailableSlotOnDate(
   dateStr: string,
   durationMinutes: number,
-  allTasks: Array<{ taskDate: string; startTime: string; endTime: string; bufferMinutes?: number; status: string; recurrence?: string; selectedDays?: string[] }>,
+  allTasks: Array<{ taskDate: string; startTime: string; endTime: string; bufferMinutes?: number; status: string; recurrence?: string; selectedDays?: string[]; id?: string }>,
   dayStartTime = '06:00 AM',
   dayEndTime = '11:00 PM',
-  earliestAllowedMinutes?: number
+  earliestAllowedMinutes?: number,
+  ignoreTaskId?: string
 ): AvailableSlotResult | null {
   const slots = findAllAvailableSlotsOnDate(
     dateStr,
@@ -691,7 +718,8 @@ export function findAvailableSlotOnDate(
     dayStartTime,
     dayEndTime,
     earliestAllowedMinutes,
-    1
+    1,
+    ignoreTaskId
   );
   return slots.length > 0 ? slots[0] : null;
 }
@@ -1428,7 +1456,12 @@ export function calculateEmergencyReschedule(
 
     // 3. For flexible (non-mandatory) tasks:
     // Schedule sequentially on TODAY starting after emergency cursor
+    const isToday = dateStr === toISODateString(new Date());
+    const nowMin = new Date().getHours() * 60 + new Date().getMinutes();
     let candidateStartMin = Math.max(currentCascadeCursor, dayStartMin);
+    if (isToday) {
+      candidateStartMin = Math.max(candidateStartMin, nowMin + 1);
+    }
 
     // Jump past any overlapping mandatory tasks on this day
     let collisionWithMandatory = true;
@@ -1557,7 +1590,12 @@ export function calculateBatchShiftProposals(
     const buffer = origTask?.bufferMinutes ?? 5;
 
     // Shift forward from original start time, but never before emergencyEndMin or previous cascadeCursor
+    const isToday = dateStr === toISODateString(new Date());
+    const nowMin = new Date().getHours() * 60 + new Date().getMinutes();
     let newStartMin = Math.max(origStartMin + delayMins, cascadeCursor);
+    if (isToday) {
+      newStartMin = Math.max(newStartMin, nowMin + 1);
+    }
 
     // Avoid collision with mandatory tasks
     let collision = true;
@@ -1712,7 +1750,12 @@ export function calculateBatchCompressProposals(
     const compressedDur = Math.max(15, Math.round((origDur * compressRatio) / 5) * 5);
     const buffer = origTask?.bufferMinutes ?? 5;
 
+    const isToday = dateStr === toISODateString(new Date());
+    const nowMin = new Date().getHours() * 60 + new Date().getMinutes();
     let newStartMin = cascadeCursor;
+    if (isToday) {
+      newStartMin = Math.max(newStartMin, nowMin + 1);
+    }
 
     // Jump past mandatory
     let collision = true;
@@ -1888,50 +1931,68 @@ export function getSmartNextFreeSlot(
   capacitySettings?: { dayStartTime?: string; dayEndTime?: string; sleepStartTime?: string; sleepEndTime?: string; preferPm?: boolean },
   preferPm = false
 ): SmartFreeSlotResult {
-  const todayStr = toISODateString(new Date());
-  const isToday = dateStr === todayStr;
+  const now = new Date();
+  const todayStr = toISODateString(now);
+
+  // If requested date is in the past, automatically advance target date to today
+  let effectiveDateStr = dateStr < todayStr ? todayStr : dateStr;
+  let isToday = effectiveDateStr === todayStr;
 
   const sleepStartStr = capacitySettings?.sleepStartTime || capacitySettings?.dayEndTime || '11:00 PM';
   const sleepEndStr = capacitySettings?.sleepEndTime || capacitySettings?.dayStartTime || '06:00 AM';
   const wakingStartMin = parse12HourToMinutes(sleepEndStr);
   const wakingEndMin = parse12HourToMinutes(sleepStartStr);
 
-  // Filter tasks that occur on dateStr (excluding terminated and ignored)
+  const curMin = now.getHours() * 60 + now.getMinutes();
+  const roundedMin = Math.ceil((curMin + 5) / 15) * 15;
+
+  // Check whether we are currently in the sleep window
+  const nowSlotStart = formatMinutesTo12Hour(curMin);
+  const nowSlotEnd = formatMinutesTo12Hour(curMin + 30);
+  const isCurrentlySleepTime = isTimeInSleepWindow(nowSlotStart, nowSlotEnd, sleepStartStr, sleepEndStr);
+
+  // If target date is TODAY:
+  // Check if today's waking hours have already ended (late night sleep time or after wakingEndMin)
+  // or if not enough time remains today before bedtime
+  if (isToday) {
+    const isLateNightSleepTime = isCurrentlySleepTime && curMin >= (wakingEndMin - 60);
+    const cannotFitToday = roundedMin + durationMinutes > wakingEndMin;
+
+    if (isLateNightSleepTime || cannotFitToday || curMin >= wakingEndMin) {
+      // Waking hours for today are completely OVER! Rollover to TOMORROW
+      const [y, m, d] = effectiveDateStr.split('-').map(Number);
+      const nextDate = new Date(y, m - 1, d + 1);
+      effectiveDateStr = toISODateString(nextDate);
+      isToday = false;
+    }
+  }
+
+  // Filter tasks that occur on effectiveDateStr (excluding terminated and ignored)
   const activeTasks = tasks.filter(t => 
     t.id !== ignoreTaskId &&
     t.status !== 'Terminated' && 
     t.startTime && 
     t.endTime && 
     t.startTime !== 'All Day' &&
-    isTaskScheduledForDate(t, dateStr)
+    isTaskScheduledForDate(t, effectiveDateStr)
   );
 
   // Active buffer notes on this date
-  const dayBufferNotes = bufferNotes.filter(b => !b.date || b.date === dateStr);
+  const dayBufferNotes = bufferNotes.filter(b => !b.date || b.date === effectiveDateStr);
 
   // Gaps on this day bounded strictly to WAKING hours (never inside sleep window)
   const gaps = findScheduleGaps(activeTasks, sleepEndStr, sleepStartStr, dayBufferNotes, bufferGap);
 
   // Determine earliest usable minute
   let earliestMin = wakingStartMin;
-  let isCurrentlySleepTime = false;
 
   if (isToday) {
-    const now = new Date();
-    const curMin = now.getHours() * 60 + now.getMinutes();
-    const roundedMin = Math.ceil((curMin + 5) / 15) * 15;
-
-    // Check if right now is in the sleep window
-    const nowSlotStart = formatMinutesTo12Hour(curMin);
-    const nowSlotEnd = formatMinutesTo12Hour(curMin + 30);
-    isCurrentlySleepTime = isTimeInSleepWindow(nowSlotStart, nowSlotEnd, sleepStartStr, sleepEndStr);
-
-    if (isCurrentlySleepTime) {
-      // Never recommend sleep time when creating a task during night/sleep hours!
-      // Advance earliest minute to daytime waking hours (afternoon PM or morning waking)
-      earliestMin = preferPm ? 840 : Math.max(wakingStartMin, 540); // 02:00 PM (840) or 09:00 AM (540)
+    // Early morning sleep time (e.g. 02:00 AM - 05:00 AM): 09:00 AM today is still in the future!
+    if (isCurrentlySleepTime && curMin < wakingStartMin) {
+      earliestMin = preferPm ? 840 : Math.max(wakingStartMin, 540);
     } else {
-      earliestMin = Math.max(earliestMin, roundedMin);
+      // Normal daytime on today: Must strictly start at or after roundedMin (future)
+      earliestMin = Math.max(wakingStartMin, roundedMin);
       if (preferPm && earliestMin < 720) {
         earliestMin = 720; // 12:00 PM
       }
@@ -1953,7 +2014,12 @@ export function getSmartNextFreeSlot(
 
       // Verify slot does not overlap sleep window
       if (!isTimeInSleepWindow(slotStart, slotEnd, sleepStartStr, sleepEndStr)) {
-        return { startTime: slotStart, endTime: slotEnd, dateStr, crossesMidnight: false };
+        return { 
+          startTime: slotStart, 
+          endTime: slotEnd, 
+          dateStr: effectiveDateStr, 
+          crossesMidnight: effectiveDateStr !== dateStr 
+        };
       }
     }
   }
@@ -1978,7 +2044,7 @@ export function getSmartNextFreeSlot(
     // If final slot overlaps sleep window or overflows past bedtime
     if (finalStart >= wakingEndMin || isTimeInSleepWindow(finalStartStr, finalEndStr, sleepStartStr, sleepEndStr)) {
       // Rollover to next day waking hours (NEVER midnight or sleep time!)
-      const [y, m, d] = dateStr.split('-').map(Number);
+      const [y, m, d] = effectiveDateStr.split('-').map(Number);
       const nextDate = new Date(y, m - 1, d + 1);
       const targetDateStr = toISODateString(nextDate);
       const nextDayStartMin = preferPm ? 840 : Math.max(wakingStartMin, 540); // 02:00 PM or 09:00 AM
@@ -1993,39 +2059,45 @@ export function getSmartNextFreeSlot(
     return {
       startTime: finalStartStr,
       endTime: finalEndStr,
-      dateStr,
-      crossesMidnight: false
+      dateStr: effectiveDateStr,
+      crossesMidnight: effectiveDateStr !== dateStr
     };
   }
 
   // If day is completely empty
   let defaultStartMin = preferPm ? 840 : 540; // 02:00 PM (840) or 09:00 AM (540)
   if (isToday) {
-    if (isCurrentlySleepTime) {
-      defaultStartMin = preferPm ? 840 : Math.max(wakingStartMin, 540);
-    } else {
-      defaultStartMin = Math.max(earliestMin, preferPm ? 720 : earliestMin);
-    }
+    defaultStartMin = Math.max(earliestMin, preferPm ? 720 : earliestMin);
   }
 
   // Ensure defaultStartMin does not overlap sleep window
   const defStartStr = formatMinutesTo12Hour(defaultStartMin);
   const defEndStr = formatMinutesTo12Hour(defaultStartMin + durationMinutes);
-  if (isTimeInSleepWindow(defStartStr, defEndStr, sleepStartStr, sleepEndStr)) {
-    defaultStartMin = 840; // 02:00 PM
+  if (defaultStartMin >= wakingEndMin || isTimeInSleepWindow(defStartStr, defEndStr, sleepStartStr, sleepEndStr)) {
+    // Overflows past bedtime -> rollover to next day
+    const [y, m, d] = effectiveDateStr.split('-').map(Number);
+    const nextDate = new Date(y, m - 1, d + 1);
+    const targetDateStr = toISODateString(nextDate);
+    const nextDayStartMin = preferPm ? 840 : Math.max(wakingStartMin, 540);
+    return {
+      startTime: formatMinutesTo12Hour(nextDayStartMin),
+      endTime: formatMinutesTo12Hour(nextDayStartMin + durationMinutes),
+      dateStr: targetDateStr,
+      crossesMidnight: true
+    };
   }
 
   return {
     startTime: formatMinutesTo12Hour(defaultStartMin),
     endTime: formatMinutesTo12Hour(defaultStartMin + durationMinutes),
-    dateStr,
-    crossesMidnight: false
+    dateStr: effectiveDateStr,
+    crossesMidnight: effectiveDateStr !== dateStr
   };
 }
 
 /**
  * Returns candidate recommended free slots across the day (Next Contiguous, Afternoon PM, Evening PM, Morning AM)
- * Strictly guarantees ZERO recommendations inside the Sleep Window.
+ * Strictly guarantees ZERO recommendations inside the Sleep Window or in the past.
  */
 export function getRecommendedDayFreeSlots(
   dateStr: string,
@@ -2037,14 +2109,36 @@ export function getRecommendedDayFreeSlots(
   bufferGap = 15,
   capacitySettings?: { dayStartTime?: string; dayEndTime?: string; sleepStartTime?: string; sleepEndTime?: string; preferPm?: boolean }
 ): RecommendedSlot[] {
+  const now = new Date();
+  const todayStr = toISODateString(now);
+
+  // Strictly reject past dates
+  if (dateStr < todayStr) {
+    return [];
+  }
+
   const sleepStartStr = capacitySettings?.sleepStartTime || capacitySettings?.dayEndTime || '11:00 PM';
   const sleepEndStr = capacitySettings?.sleepEndTime || capacitySettings?.dayStartTime || '06:00 AM';
+  const wakingEndMin = parse12HourToMinutes(sleepStartStr);
+
+  const isToday = dateStr === todayStr;
+  const nowMin = isToday ? now.getHours() * 60 + now.getMinutes() : 0;
+  const minFutureMin = isToday ? Math.ceil((nowMin + 5) / 15) * 15 : 0;
+
+  // If today and not enough waking time left, return empty
+  if (isToday && minFutureMin + durationMinutes > wakingEndMin) {
+    return [];
+  }
 
   const smartNext = getSmartNextFreeSlot(dateStr, durationMinutes, tasks, bufferNotes, ignoreTaskId, bufferGap, capacitySettings);
   const slots: RecommendedSlot[] = [];
 
-  // Only add smartNext if it is strictly outside the sleep window
-  if (!isTimeInSleepWindow(smartNext.startTime, smartNext.endTime, sleepStartStr, sleepEndStr)) {
+  // Only add smartNext if it belongs to this date and is strictly in the future outside sleep window
+  if (
+    smartNext.dateStr === dateStr &&
+    (!isToday || parse12HourToMinutes(smartNext.startTime) >= minFutureMin) &&
+    !isTimeInSleepWindow(smartNext.startTime, smartNext.endTime, sleepStartStr, sleepEndStr)
+  ) {
     const isPm = smartNext.startTime.includes('PM');
     slots.push({
       startTime: smartNext.startTime,
@@ -2066,21 +2160,13 @@ export function getRecommendedDayFreeSlots(
   const dayBufferNotes = bufferNotes.filter(b => !b.date || b.date === dateStr);
   const gaps = findScheduleGaps(activeTasks, sleepEndStr, sleepStartStr, dayBufferNotes, bufferGap);
 
-  const todayStr = toISODateString(new Date());
-  const isToday = dateStr === todayStr;
-  let nowMin = 0;
-  if (isToday) {
-    const now = new Date();
-    nowMin = now.getHours() * 60 + now.getMinutes();
-  }
-
   // 1. Gather all non-sleep gaps
   for (const gap of gaps) {
     const gStart = parse12HourToMinutes(gap.startTime);
     let gEnd = parse12HourToMinutes(gap.endTime);
     if (gEnd <= gStart) gEnd += 1440;
 
-    const usableStart = Math.max(gStart, nowMin > 0 ? Math.ceil((nowMin + 5) / 15) * 15 : gStart);
+    const usableStart = Math.max(gStart, isToday ? minFutureMin : gStart);
     if (usableStart + durationMinutes <= gEnd) {
       const candidateStart = formatMinutesTo12Hour(usableStart);
       const candidateEnd = formatMinutesTo12Hour(usableStart + durationMinutes);
@@ -2117,7 +2203,7 @@ export function getRecommendedDayFreeSlots(
     const startStr = formatMinutesTo12Hour(tSlot.startMin);
     const endStr = formatMinutesTo12Hour(tSlot.startMin + durationMinutes);
 
-    if (isToday && tSlot.startMin <= nowMin) continue;
+    if (isToday && tSlot.startMin < minFutureMin) continue;
     if (isTimeInSleepWindow(startStr, endStr, sleepStartStr, sleepEndStr)) continue;
 
     // Check if slot conflicts with any active task on this date
