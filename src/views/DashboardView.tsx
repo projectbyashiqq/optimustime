@@ -992,147 +992,157 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
                           )}
                           <div
                             className={`p-4 rounded-2xl border transition-all duration-200 ${
-                            isDue
-                              ? 'bg-red-50/30 dark:bg-red-950/20 border-red-300 dark:border-red-900/60 shadow-sm'
-                              : isRunning
-                                ? isInSleep
-                                  ? 'bg-slate-900 text-slate-100 dark:bg-slate-950 dark:text-slate-100 border-blue-500 shadow-xl shadow-blue-500/30 ring-2 ring-blue-500/80'
-                                  : 'bg-gradient-to-r from-blue-50/90 via-sky-50/50 to-theme-card dark:from-blue-950/60 dark:via-sky-950/30 dark:to-theme-card border-blue-500 shadow-xl shadow-blue-500/20 ring-2 ring-blue-500/60'
-                                : isInSleep
-                                  ? 'bg-slate-900/95 text-slate-100 dark:bg-slate-950 dark:text-slate-100 border-indigo-900/90 shadow-md ring-1 ring-indigo-500/40 hover:border-indigo-400'
-                                  : isSimultaneous
-                                    ? 'bg-purple-50/20 dark:bg-purple-950/10 border-purple-300 dark:border-purple-800 hover:shadow-md'
-                                    : 'bg-theme-card border-theme-border hover:border-blue-300 dark:hover:border-blue-700 hover:shadow-md'
-                          }`}
-                        >
-                          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-                            
-                            {/* Left: Priority + Time + Title */}
-                            <div className="flex items-start gap-3 flex-1">
+                              isDue
+                                ? 'bg-red-50/30 dark:bg-red-950/20 border-red-300 dark:border-red-900/60 shadow-sm'
+                                : isRunning
+                                  ? isInSleep
+                                    ? 'bg-slate-900 text-slate-100 dark:bg-slate-950 dark:text-slate-100 border-blue-500 shadow-xl shadow-blue-500/30 ring-2 ring-blue-500/80 card-working-active'
+                                    : isWorking
+                                      ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white border-blue-400 shadow-xl shadow-blue-500/30 ring-2 ring-blue-400/80 card-working-active'
+                                      : 'bg-gradient-to-r from-blue-50/90 via-sky-50/50 to-theme-card dark:from-blue-950/60 dark:via-sky-950/30 dark:to-theme-card border-blue-500 shadow-xl shadow-blue-500/20 ring-2 ring-blue-500/60'
+                                  : isInSleep
+                                    ? 'bg-slate-900/95 text-slate-100 dark:bg-slate-950 dark:text-slate-100 border-indigo-900/90 shadow-md ring-1 ring-indigo-500/40 hover:border-indigo-400'
+                                    : isSimultaneous
+                                      ? 'bg-purple-50/20 dark:bg-purple-950/10 border-purple-300 dark:border-purple-800 hover:shadow-md'
+                                      : 'bg-theme-card border-theme-border hover:border-blue-300 dark:hover:border-blue-700 hover:shadow-md'
+                            }`}
+                          >
+                            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
                               
-                              {/* Priority Badge */}
-                              <div
-                                className={`px-2.5 py-1.5 rounded-xl text-center font-black text-xs sm:text-sm min-w-[48px] shrink-0 flex items-center justify-center transition-all ${
-                                  task.priority === 'P1'
-                                    ? 'bg-gradient-to-tr from-rose-600 via-red-500 to-amber-400 text-white shadow-lg shadow-red-500/50 ring-2 ring-red-400/80 border border-red-300 dark:border-red-400 animate-pulse font-display'
-                                    : 'font-mono'
-                                }`}
-                                style={task.priority === 'P1' ? undefined : { backgroundColor: priorityMeta?.bgColor, color: priorityMeta?.color }}
-                              >
-                                {task.priority === 'P1' ? (
-                                  <span className="flex items-center gap-0.5 tracking-tight font-black">
-                                    <Sparkles className="w-3 h-3 text-yellow-200 fill-yellow-200" />
-                                    <span>P1</span>
-                                  </span>
-                                ) : (
-                                  <span>{task.priority}</span>
-                                )}
-                              </div>
-
-                              <div className="space-y-1 flex-1">
+                              {/* Left: Priority + Time + Title */}
+                              <div className="flex items-start gap-3 flex-1">
                                 
-                                {/* Tags & Time */}
-                                <div className="flex items-center gap-2 flex-wrap">
-                                  <span className={`font-mono text-xs font-bold px-2 py-0.5 rounded border ${
-                                    isInSleep 
-                                      ? 'bg-slate-800 text-indigo-200 border-indigo-700/60' 
-                                      : 'text-theme-text bg-theme-card-hover border-theme-border'
-                                  }`}>
-                                    {task.startTime} - {task.endTime}
-                                  </span>
+                                {/* Priority Badge */}
+                                <div
+                                  className={`px-2.5 py-1.5 rounded-xl text-center font-black text-xs sm:text-sm min-w-[48px] shrink-0 flex items-center justify-center transition-all ${
+                                    task.priority === 'P1'
+                                      ? 'bg-gradient-to-tr from-rose-600 via-red-500 to-amber-400 text-white shadow-lg shadow-red-500/50 ring-2 ring-red-400/80 border border-red-300 dark:border-red-400 animate-pulse font-display'
+                                      : 'font-mono'
+                                  }`}
+                                  style={task.priority === 'P1' ? undefined : { backgroundColor: priorityMeta?.bgColor, color: priorityMeta?.color }}
+                                >
+                                  {task.priority === 'P1' ? (
+                                    <span className="flex items-center gap-0.5 tracking-tight font-black">
+                                      <Sparkles className="w-3 h-3 text-yellow-200 fill-yellow-200" />
+                                      <span>P1</span>
+                                    </span>
+                                  ) : (
+                                    <span>{task.priority}</span>
+                                  )}
+                                </div>
 
-                                  {timePeriodSettings?.isEnabled && (() => {
-                                    const period = getTimePeriodForTime(task.startTime, timePeriodSettings.periods);
-                                    if (!period) return null;
-                                    return (
-                                      <span 
-                                        className="text-[10px] font-bold px-2 py-0.5 rounded-full border flex items-center gap-1 bg-amber-500/10 text-amber-900 dark:text-amber-200 border-amber-300 dark:border-amber-800 shrink-0 shadow-2xs"
-                                        title={`Day Zone: ${period.name} (${period.startTime} - ${period.endTime})`}
-                                      >
-                                        <span>{period.emoji || '⏰'}</span>
-                                        <span>{period.name}</span>
-                                      </span>
-                                    );
-                                  })()}
+                                <div className="space-y-1 flex-1">
                                   
-                                  <span className={`text-[11px] font-mono font-bold ${isInSleep ? 'text-indigo-300' : 'text-blue-600 dark:text-blue-400'}`}>
-                                    {task.projectCode}
-                                  </span>
+                                  {/* Tags & Time */}
+                                  <div className="flex items-center gap-2 flex-wrap">
+                                    <span className={`font-mono text-xs font-bold px-2 py-0.5 rounded border ${
+                                      isWorking
+                                        ? 'bg-blue-700/80 text-white border-blue-400'
+                                        : isInSleep 
+                                          ? 'bg-slate-800 text-indigo-200 border-indigo-700/60' 
+                                          : 'text-theme-text bg-theme-card-hover border-theme-border'
+                                    }`}>
+                                      {task.startTime} - {task.endTime}
+                                    </span>
 
-                                  <span className={`text-[11px] font-semibold ${isInSleep ? 'text-slate-300' : 'text-theme-muted'}`}>
-                                     {task.category}
-                                     {task.subCategory ? ` / ${task.subCategory}` : ''}
-                                   </span>
+                                    {timePeriodSettings?.isEnabled && (() => {
+                                      const period = getTimePeriodForTime(task.startTime, timePeriodSettings.periods);
+                                      if (!period) return null;
+                                      return (
+                                        <span 
+                                          className={`text-[11px] font-bold px-2 py-0.5 rounded-full border flex items-center gap-1 shrink-0 shadow-2xs ${
+                                            isWorking
+                                              ? 'bg-blue-800/80 text-white border-blue-300'
+                                              : 'bg-amber-500/10 text-amber-900 dark:text-amber-200 border-amber-300 dark:border-amber-800'
+                                          }`}
+                                          title={`Day Zone: ${period.name} (${period.startTime} - ${period.endTime})`}
+                                        >
+                                          <span>{period.emoji || '⏰'}</span>
+                                          <span>{period.name}</span>
+                                        </span>
+                                      );
+                                    })()}
+                                    
+                                    <span className={`text-[11px] font-mono font-bold ${isWorking ? 'text-blue-100' : isInSleep ? 'text-indigo-300' : 'text-blue-600 dark:text-blue-400'}`}>
+                                      {task.projectCode}
+                                    </span>
 
-                                   {/* Sleep / Night Window Badge */}
-                                   {isInSleep && (
-                                     <span 
-                                       className="text-[10px] font-black px-2 py-0.5 bg-indigo-950/90 text-indigo-300 border border-indigo-700/80 rounded-full flex items-center gap-1 shadow-sm"
-                                       title={`Task scheduled on Sleep / Recovery Window (${capacitySettings?.sleepStartTime || '11:00 PM'} - ${capacitySettings?.sleepEndTime || '06:00 AM'})`}
-                                     >
-                                       <Moon className="w-2.5 h-2.5 text-indigo-400" />
-                                       <span>🌙 SLEEP TIME</span>
+                                    <span className={`text-[11px] font-semibold ${isWorking ? 'text-blue-100' : isInSleep ? 'text-slate-300' : 'text-theme-muted'}`}>
+                                       {task.category}
+                                       {task.subCategory ? ` / ${task.subCategory}` : ''}
                                      </span>
-                                   )}
 
-                                  {/* Mandatory / Fixed Schedule Badge */}
-                                  {task.isMandatorySchedule && (
-                                    <span 
-                                      className="text-[10px] font-black px-2 py-0.5 bg-amber-100 dark:bg-amber-950/80 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-700/80 rounded-full flex items-center gap-1 shadow-sm"
-                                      title="Mandatory Fixed Schedule: Cannot be rescheduled, auto-shifted, or displaced"
-                                    >
-                                      <Lock className="w-2.5 h-2.5 text-amber-600 dark:text-amber-400" />
-                                      <span>MANDATORY FIXED</span>
-                                    </span>
-                                  )}
+                                     {/* Sleep / Night Window Badge */}
+                                     {isInSleep && (
+                                       <span 
+                                         className="text-[11px] font-black tracking-wider px-2.5 py-0.5 bg-indigo-950/90 text-indigo-300 border border-indigo-700/80 rounded-full flex items-center gap-1 shadow-sm"
+                                         title={`Task scheduled on Sleep / Recovery Window (${capacitySettings?.sleepStartTime || '11:00 PM'} - ${capacitySettings?.sleepEndTime || '06:00 AM'})`}
+                                       >
+                                         <Moon className="w-2.5 h-2.5 text-indigo-400" />
+                                         <span>🌙 SLEEP TIME</span>
+                                       </span>
+                                     )}
 
-                                  {/* Simultaneous / Overlapped Signal Badge */}
-                                  {isSimultaneous && (
-                                    <span 
-                                      className="text-[10px] font-black px-2 py-0.5 bg-gradient-to-r from-purple-600 to-indigo-600 text-white rounded-full flex items-center gap-1 shadow-sm shadow-purple-500/20"
-                                      title={`Co-running simultaneously with: ${simultaneousList.map(s => `${s.projectCode} (${s.title})`).join(', ')}`}
-                                    >
-                                      <Zap className="w-2.5 h-2.5 text-yellow-300" />
-                                      <span>🔀 SIMULTANEOUS ({simultaneousList.length})</span>
-                                    </span>
-                                  )}
-
-                                  {/* Running Time Blue Lighting Badge */}
-                                  {isRunning && !isDue && (
-                                    <span className="text-[10px] font-black px-2 py-0.5 bg-blue-600 text-white rounded-full flex items-center gap-1.5 shadow-md shadow-blue-500/40">
-                                      <span className="relative flex h-2 w-2">
-                                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-sky-200 opacity-90"></span>
-                                        <span className="relative inline-flex rounded-full h-2 w-2 bg-white"></span>
+                                    {/* Mandatory / Fixed Schedule Badge */}
+                                    {task.isMandatorySchedule && (
+                                      <span 
+                                        className="text-[11px] font-black tracking-wider px-2.5 py-0.5 bg-amber-100 dark:bg-amber-950/80 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-700/80 rounded-full flex items-center gap-1 shadow-sm"
+                                        title="Mandatory Fixed Schedule: Cannot be rescheduled, auto-shifted, or displaced"
+                                      >
+                                        <Lock className="w-2.5 h-2.5 text-amber-600 dark:text-amber-400" />
+                                        <span>MANDATORY FIXED</span>
                                       </span>
-                                      <span>{isWorking ? '⚡ RUNNING NOW' : '⚡ RUNNING TIME'}</span>
-                                    </span>
-                                  )}
+                                    )}
 
-                                  {/* Due Red Sign */}
-                                  {isDue && (
-                                    <span className="text-[10px] font-black px-2 py-0.5 bg-red-600 text-white rounded-full flex items-center gap-1.5 shadow-sm animate-pulse">
-                                      <span className="relative flex h-2 w-2">
-                                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-80"></span>
-                                        <span className="relative inline-flex rounded-full h-2 w-2 bg-white"></span>
+                                    {/* Simultaneous / Overlapped Signal Badge */}
+                                    {isSimultaneous && (
+                                      <span 
+                                        className="text-[11px] font-black tracking-wider px-2.5 py-0.5 bg-gradient-to-r from-purple-600 to-indigo-600 text-white rounded-full flex items-center gap-1 shadow-sm shadow-purple-500/20"
+                                        title={`Co-running simultaneously with: ${simultaneousList.map(s => `${s.projectCode} (${s.title})`).join(', ')}`}
+                                      >
+                                        <Zap className="w-2.5 h-2.5 text-yellow-300" />
+                                        <span>🔀 SIMULTANEOUS ({simultaneousList.length})</span>
                                       </span>
-                                      <span>{isIncomplete ? '⚠️ INCOMPLETE' : isWorking ? '⚡ OVERTIME DUE' : '🚨 DUE NOW'}</span>
-                                    </span>
-                                  )}
-                                </div>
+                                    )}
 
-                                {/* Task Title (Auto-scaled dynamic typography) + Appointed Duration */}
-                                <div className="flex items-baseline gap-2 flex-wrap">
-                                  <h4 className={getTaskTitleClasses(task.title, task.status === 'Done', isInSleep && !isDue)}>
-                                    {task.title}
-                                  </h4>
-                                  <span className={`font-mono text-xs font-bold px-2 py-0.5 rounded-md border shadow-2xs ${
-                                    isInSleep
-                                      ? 'text-indigo-200 bg-indigo-950/80 border-indigo-800/80'
-                                      : 'text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/60 border-blue-200 dark:border-blue-900/60'
-                                  }`}>
-                                    ~{task.appointedMinutes}m
-                                  </span>
-                                </div>
+                                    {/* Running Time Blue Lighting Badge */}
+                                    {isRunning && !isDue && (
+                                      <span className="text-[11px] font-black tracking-wider px-2.5 py-0.5 bg-blue-600 text-white rounded-full flex items-center gap-1.5 shadow-md shadow-blue-500/40">
+                                        <span className="relative flex h-2 w-2">
+                                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-sky-200 opacity-90"></span>
+                                          <span className="relative inline-flex rounded-full h-2 w-2 bg-white"></span>
+                                        </span>
+                                        <span>{isWorking ? '⚡ RUNNING NOW' : '⚡ RUNNING TIME'}</span>
+                                      </span>
+                                    )}
+
+                                    {/* Due Red Sign */}
+                                    {isDue && (
+                                      <span className="text-[11px] font-black tracking-wider px-2.5 py-0.5 bg-red-600 text-white rounded-full flex items-center gap-1.5 shadow-sm animate-pulse">
+                                        <span className="relative flex h-2 w-2">
+                                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-80"></span>
+                                          <span className="relative inline-flex rounded-full h-2 w-2 bg-white"></span>
+                                        </span>
+                                        <span>{isIncomplete ? '⚠️ INCOMPLETE' : isWorking ? '⚡ OVERTIME DUE' : '🚨 DUE NOW'}</span>
+                                      </span>
+                                    )}
+                                  </div>
+
+                                  {/* Task Title (Auto-scaled dynamic typography) + Appointed Duration */}
+                                  <div className="flex items-baseline gap-2 flex-wrap">
+                                    <h4 className={getTaskTitleClasses(task.title, task.status === 'Done', isInSleep && !isDue, isWorking)}>
+                                      {task.title}
+                                    </h4>
+                                    <span className={`font-mono text-xs font-bold px-2 py-0.5 rounded-md border shadow-2xs ${
+                                      isWorking
+                                        ? 'text-white bg-blue-700/80 border-blue-400'
+                                        : isInSleep
+                                          ? 'text-indigo-200 bg-indigo-950/80 border-indigo-800/80'
+                                          : 'text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/60 border-blue-200 dark:border-blue-900/60'
+                                    }`}>
+                                      ~{task.appointedMinutes}m
+                                    </span>
+                                  </div>
 
                                 {/* Simultaneous Co-Running Twin Details */}
                                 {isSimultaneous && (
@@ -1154,7 +1164,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
                                   <select
                                     value={task.status}
                                     onChange={(e) => handleStatusChange(task, e.target.value as TaskStatus)}
-                                    className={`text-[10px] font-bold px-2 py-0.5 rounded-full border cursor-pointer focus:outline-none transition-colors ${
+                                    className={`text-[11px] font-bold px-2.5 py-1 rounded-full border cursor-pointer focus:outline-none transition-colors ${
                                       task.status === 'Done' ? 'bg-emerald-600 text-white border-emerald-600 shadow-sm' :
                                       task.status === 'Terminated' ? 'bg-red-600 text-white border-red-600 shadow-sm' :
                                       task.status === 'Working' ? 'bg-blue-600 text-white border-blue-600 shadow-sm animate-pulse' :
@@ -1188,7 +1198,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
                                       const timeFormatted = `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
 
                                       return (
-                                        <span className={`text-[11px] font-mono font-bold px-2 py-0.5 rounded-lg flex items-center gap-1 shadow-sm ${
+                                        <span className={`text-[11px] font-mono font-bold px-2.5 py-0.5 rounded-lg flex items-center gap-1 shadow-sm ${
                                           isOvertime
                                             ? 'bg-amber-400 text-amber-950 animate-pulse font-black'
                                             : 'bg-blue-600 text-white'
@@ -1223,7 +1233,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
                                           <CheckCircle2 className="w-3 h-3 text-emerald-600 dark:text-emerald-400" />
                                           <span>Work Time: {workMins}m</span>
                                           {task.actualEndTime && (
-                                            <span className="text-theme-muted font-normal text-[10px]">({task.startTime} - {task.actualEndTime})</span>
+                                            <span className="text-theme-muted font-normal text-[11px]">({task.startTime} - {task.actualEndTime})</span>
                                           )}
                                         </span>
                                       );
@@ -1244,12 +1254,12 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
                                   {/* Early / Late Start Badge */}
                                   {task.startDiscrepancyMinutes && Math.abs(task.startDiscrepancyMinutes) > 2 ? (
                                     task.startDiscrepancyMinutes < 0 ? (
-                                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-lg bg-blue-100 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800 flex items-center gap-1">
+                                      <span className="text-[11px] font-bold px-2 py-0.5 rounded-lg bg-blue-100 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800 flex items-center gap-1">
                                         <Zap className="w-2.5 h-2.5 text-blue-600" />
                                         <span>Started Early (-{Math.abs(task.startDiscrepancyMinutes)}m)</span>
                                       </span>
                                     ) : (
-                                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-lg bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800 flex items-center gap-1">
+                                      <span className="text-[11px] font-bold px-2 py-0.5 rounded-lg bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800 flex items-center gap-1">
                                         <AlertTriangle className="w-2.5 h-2.5 text-amber-600" />
                                         <span>Started Late (+{task.startDiscrepancyMinutes}m)</span>
                                       </span>

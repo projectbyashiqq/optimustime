@@ -717,13 +717,13 @@ export const RescheduleModal: React.FC<RescheduleModalProps> = ({
                                     <span>{period?.name || slot.period}</span>
                                   </span>
                                   {slot.isSimultaneousSlot && (
-                                    <span className="text-[9px] font-black px-1.5 py-0.2 rounded bg-purple-100 dark:bg-purple-950 text-purple-700 dark:text-purple-300 border border-purple-300 dark:border-purple-800 flex items-center gap-0.5 shadow-2xs">
+                                    <span className="text-[11px] font-black tracking-wider px-2 py-0.5 rounded bg-purple-100 dark:bg-purple-950 text-purple-700 dark:text-purple-300 border border-purple-300 dark:border-purple-800 flex items-center gap-0.5 shadow-2xs">
                                       <Zap className="w-2.5 h-2.5 fill-current" /> Simultaneous
                                     </span>
                                   )}
                                 </div>
                                 <div className="flex items-center gap-1.5 shrink-0">
-                                  <span className={`text-[10px] font-bold font-mono px-1.5 py-0.5 rounded ${
+                                  <span className={`text-[11px] font-bold font-mono px-2 py-0.5 rounded ${
                                     isSelected ? 'bg-white/25 text-white' : 'bg-blue-200/80 dark:bg-blue-900/80 text-blue-900 dark:text-blue-100'
                                   }`}>
                                     {diffLabel}
@@ -739,22 +739,22 @@ export const RescheduleModal: React.FC<RescheduleModalProps> = ({
 
                     {/* 2. CURRENT TIME REFERENCE (RED BOX) - Col span 1 */}
                     <div className="lg:col-span-1 flex flex-col items-center justify-center p-2.5 rounded-xl bg-red-500/10 dark:bg-red-950/30 border-2 border-red-500 text-center space-y-1 shrink-0 shadow-sm">
-                      <span className="text-[9px] font-black uppercase tracking-wider text-red-700 dark:text-red-300 px-1.5 py-0.5 rounded bg-red-100 dark:bg-red-950/80 border border-red-300 dark:border-red-800 flex items-center gap-0.5">
-                        <Clock className="w-2.5 h-2.5" /> CURRENT
+                      <span className="text-[11px] font-black uppercase tracking-wider text-red-700 dark:text-red-300 px-2 py-0.5 rounded bg-red-100 dark:bg-red-950/80 border border-red-300 dark:border-red-800 flex items-center gap-0.5">
+                        <Clock className="w-3 h-3" /> CURRENT
                       </span>
-                      <div className="font-mono font-black text-xs text-red-700 dark:text-red-300 leading-tight">
+                      <div className="font-mono font-black text-xs sm:text-sm text-red-700 dark:text-red-300 leading-tight">
                         {task.startTime}
                       </div>
-                      <div className="text-[9px] text-theme-muted font-mono">
+                      <div className="text-[11px] text-theme-muted font-mono font-semibold">
                         ↓ {task.endTime}
                       </div>
-                      <div className="text-[9px] font-bold text-red-600/90 dark:text-red-400/90 font-mono">
+                      <div className="text-[11px] font-bold text-red-600/90 dark:text-red-400/90 font-mono">
                         ({task.taskDate === todayStr ? 'Today' : task.taskDate})
                       </div>
                       {(() => {
                         const curPeriod = getTimePeriodForTime(task.startTime, timePeriodSettings);
                         return (
-                          <span className="text-[9px] font-bold text-red-700 dark:text-red-300 truncate max-w-full px-1">
+                          <span className="text-[11px] font-bold text-red-700 dark:text-red-300 truncate max-w-full px-1">
                             {curPeriod?.emoji || '⏰'} {curPeriod?.name || 'Anchor'}
                           </span>
                         );
@@ -810,13 +810,13 @@ export const RescheduleModal: React.FC<RescheduleModalProps> = ({
                                     <span>{period?.name || slot.period}</span>
                                   </span>
                                   {slot.isSimultaneousSlot && (
-                                    <span className="text-[9px] font-black px-1.5 py-0.2 rounded bg-purple-100 dark:bg-purple-950 text-purple-700 dark:text-purple-300 border border-purple-300 dark:border-purple-800 flex items-center gap-0.5 shadow-2xs">
+                                    <span className="text-[11px] font-black tracking-wider px-2 py-0.5 rounded bg-purple-100 dark:bg-purple-950 text-purple-700 dark:text-purple-300 border border-purple-300 dark:border-purple-800 flex items-center gap-0.5 shadow-2xs">
                                       <Zap className="w-2.5 h-2.5 fill-current" /> Simultaneous
                                     </span>
                                   )}
                                 </div>
                                 <div className="flex items-center gap-1.5 shrink-0">
-                                  <span className={`text-[10px] font-bold font-mono px-1.5 py-0.5 rounded ${
+                                  <span className={`text-[11px] font-bold font-mono px-2 py-0.5 rounded ${
                                     isSelected ? 'bg-white/25 text-white' : 'bg-emerald-200/80 dark:bg-emerald-900/80 text-emerald-900 dark:text-emerald-100'
                                   }`}>
                                     {diffLabel}
@@ -929,14 +929,14 @@ export const RescheduleModal: React.FC<RescheduleModalProps> = ({
 
                                   <div className="flex items-center gap-1.5 shrink-0">
                                     {slot.isSimultaneousSlot && (
-                                      <span className="text-[9px] font-black px-1.5 py-0.5 rounded-full bg-purple-100 dark:bg-purple-950 text-purple-700 dark:text-purple-300 border border-purple-300 dark:border-purple-700 flex items-center gap-0.5 shadow-2xs">
+                                      <span className="text-[11px] font-black tracking-wider px-2 py-0.5 rounded-full bg-purple-100 dark:bg-purple-950 text-purple-700 dark:text-purple-300 border border-purple-300 dark:border-purple-700 flex items-center gap-0.5 shadow-2xs">
                                         <Zap className="w-2.5 h-2.5 fill-current" />
                                         SIMULTANEOUS
                                       </span>
                                     )}
 
                                     {isSuggested && (
-                                      <span className="text-[9px] font-black px-1.5 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-700 flex items-center gap-0.5 shadow-2xs">
+                                      <span className="text-[11px] font-black tracking-wider px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-700 flex items-center gap-0.5 shadow-2xs">
                                         <Zap className="w-2.5 h-2.5 fill-current" />
                                         RECOMMENDED
                                       </span>
@@ -947,7 +947,7 @@ export const RescheduleModal: React.FC<RescheduleModalProps> = ({
                                         <Check className="w-3 h-3 stroke-[3]" />
                                       </div>
                                     ) : (
-                                      <span className="text-[10px] font-mono text-theme-muted font-semibold">
+                                      <span className="text-[11px] font-mono text-theme-muted font-bold">
                                         #{sIdx + 1}
                                       </span>
                                     )}
@@ -963,11 +963,11 @@ export const RescheduleModal: React.FC<RescheduleModalProps> = ({
                                   </div>
 
                                   {isBeforeCurrent ? (
-                                    <span className="text-[9px] font-black font-mono px-2 py-0.5 rounded-full bg-blue-100 dark:bg-blue-950/80 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800 shrink-0 flex items-center gap-0.5">
+                                    <span className="text-[11px] font-black font-mono px-2 py-0.5 rounded-full bg-blue-100 dark:bg-blue-950/80 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800 shrink-0 flex items-center gap-0.5">
                                       <ArrowLeft className="w-2.5 h-2.5" /> Earlier
                                     </span>
                                   ) : isAfterCurrent ? (
-                                    <span className="text-[9px] font-black font-mono px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950/80 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 shrink-0 flex items-center gap-0.5">
+                                    <span className="text-[11px] font-black font-mono px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950/80 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 shrink-0 flex items-center gap-0.5">
                                       Later <ArrowRight className="w-2.5 h-2.5" />
                                     </span>
                                   ) : null}

@@ -162,3 +162,23 @@ input[type="date"]::-webkit-calendar-picker-indicator:hover {
   transform: scale(1.15);
 }
 
+/* Typography & Font Smoothing */
+body {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+  font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+}
+
+/* Active working card contrast guarantee: ensure text never vanishes in night themes */
+.card-working-active {
+  color: #FFFFFF !important;
+}
+.card-working-active .text-theme-muted {
+  color: #CBD5E1 !important;
+}
+.card-working-active .text-theme-text {
+  color: #FFFFFF !important;
+}
+
+

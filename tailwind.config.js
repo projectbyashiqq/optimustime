@@ -22,10 +22,10 @@ export default {
         }
       },
       fontFamily: {
-        sans: ['Inter', '"Open Sans"', 'Outfit', 'system-ui', 'sans-serif'],
-        display: ['"Open Sans"', 'Outfit', 'Inter', 'system-ui', 'sans-serif'],
-        openSans: ['"Open Sans"', 'sans-serif'],
-        mono: ['Fira Code', 'monospace']
+        display: ['Outfit', 'Inter', 'system-ui', 'sans-serif'],
+        sans: ['Inter', 'system-ui', 'sans-serif'],
+        mono: ['"Fira Code"', '"JetBrains Mono"', 'monospace'],
+        openSans: ['"Open Sans"', 'sans-serif']
       },
       boxShadow: {
         'glass': '0 8px 32px 0 rgba(31, 38, 135, 0.07)',

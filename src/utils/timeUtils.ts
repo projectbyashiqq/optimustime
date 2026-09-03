@@ -1001,21 +1001,23 @@ export function formatMonthYear(year: number, monthIndex: number): string {
  * - Medium title (26 - 55 chars): standard medium font size
  * - Long title (> 55 chars): auto-scaled slightly smaller with graceful line clamping
  */
-export function getTaskTitleClasses(title: string, isDone = false, isInSleep = false): string {
+export function getTaskTitleClasses(title: string, isDone = false, isInSleep = false, isWorking = false): string {
   const len = (title || '').trim().length;
   const colorClass = isDone 
     ? 'line-through text-theme-muted opacity-75' 
+    : isWorking
+    ? 'text-white drop-shadow-sm font-black'
     : isInSleep 
     ? 'text-white dark:text-slate-100 drop-shadow-sm font-black' 
     : 'text-theme-text font-black';
   
   if (len <= 25) {
-    return `text-lg sm:text-xl font-black font-openSans tracking-tight leading-snug ${colorClass}`;
+    return `text-lg sm:text-xl font-black font-display tracking-tight leading-snug ${colorClass}`;
   }
   if (len <= 55) {
-    return `text-base sm:text-lg font-bold font-openSans tracking-normal leading-snug ${colorClass}`;
+    return `text-base sm:text-lg font-bold font-display tracking-normal leading-snug ${colorClass}`;
   }
-  return `text-xs sm:text-sm font-semibold font-openSans leading-snug line-clamp-2 ${colorClass}`;
+  return `text-xs sm:text-sm font-bold font-display leading-snug line-clamp-2 ${colorClass}`;
 }
 
 export function getBufferActivityEmoji(tag: string): string {
