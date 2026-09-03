@@ -87,6 +87,7 @@ export interface Task {
 
   // Actual Execution Timing & Discrepancy Tracking (Early / Late start relative to scheduled)
   originalScheduledStartTime?: string;
+  originalScheduledEndTime?: string;
   originalAppointedMinutes?: number;
   startDiscrepancyMinutes?: number; // < 0 = early, > 0 = late, 0 = on time
   actualStartTime?: string;

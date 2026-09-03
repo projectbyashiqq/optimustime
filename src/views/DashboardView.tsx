@@ -121,7 +121,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
     }
   });
 
-  // Status Change Handler with Smart Reschedule interceptor
+  // Status Change Handler with Smart Start, Complete, Pause, and Reschedule routing
   const handleStatusChange = (task: Task, newStatus: TaskStatus) => {
     if (newStatus === 'Reschedule') {
       if (task.isMandatorySchedule) {
@@ -129,6 +129,18 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
         return;
       }
       setReschedulingTask(task);
+      return;
+    }
+    if (newStatus === 'Working') {
+      startTask(task.id);
+      return;
+    }
+    if (newStatus === 'Done') {
+      completeTask(task.id);
+      return;
+    }
+    if (newStatus === 'Hold') {
+      pauseTask(task.id);
       return;
     }
     updateTask({ ...task, status: newStatus });
@@ -1204,8 +1216,45 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
                                       }
                                     }
 
+                                    if (task.status === 'Done') {
+                                      const workMins = task.totalActualMinutes || task.appointedMinutes;
+                                      return (
+                                        <span className="text-[11px] font-mono font-bold px-2 py-0.5 rounded-lg bg-emerald-100/90 dark:bg-emerald-950/80 text-emerald-800 dark:text-emerald-200 border border-emerald-300 dark:border-emerald-700 flex items-center gap-1 shadow-2xs">
+                                          <CheckCircle2 className="w-3 h-3 text-emerald-600 dark:text-emerald-400" />
+                                          <span>Work Time: {workMins}m</span>
+                                          {task.actualEndTime && (
+                                            <span className="text-theme-muted font-normal text-[10px]">({task.startTime} - {task.actualEndTime})</span>
+                                          )}
+                                        </span>
+                                      );
+                                    }
+
+                                    if (task.status === 'Hold' && task.totalActualMinutes && task.totalActualMinutes > 0) {
+                                      return (
+                                        <span className="text-[11px] font-mono font-bold px-2 py-0.5 rounded-lg bg-amber-100/90 dark:bg-amber-950/80 text-amber-800 dark:text-amber-200 border border-amber-300 dark:border-amber-700 flex items-center gap-1">
+                                          <Pause className="w-3 h-3 text-amber-600 dark:text-amber-400" />
+                                          <span>Paused: {task.totalActualMinutes}m worked</span>
+                                        </span>
+                                      );
+                                    }
+
                                     return null;
                                   })()}
+
+                                  {/* Early / Late Start Badge */}
+                                  {task.startDiscrepancyMinutes && Math.abs(task.startDiscrepancyMinutes) > 2 ? (
+                                    task.startDiscrepancyMinutes < 0 ? (
+                                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-lg bg-blue-100 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800 flex items-center gap-1">
+                                        <Zap className="w-2.5 h-2.5 text-blue-600" />
+                                        <span>Started Early (-{Math.abs(task.startDiscrepancyMinutes)}m)</span>
+                                      </span>
+                                    ) : (
+                                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-lg bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800 flex items-center gap-1">
+                                        <AlertTriangle className="w-2.5 h-2.5 text-amber-600" />
+                                        <span>Started Late (+{task.startDiscrepancyMinutes}m)</span>
+                                      </span>
+                                    )
+                                  ) : null}
                                 </div>
 
                                 {task.description && (

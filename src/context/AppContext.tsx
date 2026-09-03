@@ -1450,6 +1450,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setTasks(prev => prev.map(t => {
       if (t.id === taskId) {
         const originalScheduledStart = t.originalScheduledStartTime || t.startTime;
+        const originalScheduledEnd = t.originalScheduledEndTime || t.endTime;
+        const taskBudget = t.originalAppointedMinutes || t.appointedMinutes || 30;
+
         let lateStartMinutes = 0;
         let earlyStartMinutes = 0;
         let diffMinutes = 0;
@@ -1464,24 +1467,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           }
         }
 
-        // End time will be exact time as scheduled
-        const scheduledEnd = t.endTime;
-        let effectiveEndTime = scheduledEnd;
-        let newAppointedMinutes = t.appointedMinutes;
+        // SMART BUDGET-BASED END TIME:
+        // Set end time strictly according to the task's appointed budget duration!
+        // Whether started early or started late, do NOT stretch to a far-away future scheduled end time.
+        // This ensures the future slot becomes liberated as FREE TIME.
+        const alreadyWorkedMinutes = t.totalActualMinutes || 0;
+        const remainingBudget = (t.status === 'Hold' && alreadyWorkedMinutes > 0 && alreadyWorkedMinutes < taskBudget)
+          ? (taskBudget - alreadyWorkedMinutes)
+          : taskBudget;
 
-        if (scheduledEnd && scheduledEnd !== 'All Day') {
-          const endMin = parse12HourToMinutes(scheduledEnd);
-          // If started before or at scheduled end time, keep exact scheduled end
-          if (curMin < endMin) {
-            effectiveEndTime = scheduledEnd;
-            newAppointedMinutes = endMin - curMin;
-          } else {
-            // If already past scheduled end time, provide duration from now
-            const fallbackDuration = t.appointedMinutes > 0 ? t.appointedMinutes : 30;
-            effectiveEndTime = addMinutesToTime(exactCurrentTimeStr, fallbackDuration);
-            newAppointedMinutes = fallbackDuration;
-          }
-        }
+        const effectiveEndTime = addMinutesToTime(exactCurrentTimeStr, remainingBudget);
+        const newAppointedMinutes = remainingBudget;
 
         const logs = [...t.executionLogs, {
           startedAt: nowIso,
@@ -1491,7 +1487,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           earlyStartMinutes,
           scheduledStartTime: originalScheduledStart,
           actualStartTime: exactCurrentTimeStr,
-          originalEndTime: scheduledEnd
+          originalEndTime: originalScheduledEnd
         }];
 
         const discrepancyText = lateStartMinutes > 0
@@ -1507,14 +1503,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           projectCode: t.projectCode,
           priority: t.priority,
           category: t.category,
-          message: `⚡ Started working on task "${t.title}" (${t.projectCode})${discrepancyText}. Scheduled End preserved at ${effectiveEndTime}.`,
+          message: `⚡ Started task "${t.title}" (${t.projectCode})${discrepancyText}. Active slot: ${exactCurrentTimeStr} - ${effectiveEndTime} (${remainingBudget}m budget).`,
           details: {
             originalScheduledStartTime: originalScheduledStart,
+            originalScheduledEndTime: originalScheduledEnd,
             actualStartTime: exactCurrentTimeStr,
             scheduledEndTime: effectiveEndTime,
             lateStartMinutes,
             earlyStartMinutes,
-            startDiscrepancyMinutes: diffMinutes
+            startDiscrepancyMinutes: diffMinutes,
+            appointedMinutes: remainingBudget
           }
         });
 
@@ -1522,12 +1520,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           ...t,
           taskDate: todayStr, // Aligned to today when started
           startTime: exactCurrentTimeStr, // Starts event exactly at current time
-          endTime: effectiveEndTime, // End will be exact time as scheduled
+          endTime: effectiveEndTime, // Set strictly according to budget!
           appointedMinutes: newAppointedMinutes,
           originalScheduledStartTime: originalScheduledStart,
-          originalAppointedMinutes: t.originalAppointedMinutes || t.appointedMinutes,
+          originalScheduledEndTime: originalScheduledEnd,
+          originalAppointedMinutes: t.originalAppointedMinutes || taskBudget,
           startDiscrepancyMinutes: diffMinutes,
-          actualStartTime: exactCurrentTimeStr,
+          actualStartTime: t.actualStartTime || exactCurrentTimeStr,
           status: 'Working' as TaskStatus,
           executionLogs: logs
         };
@@ -1578,10 +1577,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const pauseTask = useCallback((taskId: string) => {
     setTasks(prev => prev.map(t => {
       if (t.id === taskId && t.status === 'Working') {
-        const lastLog = t.executionLogs[t.executionLogs.length - 1];
+        const logs = [...t.executionLogs];
+        const lastLog = logs[logs.length - 1];
+        let sessionElapsed = 0;
         if (lastLog && !lastLog.pausedAt) {
           lastLog.pausedAt = new Date().toISOString();
+          const startMs = new Date(lastLog.startedAt).getTime();
+          sessionElapsed = Math.max(1, Math.round((new Date(lastLog.pausedAt).getTime() - startMs) / 60000));
+          lastLog.actualDurationMinutes = sessionElapsed;
         }
+        const totalWorkedSoFar = logs.reduce((sum, l) => sum + (l.actualDurationMinutes || 0), 0);
+
         logLifeEvent({
           eventType: 'TASK_PAUSED',
           taskId: t.id,
@@ -1589,9 +1595,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           projectCode: t.projectCode,
           priority: t.priority,
           category: t.category,
-          message: `⏸ Paused task "${t.title}"`
+          message: `⏸ Paused task "${t.title}" (${totalWorkedSoFar}m worked so far)`
         });
-        return { ...t, status: 'Hold' as TaskStatus };
+        return { 
+          ...t, 
+          status: 'Hold' as TaskStatus,
+          totalActualMinutes: totalWorkedSoFar,
+          executionLogs: logs
+        };
       }
       return t;
     }));
@@ -1609,64 +1620,37 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (!target) return prev;
 
       completedTarget = target;
-      let actualDuration = target.appointedMinutes;
-      let isLate = false;
-
       const logs = [...target.executionLogs];
       if (logs.length > 0) {
         const currentLog = logs[logs.length - 1];
-        currentLog.completedAt = now.toISOString();
-        const startMillis = new Date(currentLog.startedAt).getTime();
-        const elapsedMinutes = Math.max(1, Math.round((now.getTime() - startMillis) / 60000));
-        currentLog.actualDurationMinutes = elapsedMinutes;
-        actualDuration = elapsedMinutes;
-        isLate = elapsedMinutes > target.appointedMinutes;
-        currentLog.isLateFinish = isLate;
+        if (!currentLog.completedAt) {
+          currentLog.completedAt = now.toISOString();
+          const startMillis = new Date(currentLog.startedAt).getTime();
+          const sessionElapsed = Math.max(1, Math.round((now.getTime() - startMillis) / 60000));
+          currentLog.actualDurationMinutes = sessionElapsed;
+          currentLog.isLateFinish = (target.appointedMinutes > 0) && (sessionElapsed > target.appointedMinutes);
+        }
       }
+
+      const totalLoggedMinutes = logs.reduce((sum, log) => sum + (log.actualDurationMinutes || 0), 0);
+      const budgetMinutes = target.originalAppointedMinutes || target.appointedMinutes || 30;
+      const actualDuration = totalLoggedMinutes > 0 ? totalLoggedMinutes : Math.max(1, target.totalActualMinutes || budgetMinutes);
+      const isLate = actualDuration > budgetMinutes;
       isLateFinish = isLate;
 
       const defaultBuf = capacitySettings.defaultBufferMinutes || 15;
       const bufferMinutes = isLate ? Math.min(5, defaultBuf) : defaultBuf;
       const isRecurring = target.recurrence && target.recurrence !== 'None';
-      const delayMins = Math.max(0, actualDuration - target.appointedMinutes);
+      const delayMins = Math.max(0, actualDuration - budgetMinutes);
+      const savedFreeMinutes = Math.max(0, budgetMinutes - actualDuration);
 
       const curMin = now.getHours() * 60 + now.getMinutes();
       const exactCurrentTimeStr = formatMinutesTo12Hour(curMin);
-      const isToday = target.taskDate === todayStr;
+      const actualEndTime = exactCurrentTimeStr;
 
-      let scheduledStartMin = 0;
-      let scheduledEndMin = 0;
-      if (target.startTime && target.startTime !== 'All Day') {
-        scheduledStartMin = parse12HourToMinutes(target.startTime);
-      }
-      if (target.endTime && target.endTime !== 'All Day') {
-        scheduledEndMin = parse12HourToMinutes(target.endTime);
-      }
-
-      // Check if task completed before its scheduled window began, or finished early before scheduled end
-      const completedBeforeTimeOccurred = isToday && scheduledStartMin > 0 && curMin < (scheduledStartMin - 2);
-      let actualEndTime = target.endTime;
-      let savedFreeMinutes = 0;
-
-      if (completedBeforeTimeOccurred) {
-        // Completed before the scheduled slot even began: entire scheduled slot is liberated as free time!
-        actualEndTime = exactCurrentTimeStr;
-        savedFreeMinutes = target.appointedMinutes;
-      } else if (scheduledEndMin > 0) {
-        if (isToday && curMin < scheduledEndMin) {
-          actualEndTime = exactCurrentTimeStr;
-          savedFreeMinutes = Math.max(0, scheduledEndMin - curMin);
-        } else if (actualDuration < target.appointedMinutes) {
-          savedFreeMinutes = target.appointedMinutes - actualDuration;
-          actualEndTime = addMinutesToTime(target.startTime, actualDuration);
-        }
-      }
-
-      const completionMessage = completedBeforeTimeOccurred
-        ? `✨ Early Completion: "${target.title}" completed before scheduled time! +${savedFreeMinutes}m scheduled slot liberated as FREE TIME.`
-        : savedFreeMinutes > 0
-        ? `✓ Completed "${target.title}" [${target.priority}] early in ${actualDuration}m • Saved +${savedFreeMinutes}m as FREE TIME!`
-        : `✓ Completed "${target.title}" [${target.priority}] in ${actualDuration}m (${isLate ? `Delayed by +${delayMins}m` : 'On-Time Precision'})`;
+      const completionMessage = savedFreeMinutes > 0
+        ? `✓ Completed "${target.title}" [${target.priority}] early in ${actualDuration}m (Budget: ${budgetMinutes}m) • Saved +${savedFreeMinutes}m as FREE TIME! Completed at ${actualEndTime}.`
+        : `✓ Completed "${target.title}" [${target.priority}] in ${actualDuration}m (${isLate ? `Exceeded budget by +${delayMins}m` : 'On-Time Precision'}) at ${actualEndTime}.`;
 
       logLifeEvent({
         eventType: 'TASK_COMPLETED',
@@ -1678,10 +1662,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         message: completionMessage,
         details: {
           durationMinutes: actualDuration,
-          appointedMinutes: target.appointedMinutes,
+          appointedMinutes: budgetMinutes,
           delayMinutes: delayMins,
           savedFreeMinutes,
-          completedBeforeTimeOccurred,
+          actualStartTime: target.actualStartTime || target.startTime,
           actualEndTime,
           isLate
         }
@@ -1695,10 +1679,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           projectCode: target.projectCode,
           priority: target.priority,
           category: target.category,
-          message: `⚠️ Task "${target.title}" exceeded allocated slot by +${delayMins} mins`,
+          message: `⚠️ Task "${target.title}" exceeded allocated budget by +${delayMins} mins`,
           details: {
             durationMinutes: actualDuration,
-            appointedMinutes: target.appointedMinutes,
+            appointedMinutes: budgetMinutes,
             delayMinutes: delayMins,
             isLate: true
           }
@@ -1717,9 +1701,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           recurrence: 'None',
           selectedDays: [],
           bufferMinutes,
-          totalActualMinutes: actualDuration,
+          endTime: actualEndTime, // Set final end time to exact completion time
           actualEndTime,
-          completedBeforeTimeOccurred,
+          totalActualMinutes: actualDuration,
           savedFreeMinutes,
           executionLogs: logs,
           dateAdded: new Date().toISOString()
@@ -1742,8 +1726,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                 endTime: cleanEnd,
                 appointedMinutes: originalAppointed,
                 originalScheduledStartTime: undefined,
+                originalScheduledEndTime: undefined,
                 originalAppointedMinutes: undefined,
                 startDiscrepancyMinutes: undefined,
+                actualStartTime: undefined,
+                actualEndTime: undefined,
                 status: 'Pending' as TaskStatus,
                 executionLogs: [],
                 totalActualMinutes: 0
@@ -1759,10 +1746,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           return {
             ...t,
             status: 'Done' as TaskStatus,
+            endTime: actualEndTime, // Set final end time to exact completion time
+            actualEndTime,
             bufferMinutes,
             totalActualMinutes: actualDuration,
-            actualEndTime,
-            completedBeforeTimeOccurred,
             savedFreeMinutes,
             executionLogs: logs
           };
