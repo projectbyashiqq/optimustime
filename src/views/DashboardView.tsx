@@ -137,7 +137,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
   // Confirm Reschedule to new calculated slot (protecting recurring master schedule)
   const handleConfirmReschedule = (taskToReschedule: Task, newDate: string, newStartTime: string, newEndTime: string, scope: 'single' | 'series' = 'single') => {
     if (taskToReschedule.recurrence && taskToReschedule.recurrence !== 'None' && scope === 'single') {
-      rescheduleTask(taskToReschedule.id, newDate, newStartTime);
+      rescheduleTask(taskToReschedule.id, newDate, newStartTime, taskToReschedule.taskDate || selectedDate);
     } else {
       updateTask({
         ...taskToReschedule,

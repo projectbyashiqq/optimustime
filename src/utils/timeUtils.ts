@@ -638,11 +638,9 @@ export function findAllAvailableSlotsOnDate(
     if (!t.startTime || !t.endTime || t.startTime === 'All Day') return false;
 
     // If this is the target task being rescheduled:
+    // It is moving away to a new slot, so its old slot is freed up and does NOT block the search!
     if (targetTaskId && t.id === targetTaskId) {
-      if (currentTaskSlot && dateStr === currentTaskSlot.date) {
-        return true; // Keep as occupied block on its current date!
-      }
-      return false; // On other dates, it is not present
+      return false;
     }
 
     // Check if t is explicitly simultaneous with target task
@@ -720,7 +718,7 @@ export function findAllAvailableSlotsOnDate(
 
   // Helper to validate candidate slot:
   // Must be strictly within free time zone or simultaneous tasks zone,
-  // never overlapping with system sleep, past times, or the current task's existing slot
+  // never overlapping with system sleep, past times, or the current task's existing unchanged slot
   const tryAddCandidateSlot = (startMin: number): boolean => {
     if (results.length >= maxSlotsPerDay) return false;
     const endMin = startMin + durationMinutes;
@@ -735,13 +733,9 @@ export function findAllAvailableSlotsOnDate(
       return false;
     }
 
-    // If on current task's scheduled date:
-    // Strictly prevent any overlap with the current task's own slot (e.g. 12:10 AM - 01:44 AM overlapping 12:52 AM)
-    if (currentTaskSlot && dateStr === currentTaskSlot.date && currentTaskSlot.startTime) {
-      const curEndStr = currentTaskSlot.endTime || addMinutesToTime(currentTaskSlot.startTime, durationMinutes);
-      if (checkOverlap(startStr, endStr, currentTaskSlot.startTime, curEndStr)) {
-        return false;
-      }
+    // Do not suggest the exact same unchanged start time back to the user
+    if (currentTaskSlot && dateStr === currentTaskSlot.date && startStr === currentTaskSlot.startTime) {
+      return false;
     }
 
     // Check if slot overlaps with any simultaneous task
@@ -2121,7 +2115,7 @@ export function findNextAvailableSlot(
 
     // Filter tasks that block available time:
     // Only non-simultaneous tasks block.
-    // On currentTaskSlot.date, currentTaskSlot blocks so candidate slot cannot partially overlap.
+    // The task being rescheduled itself is moving away, so it does NOT block the search
     const dayTasks = allTasks.filter(t => {
       if (!isTaskScheduledForDate(t, dateStr)) return false;
       if (t.status === 'Terminated' || t.status === 'Done') return false;
@@ -2129,9 +2123,6 @@ export function findNextAvailableSlot(
 
       // If t is the task being rescheduled:
       if (targetTaskId && t.id === targetTaskId) {
-        if (currentTaskSlot && dateStr === currentTaskSlot.date) {
-          return true; // Keep as occupied block on its current date!
-        }
         return false;
       }
 
@@ -2187,12 +2178,9 @@ export function findNextAvailableSlot(
         return false;
       }
 
-      // If on current task's scheduled date, prevent any overlap with the current task's own slot
-      if (currentTaskSlot && dateStr === currentTaskSlot.date && currentTaskSlot.startTime) {
-        const curEndStr = currentTaskSlot.endTime || addMinutesToTime(currentTaskSlot.startTime, taskDurationMinutes);
-        if (checkOverlap(slotStartStr, slotEndStr, currentTaskSlot.startTime, curEndStr)) {
-          return false;
-        }
+      // Skip the exact same unchanged start time on the same date
+      if (currentTaskSlot && dateStr === currentTaskSlot.date && slotStartStr === currentTaskSlot.startTime) {
+        return false;
       }
 
       return true;

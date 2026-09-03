@@ -131,7 +131,7 @@ interface AppContextType {
   pauseTask: (taskId: string) => void;
   completeTask: (taskId: string) => void;
   holdTask: (taskId: string) => void;
-  rescheduleTask: (taskId: string, newDate: string, newStartTime: string) => void;
+  rescheduleTask: (taskId: string, newDate: string, newStartTime: string, originalDate?: string) => void;
   terminateTask: (taskId: string) => void;
   extendTaskDuration: (taskId: string, extraMinutes: number) => void;
   
@@ -1883,7 +1883,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }));
   }, [logLifeEvent]);
 
-  const rescheduleTask = useCallback((taskId: string, newDate: string, newStartTime: string) => {
+  const rescheduleTask = useCallback((taskId: string, newDate: string, newStartTime: string, originalDate?: string) => {
     setTasks(prev => {
       const target = prev.find(t => t.id === taskId);
       if (!target) return prev;
@@ -1905,8 +1905,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const isRecurring = target.recurrence && target.recurrence !== 'None';
 
       if (isRecurring) {
-        // Isolate single occurrence for today: Exclude current date from master series so future recurring tasks stay on schedule
-        const originalOccurrenceDate = target.taskDate;
+        // Isolate single occurrence for today: Exclude original occurrence date from master series so future recurring tasks stay on schedule
+        const originalOccurrenceDate = originalDate || target.taskDate;
         const existingExclusions = target.excludedDates || [];
         const updatedExclusions = existingExclusions.includes(originalOccurrenceDate)
           ? existingExclusions
@@ -1924,7 +1924,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           dayOfWeek: getDayOfWeekFromDate(newDate),
           startTime: newStartTime,
           endTime: newEndTime,
-          status: 'Reschedule' as TaskStatus,
+          status: 'Pending' as TaskStatus,
           recurrence: 'None',
           selectedDays: [],
           dateAdded: new Date().toISOString()
@@ -1978,7 +1978,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             dayOfWeek: getDayOfWeekFromDate(newDate),
             startTime: newStartTime,
             endTime: newEndTime,
-            status: 'Reschedule' as TaskStatus
+            status: 'Pending' as TaskStatus
           };
         }
         return t;
