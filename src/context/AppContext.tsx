@@ -66,7 +66,8 @@ import {
   isTaskScheduledForDate,
   getCurrentRoundedTime12Hour,
   getNextRecurrenceDate,
-  isTaskAutoIncompleteExpired
+  isTaskAutoIncompleteExpired,
+  calculateFirstRecurringDate
 } from '../utils/timeUtils';
 import { 
   pushStateToCloud, 
@@ -1150,8 +1151,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const appointedMinutes = taskData.appointedMinutes || defaultMins;
     const startTime = taskData.startTime || getCurrentRoundedTime12Hour(15);
     const endTime = taskData.endTime || addMinutesToTime(startTime, appointedMinutes);
-    const date = taskData.taskDate || toISODateString(new Date());
-    const day = taskData.dayOfWeek || getDayOfWeekFromDate(date);
+    let date = taskData.taskDate || toISODateString(new Date());
+
+    // If recurring, calculate the exact first valid occurrence date
+    const recurrence = taskData.recurrence || 'None';
+    if (recurrence !== 'None') {
+      date = calculateFirstRecurringDate({
+        recurrence,
+        selectedDays: taskData.selectedDays,
+        startTime,
+        baseDate: date
+      });
+    }
+    const day = getDayOfWeekFromDate(date);
 
     const newTask: Task = {
       id: taskData.id || `task-${Date.now()}-${Math.floor(Math.random() * 1000)}`,

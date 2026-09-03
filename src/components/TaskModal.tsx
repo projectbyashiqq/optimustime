@@ -22,7 +22,8 @@ import {
   isTimeInSleepWindow,
   isDateTimeBeforeNow,
   shouldRolloverToNextDay,
-  formatMinutesTo12Hour
+  formatMinutesTo12Hour,
+  calculateFirstRecurringDate
 } from '../utils/timeUtils';
 import { ConflictModal } from './ConflictModal';
 import { TimePicker } from './TimePicker';
@@ -235,6 +236,24 @@ export const TaskModal: React.FC<TaskModalProps> = ({
       setTaskDate(initialSmartSlot.dateStr);
     }
   }, [taskToEdit, initialDate, initialSmartSlot]);
+
+  // Compute exact first scheduled date for recurring tasks
+  const firstOccurrencePreview = useMemo(() => {
+    if (recurrence === 'None') return null;
+    return calculateFirstRecurringDate({
+      recurrence,
+      selectedDays,
+      startTime,
+      baseDate: initialDate || toISODateString(new Date())
+    });
+  }, [recurrence, selectedDays, startTime, initialDate]);
+
+  // When setting recurrence on a new task, automatically align taskDate to the first valid occurrence
+  useEffect(() => {
+    if (!taskToEdit && firstOccurrencePreview && firstOccurrencePreview !== taskDate) {
+      setTaskDate(firstOccurrencePreview);
+    }
+  }, [taskToEdit, firstOccurrencePreview]);
 
   // Live evaluation of whether scheduled start time is in the past
   const pastTimeCheck = useMemo(() => {
@@ -459,12 +478,24 @@ export const TaskModal: React.FC<TaskModalProps> = ({
       }
     }
 
+    // Ensure 1st schedule date for recurring task is accurate
+    let effectiveTaskDate = taskDate;
+    if (!taskToEdit && recurrence && recurrence !== 'None') {
+      effectiveTaskDate = calculateFirstRecurringDate({
+        recurrence,
+        selectedDays,
+        startTime,
+        baseDate: taskDate
+      });
+    }
+    const effectiveDayOfWeek = getDayOfWeekFromDate(effectiveTaskDate);
+
     const payload = {
       projectCode: projectCode.trim() || generateProjectCode(),
       title: title.trim(),
       description: description.trim(),
-      taskDate,
-      dayOfWeek,
+      taskDate: effectiveTaskDate,
+      dayOfWeek: effectiveDayOfWeek,
       priority,
       category: effectiveCategory,
       subCategory,
@@ -1652,7 +1683,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                       key={d}
                       type="button"
                       onClick={() => toggleDay(d)}
-                      className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all ${
+                      className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
                         selectedDays.includes(d)
                           ? 'bg-blue-600 text-white shadow-sm'
                           : 'bg-theme-card text-theme-muted hover:bg-theme-border'
@@ -1662,6 +1693,25 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                     </button>
                   ))}
                 </div>
+              </div>
+            )}
+
+            {/* Recurring First Scheduled Occurrence Indicator */}
+            {recurrence !== 'None' && firstOccurrencePreview && (
+              <div className="p-2.5 rounded-xl bg-blue-50/80 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-900/60 flex items-center justify-between text-xs text-blue-800 dark:text-blue-300 font-medium">
+                <span className="flex items-center gap-1.5">
+                  <CalendarDays className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400 shrink-0" />
+                  <span>1st Schedule Date: <strong>{firstOccurrencePreview} ({getDayOfWeekFromDate(firstOccurrencePreview)})</strong></span>
+                </span>
+                {firstOccurrencePreview === toISODateString(new Date()) ? (
+                  <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300">
+                    Starts Today
+                  </span>
+                ) : (
+                  <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-purple-100 dark:bg-purple-950 text-purple-800 dark:text-purple-300">
+                    Auto-aligned
+                  </span>
+                )}
               </div>
             )}
 

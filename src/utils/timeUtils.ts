@@ -319,6 +319,95 @@ export function playNotificationChime(type: 'success' | 'alert' | 'timer' = 'ale
  * - 'Monthly': Matches if targetDate >= taskDate AND day of month matches taskDate's day of month
  * - 'Yearly': Matches if targetDate >= taskDate AND month & day match taskDate's month & day
  */
+/**
+ * Calculates the exact FIRST valid scheduled date for a recurring task.
+ * - If recurrence is 'None', returns the base date (e.g. today or user-selected date).
+ * - If today matches the recurrence pattern (e.g. today is Sunday for 'Selected Days' [Sun, Wed], or 'Daily'):
+ *   - Checks if startTime is strictly later than the current time today.
+ *   - If startTime is later than current time today, returns today!
+ *   - If startTime has already passed today, returns the NEXT matching occurrence (e.g. next Wednesday or tomorrow).
+ * - If today does NOT match the recurrence pattern (e.g. today is Thursday for [Sun, Wed]):
+ *   - Returns the next upcoming matching day (e.g. next Sunday).
+ */
+export function calculateFirstRecurringDate(params: {
+  recurrence: string;
+  selectedDays?: string[];
+  startTime?: string;
+  baseDate?: string;
+  referenceNow?: Date;
+}): string {
+  const { recurrence, selectedDays = [], startTime, baseDate } = params;
+  const now = params.referenceNow || new Date();
+  const todayStr = toISODateString(now);
+  const startFromDateStr = baseDate && baseDate >= todayStr ? baseDate : todayStr;
+
+  if (!recurrence || recurrence === 'None') {
+    return startFromDateStr;
+  }
+
+  const curMinutes = now.getHours() * 60 + now.getMinutes();
+
+  // Check if a time today is still in the future
+  const isTimeInFutureToday = () => {
+    if (!startTime || startTime === 'All Day') return true;
+    const taskStartMin = parse12HourToMinutes(startTime);
+    return taskStartMin > curMinutes;
+  };
+
+  const [y, m, d] = startFromDateStr.split('-').map(Number);
+
+  // Helper to test if a Date matches the recurrence pattern
+  const matchesPattern = (dateObj: Date): boolean => {
+    const dayShort = SHORT_DAYS[dateObj.getDay()];
+    const dayFull = DAYS_OF_WEEK[dateObj.getDay()];
+
+    if (recurrence === 'Daily') {
+      return true;
+    }
+
+    if (recurrence === 'Selected Days') {
+      if (!selectedDays || selectedDays.length === 0) return true;
+      return selectedDays.some(sd => sd === dayShort || sd === dayFull);
+    }
+
+    if (recurrence === 'Weekly') {
+      const sourceDate = new Date(y, m - 1, d);
+      return dateObj.getDay() === sourceDate.getDay();
+    }
+
+    if (recurrence === 'Monthly') {
+      return dateObj.getDate() === d;
+    }
+
+    if (recurrence === 'Yearly') {
+      return dateObj.getMonth() === (m - 1) && dateObj.getDate() === d;
+    }
+
+    return false;
+  };
+
+  // Check if startFromDateStr itself matches
+  const baseObj = new Date(y, m - 1, d);
+  const isBaseDateToday = startFromDateStr === todayStr;
+
+  if (matchesPattern(baseObj)) {
+    // If base date is today, only schedule today if time is later today!
+    if (!isBaseDateToday || isTimeInFutureToday()) {
+      return startFromDateStr;
+    }
+  }
+
+  // Scan up to 366 days into the future to find the first valid match
+  for (let offset = 1; offset <= 366; offset++) {
+    const candidate = new Date(y, m - 1, d + offset);
+    if (matchesPattern(candidate)) {
+      return toISODateString(candidate);
+    }
+  }
+
+  return startFromDateStr;
+}
+
 export function isTaskScheduledForDate(task: {
   taskDate: string;
   recurrence?: string;
@@ -332,16 +421,15 @@ export function isTaskScheduledForDate(task: {
     return false;
   }
 
-  // Exact match always matches
-  if (task.taskDate === targetDateStr) return true;
-
-  // A recurring task only applies on or after its creation/start date
-  if (targetDateStr < task.taskDate) return false;
-
   const recurrence = task.recurrence || 'None';
+
+  // If NOT recurring, strict date match
   if (recurrence === 'None') {
     return task.taskDate === targetDateStr;
   }
+
+  // A recurring task only applies on or after its first scheduled taskDate
+  if (targetDateStr < task.taskDate) return false;
 
   if (recurrence === 'Daily') {
     return true;
