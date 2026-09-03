@@ -1009,12 +1009,22 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
               // 2. Rollover master recurring task to next occurrence date with fresh 'Pending' state
               const nextDate = getNextRecurrenceDate(task, missedDate);
+              const originalStart = task.originalScheduledStartTime || task.startTime;
+              const originalAppointed = task.originalAppointedMinutes || task.appointedMinutes;
+              const cleanEnd = addMinutesToTime(originalStart, originalAppointed);
               return {
                 ...task,
                 taskDate: nextDate,
                 dayOfWeek: getDayOfWeekFromDate(nextDate),
+                startTime: originalStart,
+                endTime: cleanEnd,
+                appointedMinutes: originalAppointed,
+                originalScheduledStartTime: undefined,
+                originalAppointedMinutes: undefined,
+                startDiscrepancyMinutes: undefined,
                 status: 'Pending' as TaskStatus,
-                executionLogs: []
+                executionLogs: [],
+                totalActualMinutes: 0
               };
             }
 
@@ -1069,7 +1079,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     });
   }, [tasks]);
 
-  // Cascading Auto-Shift Engine
+  // Cascading Auto-Shift Engine (Safely isolates recurring tasks to protect future master schedules)
   const cascadeShiftDownstream = useCallback((
     date: string, 
     fromStartTime: string, 
@@ -1078,11 +1088,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   ): number => {
     const fromMin = parse12HourToMinutes(fromStartTime);
     let shiftedCount = 0;
+    const newShiftedStandaloneTasks: Task[] = [];
 
     setTasks(prevTasks => {
-      return prevTasks.map(t => {
+      const updated = prevTasks.map(t => {
         // Never auto-shift mandatory/fixed schedule tasks, terminated/done tasks, or ignored tasks
-        if (t.id === ignoreTaskId || t.taskDate !== date || t.status === 'Done' || t.status === 'Terminated' || t.isMandatorySchedule) {
+        if (t.id === ignoreTaskId || !isTaskScheduledForDate(t, date) || t.status === 'Done' || t.status === 'Terminated' || t.isMandatorySchedule) {
           return t;
         }
         const taskStartMin = parse12HourToMinutes(t.startTime);
@@ -1090,6 +1101,33 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           shiftedCount++;
           const newStart = addMinutesToTime(t.startTime, shiftMinutes);
           const newEnd = addMinutesToTime(t.endTime, shiftMinutes);
+
+          // If recurring, isolate today's shift into a single-day task so future routine remains intact
+          if (t.recurrence && t.recurrence !== 'None') {
+            const existingExclusions = t.excludedDates || [];
+            const updatedExclusions = existingExclusions.includes(date)
+              ? existingExclusions
+              : [...existingExclusions, date];
+
+            newShiftedStandaloneTasks.push({
+              ...t,
+              id: `task_shifted_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+              taskDate: date,
+              dayOfWeek: getDayOfWeekFromDate(date),
+              startTime: newStart,
+              endTime: newEnd,
+              status: 'Reschedule' as TaskStatus,
+              recurrence: 'None',
+              selectedDays: [],
+              dateAdded: new Date().toISOString()
+            });
+
+            return {
+              ...t,
+              excludedDates: updatedExclusions
+            };
+          }
+
           return {
             ...t,
             startTime: newStart,
@@ -1099,6 +1137,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         }
         return t;
       });
+
+      return [...updated, ...newShiftedStandaloneTasks];
     });
 
     return shiftedCount;
@@ -1181,14 +1221,24 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           dateAdded: new Date().toISOString()
         };
 
-        // 2. Rollover master recurring task to next occurrence date with fresh 'Pending' state
+        // 2. Rollover master recurring task to next occurrence date with fresh 'Pending' state and restored clean times
         const nextDate = getNextRecurrenceDate(existing, actionDate);
+        const originalStart = existing.originalScheduledStartTime || existing.startTime;
+        const originalAppointed = existing.originalAppointedMinutes || existing.appointedMinutes;
+        const cleanEnd = addMinutesToTime(originalStart, originalAppointed);
         const rolledOverMaster: Task = {
           ...existing,
           taskDate: nextDate,
           dayOfWeek: getDayOfWeekFromDate(nextDate),
+          startTime: originalStart,
+          endTime: cleanEnd,
+          appointedMinutes: originalAppointed,
+          originalScheduledStartTime: undefined,
+          originalAppointedMinutes: undefined,
+          startDiscrepancyMinutes: undefined,
           status: 'Pending' as TaskStatus,
-          executionLogs: []
+          executionLogs: [],
+          totalActualMinutes: 0
         };
 
         return [
@@ -1579,8 +1629,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           dateAdded: new Date().toISOString()
         };
 
-        // 2. Advance master recurring task to the next scheduled date with fresh 'Pending' state
+        // 2. Advance master recurring task to the next scheduled date with fresh 'Pending' state and clean baseline times
         const nextDate = getNextRecurrenceDate(target, completionDate);
+        const originalStart = target.originalScheduledStartTime || target.startTime;
+        const originalAppointed = target.originalAppointedMinutes || target.appointedMinutes;
+        const cleanEnd = addMinutesToTime(originalStart, originalAppointed);
         return [
           snapshot,
           ...prev.map(t => {
@@ -1589,6 +1642,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                 ...t,
                 taskDate: nextDate,
                 dayOfWeek: getDayOfWeekFromDate(nextDate),
+                startTime: originalStart,
+                endTime: cleanEnd,
+                appointedMinutes: originalAppointed,
+                originalScheduledStartTime: undefined,
+                originalAppointedMinutes: undefined,
+                startDiscrepancyMinutes: undefined,
                 status: 'Pending' as TaskStatus,
                 executionLogs: [],
                 totalActualMinutes: 0

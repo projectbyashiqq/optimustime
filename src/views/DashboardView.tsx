@@ -72,6 +72,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
     pauseTask, 
     completeTask, 
     updateTask,
+    rescheduleTask,
     extendTaskDuration,
     deleteTask,
     requestDeleteTask,
@@ -112,16 +113,20 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
     updateTask({ ...task, status: newStatus });
   };
 
-  // Confirm Reschedule to new calculated slot
-  const handleConfirmReschedule = (taskToReschedule: Task, newDate: string, newStartTime: string, newEndTime: string) => {
-    updateTask({
-      ...taskToReschedule,
-      taskDate: newDate,
-      dayOfWeek: getDayOfWeekFromDate(newDate),
-      startTime: newStartTime,
-      endTime: newEndTime,
-      status: 'Pending'
-    });
+  // Confirm Reschedule to new calculated slot (protecting recurring master schedule)
+  const handleConfirmReschedule = (taskToReschedule: Task, newDate: string, newStartTime: string, newEndTime: string, scope: 'single' | 'series' = 'single') => {
+    if (taskToReschedule.recurrence && taskToReschedule.recurrence !== 'None' && scope === 'single') {
+      rescheduleTask(taskToReschedule.id, newDate, newStartTime);
+    } else {
+      updateTask({
+        ...taskToReschedule,
+        taskDate: newDate,
+        dayOfWeek: getDayOfWeekFromDate(newDate),
+        startTime: newStartTime,
+        endTime: newEndTime,
+        status: 'Pending'
+      });
+    }
     setReschedulingTask(null);
   };
 

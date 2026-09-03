@@ -32,7 +32,7 @@ interface RescheduleModalProps {
   task: Task;
   allTasks: Task[];
   capacitySettings: CapacitySettings;
-  onConfirmReschedule: (task: Task, newDate: string, newStartTime: string, newEndTime: string) => void;
+  onConfirmReschedule: (task: Task, newDate: string, newStartTime: string, newEndTime: string, scope?: 'single' | 'series') => void;
   onClose: () => void;
 }
 
@@ -43,6 +43,9 @@ export const RescheduleModal: React.FC<RescheduleModalProps> = ({
   onConfirmReschedule,
   onClose
 }) => {
+  const isRecurring = Boolean(task.recurrence && task.recurrence !== 'None');
+  const [recurringScope, setRecurringScope] = useState<'single' | 'series'>('single');
+
   const todayStr = toISODateString(new Date());
   const tomorrowStr = (() => {
     const d = new Date();
@@ -171,7 +174,7 @@ export const RescheduleModal: React.FC<RescheduleModalProps> = ({
 
   const handleApplyReschedule = () => {
     if (!selectedSlot) return;
-    onConfirmReschedule(task, selectedSlot.date, selectedSlot.startTime, selectedSlot.endTime);
+    onConfirmReschedule(task, selectedSlot.date, selectedSlot.startTime, selectedSlot.endTime, recurringScope);
     onClose();
   };
 
@@ -212,11 +215,52 @@ export const RescheduleModal: React.FC<RescheduleModalProps> = ({
           </div>
           <button 
             onClick={onClose}
-            className="p-1.5 rounded-xl hover:bg-theme-card-hover text-theme-muted transition-colors"
+            className="p-1.5 rounded-xl hover:bg-theme-card-hover text-theme-muted transition-colors cursor-pointer"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
+
+        {/* Recurring Task Scope Selector */}
+        {isRecurring && (
+          <div className="p-3 bg-purple-500/10 border border-purple-500/30 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2.5 shrink-0">
+            <div className="flex items-center gap-2">
+              <RotateCcw className="w-4 h-4 text-purple-600 dark:text-purple-400 shrink-0" />
+              <div>
+                <span className="text-xs font-bold text-purple-900 dark:text-purple-200 block">
+                  Recurring Routine: {task.recurrence}
+                </span>
+                <span className="text-[11px] text-theme-muted">
+                  Choose whether to move only this date or reschedule the whole recurring series.
+                </span>
+              </div>
+            </div>
+            <div className="flex items-center gap-1.5 shrink-0 bg-theme-card p-1 rounded-xl border border-theme-border">
+              <button
+                type="button"
+                onClick={() => setRecurringScope('single')}
+                className={`px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                  recurringScope === 'single'
+                    ? 'bg-purple-600 text-white shadow-sm'
+                    : 'text-theme-muted hover:text-theme-text'
+                }`}
+              >
+                Only This Day
+              </button>
+              <button
+                type="button"
+                onClick={() => setRecurringScope('series')}
+                className={`px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                  recurringScope === 'series'
+                    ? 'bg-purple-600 text-white shadow-sm'
+                    : 'text-theme-muted hover:text-theme-text'
+                }`}
+              >
+                Entire Series
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* Anchor Date Quick Switcher Bar */}
         <div className="flex items-center justify-between p-2.5 rounded-2xl bg-theme-card-hover border border-theme-border flex-wrap gap-2 text-xs shrink-0">

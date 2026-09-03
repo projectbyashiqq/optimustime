@@ -81,6 +81,7 @@ export const CategoryView: React.FC<CategoryViewProps> = ({ onOpenTaskModal }) =
     pauseTask,
     completeTask, 
     updateTask,
+    rescheduleTask,
     requestDeleteTask 
   } = useApp();
 
@@ -117,15 +118,19 @@ export const CategoryView: React.FC<CategoryViewProps> = ({ onOpenTaskModal }) =
     updateTask({ ...task, status: newStatus });
   };
 
-  const handleConfirmReschedule = (taskToReschedule: Task, newDate: string, newStartTime: string, newEndTime: string) => {
-    updateTask({
-      ...taskToReschedule,
-      taskDate: newDate,
-      dayOfWeek: getDayOfWeekFromDate(newDate),
-      startTime: newStartTime,
-      endTime: newEndTime,
-      status: 'Pending'
-    });
+  const handleConfirmReschedule = (taskToReschedule: Task, newDate: string, newStartTime: string, newEndTime: string, scope: 'single' | 'series' = 'single') => {
+    if (taskToReschedule.recurrence && taskToReschedule.recurrence !== 'None' && scope === 'single') {
+      rescheduleTask(taskToReschedule.id, newDate, newStartTime);
+    } else {
+      updateTask({
+        ...taskToReschedule,
+        taskDate: newDate,
+        dayOfWeek: getDayOfWeekFromDate(newDate),
+        startTime: newStartTime,
+        endTime: newEndTime,
+        status: 'Pending'
+      });
+    }
     setReschedulingTask(null);
   };
 
