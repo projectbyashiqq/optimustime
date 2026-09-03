@@ -18,7 +18,8 @@ import {
   Calendar, 
   Clock, 
   Sparkles, 
-  ArrowRight, 
+  ArrowRight,
+  ArrowLeft,
   X, 
   Search, 
   Check, 
@@ -133,7 +134,7 @@ export const RescheduleModal: React.FC<RescheduleModalProps> = ({
       capacitySettings.dayStartTime,
       capacitySettings.dayEndTime,
       earliestAllowed,
-      6, // Up to 6 distinct slots per day
+      12, // Up to 12 distinct slots per day to support 3-5 before and 3-5 after
       task.id,
       capacitySettings.sleepStartTime,
       capacitySettings.sleepEndTime,
@@ -268,6 +269,30 @@ export const RescheduleModal: React.FC<RescheduleModalProps> = ({
     if (selectedDayFilter === 'ALL') return weekDaysData;
     return weekDaysData.filter((_, idx) => idx === selectedDayFilter);
   }, [weekDaysData, selectedDayFilter]);
+
+  // Find all available slots on the actively selected anchorDate
+  const activeDateSlots = useMemo(() => {
+    const dayData = weekDaysData.find(d => d.dateStr === anchorDate);
+    return dayData ? dayData.slots : [];
+  }, [weekDaysData, anchorDate]);
+
+  const taskStartMin = useMemo(() => {
+    return task.startTime && task.startTime !== 'All Day' ? parse12HourToMinutes(task.startTime) : null;
+  }, [task.startTime]);
+
+  // Partition available slots into 3-5 Before (Blue) and 3-5 After (Green) relative to Current Task Time
+  const { beforeSlots, afterSlots } = useMemo(() => {
+    if (taskStartMin === null || activeDateSlots.length === 0) {
+      return { beforeSlots: [], afterSlots: activeDateSlots.slice(0, 5) };
+    }
+    const before = activeDateSlots
+      .filter(s => parse12HourToMinutes(s.startTime) < taskStartMin)
+      .slice(-5); // Take the 3 to 5 slots closest before current time
+    const after = activeDateSlots
+      .filter(s => parse12HourToMinutes(s.startTime) > taskStartMin)
+      .slice(0, 5); // Take the 3 to 5 slots closest after current time
+    return { beforeSlots: before, afterSlots: after };
+  }, [activeDateSlots, taskStartMin]);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/60 backdrop-blur-sm animate-fade-in">
@@ -571,6 +596,188 @@ export const RescheduleModal: React.FC<RescheduleModalProps> = ({
                 ))}
               </div>
 
+              {/* RELATIVE SHIFT TIMELINE MATRIX (Blue: Before | Red: Current | Green: After) */}
+              {taskStartMin !== null && (
+                <div className="p-3.5 sm:p-4 rounded-2xl bg-theme-card-hover/80 border border-theme-border shadow-sm space-y-3 shrink-0">
+                  <div className="flex items-center justify-between gap-2 flex-wrap">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-black uppercase tracking-wider text-theme-text flex items-center gap-1.5">
+                        <Clock className="w-3.5 h-3.5 text-blue-500" />
+                        Shift Timeline Matrix ({anchorDate})
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2.5 text-[10px] font-bold text-theme-muted flex-wrap">
+                      <span className="flex items-center gap-1">
+                        <span className="w-2.5 h-2.5 rounded-full bg-blue-500 inline-block"></span>
+                        <span className="text-blue-600 dark:text-blue-400 font-semibold">Blue: Earlier ({beforeSlots.length})</span>
+                      </span>
+                      <span className="flex items-center gap-1">
+                        <span className="w-2.5 h-2.5 rounded-full bg-red-500 inline-block"></span>
+                        <span className="text-red-600 dark:text-red-400 font-semibold">Red: Current Anchor</span>
+                      </span>
+                      <span className="flex items-center gap-1">
+                        <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 inline-block"></span>
+                        <span className="text-emerald-600 dark:text-emerald-400 font-semibold">Green: Later ({afterSlots.length})</span>
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* 3-Section Visual Layout: Before (Blue) ⟵ Current (Red) ⟶ After (Green) */}
+                  <div className="grid grid-cols-1 lg:grid-cols-11 gap-2.5 items-stretch">
+                    
+                    {/* 1. BEFORE SLOTS (BLUE BOXES) - Col span 5 */}
+                    <div className="lg:col-span-5 space-y-2 flex flex-col justify-between">
+                      <div className="flex items-center justify-between text-[11px] font-black text-blue-700 dark:text-blue-300 uppercase tracking-wider px-1">
+                        <span className="flex items-center gap-1">
+                          <ArrowLeft className="w-3 h-3 stroke-[2.5]" /> Shift Earlier ({beforeSlots.length})
+                        </span>
+                        <span className="text-[10px] font-medium text-theme-muted font-normal">Pre-pone</span>
+                      </div>
+
+                      <div className="space-y-1.5 flex-1 flex flex-col justify-start">
+                        {beforeSlots.length === 0 ? (
+                          <div className="p-3 rounded-xl bg-blue-50/40 dark:bg-blue-950/20 border border-dashed border-blue-200 dark:border-blue-900/40 text-center text-xs text-theme-muted flex items-center justify-center flex-1 min-h-[70px]">
+                            No earlier conflict-free slots on {anchorDate}
+                          </div>
+                        ) : (
+                          beforeSlots.map((slot, bIdx) => {
+                            const isSelected = selectedSlot?.date === slot.date && selectedSlot?.startTime === slot.startTime;
+                            const period = getTimePeriodForTime(slot.startTime, timePeriodSettings);
+                            const diffMin = taskStartMin - parse12HourToMinutes(slot.startTime);
+                            const diffHours = Math.floor(diffMin / 60);
+                            const diffMins = diffMin % 60;
+                            const diffLabel = diffHours > 0 
+                              ? (diffMins > 0 ? `-${diffHours}h ${diffMins}m` : `-${diffHours}h`)
+                              : `-${diffMins}m`;
+
+                            return (
+                              <button
+                                key={`before-${bIdx}`}
+                                type="button"
+                                onClick={() => setSelectedSlot(slot)}
+                                className={`w-full p-2.5 rounded-xl border text-left transition-all flex items-center justify-between gap-2 cursor-pointer ${
+                                  isSelected
+                                    ? 'bg-blue-600 text-white border-blue-600 shadow-md ring-2 ring-blue-500/50'
+                                    : 'bg-blue-50/90 dark:bg-blue-950/50 border-blue-300 dark:border-blue-800/80 hover:border-blue-500 hover:bg-blue-100/80 dark:hover:bg-blue-900/60 shadow-2xs'
+                                }`}
+                              >
+                                <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
+                                  <div className={`text-xs font-mono font-black ${isSelected ? 'text-white' : 'text-blue-950 dark:text-blue-100'}`}>
+                                    {slot.startTime} → {slot.endTime}
+                                  </div>
+                                  <span className={`text-[10px] font-bold px-1.5 py-0.2 rounded shrink-0 flex items-center gap-0.5 ${
+                                    isSelected 
+                                      ? 'bg-white/20 text-white' 
+                                      : 'bg-blue-100 dark:bg-blue-900/80 text-blue-800 dark:text-blue-200 border border-blue-200 dark:border-blue-700'
+                                  }`}>
+                                    <span>{period?.emoji || '⏰'}</span>
+                                    <span>{period?.name || slot.period}</span>
+                                  </span>
+                                </div>
+                                <div className="flex items-center gap-1.5 shrink-0">
+                                  <span className={`text-[10px] font-bold font-mono px-1.5 py-0.5 rounded ${
+                                    isSelected ? 'bg-white/25 text-white' : 'bg-blue-200/80 dark:bg-blue-900/80 text-blue-900 dark:text-blue-100'
+                                  }`}>
+                                    {diffLabel}
+                                  </span>
+                                  {isSelected && <Check className="w-3.5 h-3.5 stroke-[3] text-white" />}
+                                </div>
+                              </button>
+                            );
+                          })
+                        )}
+                      </div>
+                    </div>
+
+                    {/* 2. CURRENT TIME REFERENCE (RED BOX) - Col span 1 */}
+                    <div className="lg:col-span-1 flex flex-col items-center justify-center p-2.5 rounded-xl bg-red-500/10 dark:bg-red-950/30 border-2 border-red-500 text-center space-y-1 shrink-0 shadow-sm">
+                      <span className="text-[9px] font-black uppercase tracking-wider text-red-700 dark:text-red-300 px-1.5 py-0.5 rounded bg-red-100 dark:bg-red-950/80 border border-red-300 dark:border-red-800 flex items-center gap-0.5">
+                        <Clock className="w-2.5 h-2.5" /> CURRENT
+                      </span>
+                      <div className="font-mono font-black text-xs text-red-700 dark:text-red-300 leading-tight">
+                        {task.startTime}
+                      </div>
+                      <div className="text-[9px] text-theme-muted font-mono">
+                        ↓ {task.endTime}
+                      </div>
+                      {(() => {
+                        const curPeriod = getTimePeriodForTime(task.startTime, timePeriodSettings);
+                        return (
+                          <span className="text-[9px] font-bold text-red-700 dark:text-red-300 truncate max-w-full px-1">
+                            {curPeriod?.emoji || '⏰'} {curPeriod?.name || 'Anchor'}
+                          </span>
+                        );
+                      })()}
+                    </div>
+
+                    {/* 3. AFTER SLOTS (GREEN BOXES) - Col span 5 */}
+                    <div className="lg:col-span-5 space-y-2 flex flex-col justify-between">
+                      <div className="flex items-center justify-between text-[11px] font-black text-emerald-700 dark:text-emerald-300 uppercase tracking-wider px-1">
+                        <span className="flex items-center gap-1">
+                          Shift Later ({afterSlots.length}) <ArrowRight className="w-3 h-3 stroke-[2.5]" />
+                        </span>
+                        <span className="text-[10px] font-medium text-theme-muted font-normal">Post-pone</span>
+                      </div>
+
+                      <div className="space-y-1.5 flex-1 flex flex-col justify-start">
+                        {afterSlots.length === 0 ? (
+                          <div className="p-3 rounded-xl bg-emerald-50/40 dark:bg-emerald-950/20 border border-dashed border-emerald-200 dark:border-emerald-900/40 text-center text-xs text-theme-muted flex items-center justify-center flex-1 min-h-[70px]">
+                            No later conflict-free slots on {anchorDate}
+                          </div>
+                        ) : (
+                          afterSlots.map((slot, aIdx) => {
+                            const isSelected = selectedSlot?.date === slot.date && selectedSlot?.startTime === slot.startTime;
+                            const period = getTimePeriodForTime(slot.startTime, timePeriodSettings);
+                            const diffMin = parse12HourToMinutes(slot.startTime) - taskStartMin;
+                            const diffHours = Math.floor(diffMin / 60);
+                            const diffMins = diffMin % 60;
+                            const diffLabel = diffHours > 0 
+                              ? (diffMins > 0 ? `+${diffHours}h ${diffMins}m` : `+${diffHours}h`)
+                              : `+${diffMins}m`;
+
+                            return (
+                              <button
+                                key={`after-${aIdx}`}
+                                type="button"
+                                onClick={() => setSelectedSlot(slot)}
+                                className={`w-full p-2.5 rounded-xl border text-left transition-all flex items-center justify-between gap-2 cursor-pointer ${
+                                  isSelected
+                                    ? 'bg-emerald-600 text-white border-emerald-600 shadow-md ring-2 ring-emerald-500/50'
+                                    : 'bg-emerald-50/90 dark:bg-emerald-950/50 border-emerald-300 dark:border-emerald-800/80 hover:border-emerald-500 hover:bg-emerald-100/80 dark:hover:bg-emerald-900/60 shadow-2xs'
+                                }`}
+                              >
+                                <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
+                                  <div className={`text-xs font-mono font-black ${isSelected ? 'text-white' : 'text-emerald-950 dark:text-emerald-100'}`}>
+                                    {slot.startTime} → {slot.endTime}
+                                  </div>
+                                  <span className={`text-[10px] font-bold px-1.5 py-0.2 rounded shrink-0 flex items-center gap-0.5 ${
+                                    isSelected 
+                                      ? 'bg-white/20 text-white' 
+                                      : 'bg-emerald-100 dark:bg-emerald-900/80 text-emerald-800 dark:text-emerald-200 border border-emerald-200 dark:border-emerald-700'
+                                  }`}>
+                                    <span>{period?.emoji || '⏰'}</span>
+                                    <span>{period?.name || slot.period}</span>
+                                  </span>
+                                </div>
+                                <div className="flex items-center gap-1.5 shrink-0">
+                                  <span className={`text-[10px] font-bold font-mono px-1.5 py-0.5 rounded ${
+                                    isSelected ? 'bg-white/25 text-white' : 'bg-emerald-200/80 dark:bg-emerald-900/80 text-emerald-900 dark:text-emerald-100'
+                                  }`}>
+                                    {diffLabel}
+                                  </span>
+                                  {isSelected && <Check className="w-3.5 h-3.5 stroke-[3] text-white" />}
+                                </div>
+                              </button>
+                            );
+                          })
+                        )}
+                      </div>
+                    </div>
+
+                  </div>
+                </div>
+              )}
+
               {/* Day Groups List */}
               <div className="space-y-3">
                 {filteredDays.map((dayGroup, groupIdx) => {
@@ -634,67 +841,77 @@ export const RescheduleModal: React.FC<RescheduleModalProps> = ({
                           {dayGroup.slots.map((slot, sIdx) => {
                             const isSelected = selectedSlot?.date === slot.date && selectedSlot?.startTime === slot.startTime;
                             const isSuggested = suggestedNextSlot?.date === slot.date && suggestedNextSlot?.startTime === slot.startTime;
+                            const period = getTimePeriodForTime(slot.startTime, timePeriodSettings);
+                            const isBeforeCurrent = taskStartMin !== null && parse12HourToMinutes(slot.startTime) < taskStartMin;
+                            const isAfterCurrent = taskStartMin !== null && parse12HourToMinutes(slot.startTime) > taskStartMin;
 
                             return (
                               <button
                                 key={sIdx}
                                 type="button"
                                 onClick={() => setSelectedSlot(slot)}
-                                className={`p-3 rounded-xl border text-left transition-all relative flex flex-col justify-between gap-2 cursor-pointer ${
+                                className={`p-3.5 rounded-2xl border text-left transition-all relative flex flex-col justify-between gap-2.5 cursor-pointer ${
                                   isSelected
-                                    ? 'bg-blue-50/90 dark:bg-blue-950/80 border-blue-500 shadow-md ring-2 ring-blue-500/40'
+                                    ? 'bg-blue-50/95 dark:bg-blue-950/80 border-blue-500 shadow-md ring-2 ring-blue-500/40'
                                     : isSuggested
                                       ? 'bg-emerald-50/50 dark:bg-emerald-950/30 border-emerald-400/80 hover:border-emerald-500'
-                                      : 'bg-theme-card-hover/70 hover:bg-theme-card-hover border-theme-border hover:border-blue-400 dark:hover:border-blue-600'
+                                      : isBeforeCurrent
+                                        ? 'bg-blue-50/25 dark:bg-blue-950/15 border-blue-200/70 dark:border-blue-900/40 hover:border-blue-400'
+                                        : isAfterCurrent
+                                          ? 'bg-emerald-50/25 dark:bg-emerald-950/15 border-emerald-200/70 dark:border-emerald-900/40 hover:border-emerald-400'
+                                          : 'bg-theme-card-hover/70 hover:bg-theme-card-hover border-theme-border hover:border-blue-400 dark:hover:border-blue-600'
                                 }`}
                               >
-                                <div className="flex items-center justify-between gap-1.5 w-full">
-                                  <div className="flex items-center gap-1.5">
-                                    {getPeriodIcon(slot.period)}
-                                    <span className="text-[11px] font-bold text-theme-muted uppercase tracking-wider">
-                                      {slot.period}
+                                {/* Top Row: ONE Unified Time Name on Left, Clean Badges on Right */}
+                                <div className="flex items-center justify-between gap-2 w-full">
+                                  <div className="flex items-center gap-1.5 min-w-0">
+                                    <span className="text-[11px] font-black text-theme-text uppercase tracking-wider flex items-center gap-1 truncate">
+                                      <span>{period?.emoji || (slot.period === 'Morning' ? '🌅' : slot.period === 'Afternoon' ? '☀️' : '🌙')}</span>
+                                      <span className="truncate">{period?.name || slot.period}</span>
                                     </span>
                                   </div>
 
-                                  <div className="flex items-center gap-1">
+                                  <div className="flex items-center gap-1.5 shrink-0">
                                     {isSuggested && (
-                                      <span className="text-[9px] font-black px-1.5 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-700 flex items-center gap-0.5">
+                                      <span className="text-[9px] font-black px-1.5 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-700 flex items-center gap-0.5 shadow-2xs">
                                         <Zap className="w-2.5 h-2.5 fill-current" />
-                                        RECOMMENDED NEXT
+                                        RECOMMENDED
                                       </span>
                                     )}
 
                                     {isSelected ? (
-                                      <div className="w-5 h-5 rounded-full bg-blue-600 text-white flex items-center justify-center shrink-0">
+                                      <div className="w-5 h-5 rounded-full bg-blue-600 text-white flex items-center justify-center shrink-0 shadow-xs">
                                         <Check className="w-3 h-3 stroke-[3]" />
                                       </div>
                                     ) : (
                                       <span className="text-[10px] font-mono text-theme-muted font-semibold">
-                                        Slot #{sIdx + 1}
+                                        #{sIdx + 1}
                                       </span>
                                     )}
                                   </div>
                                 </div>
 
-                                <div className="flex items-center justify-between gap-1 mt-0.5 flex-wrap">
-                                  <div className="text-xs font-black font-mono text-theme-text flex items-center gap-1">
+                                {/* Middle Row: Big Clean Time + Relative Offset Pill */}
+                                <div className="flex items-center justify-between gap-2 my-0.5 flex-wrap">
+                                  <div className="text-sm font-black font-mono text-theme-text flex items-center gap-1.5">
                                     <span>{slot.startTime}</span>
-                                    <ArrowRight className="w-3 h-3 text-theme-muted" />
+                                    <ArrowRight className="w-3.5 h-3.5 text-theme-muted" />
                                     <span>{slot.endTime}</span>
                                   </div>
-                                  {(() => {
-                                    const period = getTimePeriodForTime(slot.startTime, timePeriodSettings);
-                                    if (!period) return null;
-                                    return (
-                                      <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-indigo-50 dark:bg-indigo-950/70 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 shrink-0 flex items-center gap-0.5">
-                                        <span>{period.emoji}</span>
-                                        <span>{period.name}</span>
-                                      </span>
-                                    );
-                                  })()}
+
+                                  {isBeforeCurrent ? (
+                                    <span className="text-[9px] font-black font-mono px-2 py-0.5 rounded-full bg-blue-100 dark:bg-blue-950/80 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800 shrink-0 flex items-center gap-0.5">
+                                      <ArrowLeft className="w-2.5 h-2.5" /> Earlier
+                                    </span>
+                                  ) : isAfterCurrent ? (
+                                    <span className="text-[9px] font-black font-mono px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950/80 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 shrink-0 flex items-center gap-0.5">
+                                      Later <ArrowRight className="w-2.5 h-2.5" />
+                                    </span>
+                                  ) : null}
                                 </div>
 
-                                <div className="flex items-center justify-between text-[10px] text-theme-muted font-medium pt-1 border-t border-theme-border/40">
+                                {/* Bottom Row: Duration + Sleep Protection */}
+                                <div className="flex items-center justify-between text-[10px] text-theme-muted font-medium pt-1.5 border-t border-theme-border/40">
                                   <span>{task.appointedMinutes}m block</span>
                                   <span className="text-emerald-600 dark:text-emerald-400 font-semibold">No Sleep Overlap ✓</span>
                                 </div>
@@ -808,6 +1025,7 @@ export const RescheduleModal: React.FC<RescheduleModalProps> = ({
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                     {customSlots.map((slot, cIdx) => {
                       const isSelected = selectedSlot?.date === slot.date && selectedSlot?.startTime === slot.startTime;
+                      const period = getTimePeriodForTime(slot.startTime, timePeriodSettings);
                       return (
                         <div
                           key={cIdx}
@@ -819,32 +1037,20 @@ export const RescheduleModal: React.FC<RescheduleModalProps> = ({
                           }`}
                         >
                           <div className="flex items-center justify-between">
-                            <div className="flex items-center gap-1">
-                              {getPeriodIcon(slot.period)}
-                              <span className="text-[10px] font-bold text-emerald-700 dark:text-emerald-300 uppercase">
-                                {slot.period} Slot
+                            <div className="flex items-center gap-1.5 min-w-0">
+                              <span className="text-[11px] font-bold text-emerald-700 dark:text-emerald-300 uppercase tracking-wider flex items-center gap-1 truncate">
+                                <span>{period?.emoji || '⏰'}</span>
+                                <span className="truncate">{period?.name || `${slot.period} Slot`}</span>
                               </span>
                             </div>
                             {isSelected && (
-                              <div className="w-4 h-4 rounded-full bg-emerald-600 text-white flex items-center justify-center">
+                              <div className="w-4 h-4 rounded-full bg-emerald-600 text-white flex items-center justify-center shrink-0">
                                 <Check className="w-2.5 h-2.5 stroke-[3]" />
                               </div>
                             )}
                           </div>
-                          <div className="flex items-center justify-between gap-1 mt-0.5 flex-wrap">
-                            <div className="text-xs font-mono font-bold text-theme-text">
-                              {slot.startTime} - {slot.endTime}
-                            </div>
-                            {(() => {
-                              const period = getTimePeriodForTime(slot.startTime, timePeriodSettings);
-                              if (!period) return null;
-                              return (
-                                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-indigo-50 dark:bg-indigo-950/70 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 shrink-0 flex items-center gap-0.5">
-                                  <span>{period.emoji}</span>
-                                  <span>{period.name}</span>
-                                </span>
-                              );
-                            })()}
+                          <div className="text-xs font-mono font-bold text-theme-text">
+                            {slot.startTime} - {slot.endTime}
                           </div>
                         </div>
                       );
