@@ -2,7 +2,7 @@
  * Time utility functions for OptimusTime Time-Boxing and Automation Engines
  */
 
-import { Task, BufferStatusNote, CapacitySettings, DaySlice24, DayBreakdown24Metrics, SignalNoiseType } from '../types';
+import { Task, BufferStatusNote, CapacitySettings, DaySlice24, DayBreakdown24Metrics, SignalNoiseType, NamedTimePeriod } from '../types';
 import { detectSignalVsNoise } from './signalNoiseUtils';
 
 export const DAYS_OF_WEEK = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
@@ -169,6 +169,10 @@ export function findScheduleGaps(
   bufferNotes: Array<{ startTime: string; endTime: string; date?: string }> = [],
   defaultBuffer = 15
 ): TimeGap[] {
+  const dayStartMin = parse12HourToMinutes(dayStartTime);
+  let dayEndMin = parse12HourToMinutes(dayEndTime);
+  if (dayEndMin <= dayStartMin) dayEndMin += 1440;
+
   const activeTasks = tasks.filter(t => t.status !== 'Terminated' && t.startTime && t.endTime && t.startTime !== 'All Day');
   
   // Combine task intervals (including task + bufferMinutes) and logged bufferNotes intervals
@@ -181,7 +185,7 @@ export function findScheduleGaps(
       continue;
     }
 
-    const s = parse12HourToMinutes(t.startTime);
+    let s = parse12HourToMinutes(t.startTime);
     let e = parse12HourToMinutes(t.endTime);
 
     // If task is Done and finished early, only occupy up to its actual completion time + buffer!
@@ -198,28 +202,34 @@ export function findScheduleGaps(
     }
 
     if (e < s) e += 1440;
+    // If day spans cross midnight (e.g. 06:00 AM to 02:00 AM), late-night tasks starting after midnight belong to next 24h phase
+    if (dayEndMin > 1440 && s < dayStartMin) {
+      s += 1440;
+      e += 1440;
+    }
     const buf = t.bufferMinutes !== undefined ? t.bufferMinutes : defaultBuffer;
     taskIntervals.push({ start: s, end: e + buf });
   }
 
   const bufferIntervals = (bufferNotes || []).map(b => {
-    const s = parse12HourToMinutes(b.startTime);
+    let s = parse12HourToMinutes(b.startTime);
     let e = parse12HourToMinutes(b.endTime);
     if (e < s) e += 1440;
+    if (dayEndMin > 1440 && s < dayStartMin) {
+      s += 1440;
+      e += 1440;
+    }
     return { start: s, end: e };
   });
 
   const intervals = [...taskIntervals, ...bufferIntervals].sort((a, b) => a.start - b.start);
 
   if (intervals.length === 0) {
-    const startMin = parse12HourToMinutes(dayStartTime);
-    let endMin = parse12HourToMinutes(dayEndTime);
-    if (endMin <= startMin) endMin += 1440;
-    if (endMin > startMin) {
+    if (dayEndMin > dayStartMin) {
       return [{
         startTime: dayStartTime,
         endTime: dayEndTime,
-        durationMinutes: endMin - startMin
+        durationMinutes: dayEndMin - dayStartMin
       }];
     }
     return [];
@@ -240,11 +250,7 @@ export function findScheduleGaps(
     }
   }
 
-  const dayStartMin = parse12HourToMinutes(dayStartTime);
-  let dayEndMin = parse12HourToMinutes(dayEndTime);
-  if (dayEndMin <= dayStartMin) dayEndMin += 1440;
   const gaps: TimeGap[] = [];
-
   let cursor = dayStartMin;
 
   for (const block of merged) {
@@ -560,7 +566,8 @@ export function findAllAvailableSlotsOnDate(
   maxSlotsPerDay = 5,
   ignoreTaskId?: string,
   sleepStartTime = '11:00 PM',
-  sleepEndTime = '06:00 AM'
+  sleepEndTime = '06:00 AM',
+  currentTaskSlot?: { date: string; startTime: string }
 ): AvailableSlotResult[] {
   const now = new Date();
   const todayStr = toISODateString(now);
@@ -582,6 +589,21 @@ export function findAllAvailableSlotsOnDate(
   let effectiveEarliest = earliestAllowedMinutes;
   if (isToday) {
     effectiveEarliest = Math.max(earliestAllowedMinutes ?? minFutureMinutes, minFutureMinutes);
+
+    // If there is an active running task right now, no slot can start before that task completes
+    const activeWorkingTask = allTasks.find(t => 
+      t.status === 'Working' && 
+      isTaskScheduledForDate(t, todayStr) &&
+      (!ignoreTaskId || t.id !== ignoreTaskId)
+    );
+    if (activeWorkingTask) {
+      let aEnd = parse12HourToMinutes(activeWorkingTask.endTime);
+      const aStart = parse12HourToMinutes(activeWorkingTask.startTime);
+      if (aEnd < aStart) aEnd += 1440;
+      if (dayEndMin > 1440 && aStart < dayStartMin) aEnd += 1440;
+      const aEndWithBuf = aEnd + (activeWorkingTask.bufferMinutes !== undefined ? activeWorkingTask.bufferMinutes : 15);
+      effectiveEarliest = Math.max(effectiveEarliest, aEndWithBuf);
+    }
   }
 
   const effectiveStart = Math.max(dayStartMin, effectiveEarliest ?? dayStartMin);
@@ -608,9 +630,13 @@ export function findAllAvailableSlotsOnDate(
 
   // Intervals including task + buffer
   const intervals = dayTasks.map(t => {
-    const s = parse12HourToMinutes(t.startTime);
+    let s = parse12HourToMinutes(t.startTime);
     let e = parse12HourToMinutes(t.endTime);
     if (e < s) e += 1440;
+    if (dayEndMin > 1440 && s < dayStartMin) {
+      s += 1440;
+      e += 1440;
+    }
     const buf = t.bufferMinutes !== undefined ? t.bufferMinutes : 15;
     return { start: s, end: e + buf };
   }).sort((a, b) => a.start - b.start);
@@ -666,22 +692,24 @@ export function findAllAvailableSlotsOnDate(
     const startStr1 = formatMinutesTo12Hour(slot1Start);
     const endStr1 = formatMinutesTo12Hour(slot1End);
 
-    // Strictly avoid system sleep time and past time
+    // Strictly avoid system sleep time, past time, and task's own existing slot when rescheduling
     if (!isTimeInSleepWindow(startStr1, endStr1, sleepStartTime, sleepEndTime)) {
       if (!isToday || slot1Start >= minFutureMinutes) {
-        const period1: 'Morning' | 'Afternoon' | 'Evening' = 
-          (slot1Start % 1440) < 720 ? 'Morning' : (slot1Start % 1440) < 1020 ? 'Afternoon' : 'Evening';
+        if (!currentTaskSlot || dateStr !== currentTaskSlot.date || startStr1 !== currentTaskSlot.startTime) {
+          const period1: 'Morning' | 'Afternoon' | 'Evening' = 
+            (slot1Start % 1440) < 720 ? 'Morning' : (slot1Start % 1440) < 1020 ? 'Afternoon' : 'Evening';
 
-        results.push({
-          date: dateStr,
-          dayOfWeek,
-          startTime: startStr1,
-          endTime: endStr1,
-          scheduledMinutesOnDay,
-          remainingCapacityMinutes: remainingCapacity,
-          isRedLine,
-          period: period1
-        });
+          results.push({
+            date: dateStr,
+            dayOfWeek,
+            startTime: startStr1,
+            endTime: endStr1,
+            scheduledMinutesOnDay,
+            remainingCapacityMinutes: remainingCapacity,
+            isRedLine,
+            period: period1
+          });
+        }
       }
     }
 
@@ -695,18 +723,21 @@ export function findAllAvailableSlotsOnDate(
 
       if (!isTimeInSleepWindow(nextStartStr, nextEndStr, sleepStartTime, sleepEndTime)) {
         if (!isToday || nextStart >= minFutureMinutes) {
-          const periodNext: 'Morning' | 'Afternoon' | 'Evening' = 
-            (nextStart % 1440) < 720 ? 'Morning' : (nextStart % 1440) < 1020 ? 'Afternoon' : 'Evening';
-          results.push({
-            date: dateStr,
-            dayOfWeek,
-            startTime: nextStartStr,
-            endTime: nextEndStr,
-            scheduledMinutesOnDay,
-            remainingCapacityMinutes: remainingCapacity,
-            isRedLine,
-            period: periodNext
-          });
+          if (!currentTaskSlot || dateStr !== currentTaskSlot.date || nextStartStr !== currentTaskSlot.startTime) {
+            const periodNext: 'Morning' | 'Afternoon' | 'Evening' = 
+              (nextStart % 1440) < 720 ? 'Morning' : (nextStart % 1440) < 1020 ? 'Afternoon' : 'Evening';
+
+            results.push({
+              date: dateStr,
+              dayOfWeek,
+              startTime: nextStartStr,
+              endTime: nextEndStr,
+              scheduledMinutesOnDay,
+              remainingCapacityMinutes: remainingCapacity,
+              isRedLine,
+              period: periodNext
+            });
+          }
         }
       }
       nextStart += step;
@@ -937,8 +968,8 @@ export function getTaskTitleClasses(title: string, isDone = false, isInSleep = f
   const colorClass = isDone 
     ? 'line-through text-theme-muted opacity-75' 
     : isInSleep 
-    ? 'text-white drop-shadow-sm font-black' 
-    : 'text-theme-text';
+    ? 'text-white dark:text-slate-100 drop-shadow-sm font-black' 
+    : 'text-theme-text font-black';
   
   if (len <= 25) {
     return `text-lg sm:text-xl font-black font-openSans tracking-tight leading-snug ${colorClass}`;
@@ -1966,7 +1997,8 @@ export function findNextAvailableSlot(
   ignoreTaskId?: string,
   startDateStr?: string,
   preferPm = false,
-  bufferGap = 15
+  bufferGap = 15,
+  currentTaskSlot?: { date: string; startTime: string }
 ): SuggestedNextSlotResult | null {
   const now = new Date();
   const todayStr = toISODateString(now);
@@ -2011,6 +2043,21 @@ export function findNextAvailableSlot(
         earliestAllowed = Math.max(wakingStartMin, futureRounded);
       }
 
+      // If there is an active running task right now, no slot can start before that task completes
+      const activeWorkingTask = allTasks.find(t => 
+        t.status === 'Working' && 
+        isTaskScheduledForDate(t, todayStr) &&
+        (!ignoreTaskId || t.id !== ignoreTaskId)
+      );
+      if (activeWorkingTask) {
+        let aEnd = parse12HourToMinutes(activeWorkingTask.endTime);
+        const aStart = parse12HourToMinutes(activeWorkingTask.startTime);
+        if (aEnd < aStart) aEnd += 1440;
+        if (wakingEndMin > 1440 && aStart < wakingStartMin) aEnd += 1440;
+        const aEndWithBuf = aEnd + (activeWorkingTask.bufferMinutes !== undefined ? activeWorkingTask.bufferMinutes : bufferGap);
+        earliestAllowed = Math.max(earliestAllowed, aEndWithBuf);
+      }
+
       if (preferPm && earliestAllowed < 720) {
         earliestAllowed = 720;
       }
@@ -2039,9 +2086,13 @@ export function findNextAvailableSlot(
 
     // Merge intervals
     const intervals = dayTasks.map(t => {
-      const s = parse12HourToMinutes(t.startTime);
+      let s = parse12HourToMinutes(t.startTime);
       let e = parse12HourToMinutes(t.endTime);
       if (e < s) e += 1440;
+      if (wakingEndMin > 1440 && s < wakingStartMin) {
+        s += 1440;
+        e += 1440;
+      }
       const buf = t.bufferMinutes !== undefined ? t.bufferMinutes : bufferGap;
       return { start: s, end: e + buf };
     }).sort((a, b) => a.start - b.start);
@@ -2073,8 +2124,12 @@ export function findNextAvailableSlot(
           const slotEndStr = formatMinutesTo12Hour(gapStart + taskDurationMinutes);
           if (!isTimeInSleepWindow(slotStartStr, slotEndStr, sleepStartStr, sleepEndStr)) {
             if (!isToday || gapStart >= curHourMin + 5) {
-              foundSlot = { start: gapStart, end: gapStart + taskDurationMinutes };
-              break;
+              if (currentTaskSlot && dateStr === currentTaskSlot.date && slotStartStr === currentTaskSlot.startTime) {
+                // Skip the task's existing slot when rescheduling
+              } else {
+                foundSlot = { start: gapStart, end: gapStart + taskDurationMinutes };
+                break;
+              }
             }
           }
         }
@@ -2089,7 +2144,11 @@ export function findNextAvailableSlot(
         const slotEndStr = formatMinutesTo12Hour(gapStart + taskDurationMinutes);
         if (!isTimeInSleepWindow(slotStartStr, slotEndStr, sleepStartStr, sleepEndStr)) {
           if (!isToday || gapStart >= curHourMin + 5) {
-            foundSlot = { start: gapStart, end: gapStart + taskDurationMinutes };
+            if (currentTaskSlot && dateStr === currentTaskSlot.date && slotStartStr === currentTaskSlot.startTime) {
+              // Skip the task's existing slot when rescheduling
+            } else {
+              foundSlot = { start: gapStart, end: gapStart + taskDurationMinutes };
+            }
           }
         }
       }
@@ -2344,3 +2403,43 @@ export function isTaskInSleepWindow(
   return isTimeInSleepWindow(task.startTime, task.endTime, sleepStart, sleepEnd);
 }
 
+/**
+ * Returns the NamedTimePeriod for a given 12-hour time string (e.g. "09:30 AM" -> Morning).
+ * Correctly accounts for normal periods and cross-midnight periods (e.g. 08:00 PM - 02:00 AM Night).
+ */
+export function getTimePeriodForTime(
+  timeStr: string,
+  periods?: NamedTimePeriod[]
+): NamedTimePeriod | null {
+  if (!timeStr || timeStr === 'All Day') return null;
+  const targetMin = parse12HourToMinutes(timeStr);
+  if (isNaN(targetMin)) return null;
+
+  if (!periods || periods.length === 0) return null;
+
+  for (const period of periods) {
+    const startMin = parse12HourToMinutes(period.startTime);
+    const endMin = parse12HourToMinutes(period.endTime);
+
+    if (startMin <= endMin) {
+      // Normal within-day range (e.g. 05:00 AM to 08:59 AM)
+      if (targetMin >= startMin && targetMin <= endMin) {
+        return period;
+      }
+    } else {
+      // Overnight / cross-midnight range (e.g. 08:00 PM to 02:00 AM)
+      if (targetMin >= startMin || targetMin <= endMin) {
+        return period;
+      }
+    }
+  }
+  return null;
+}
+
+export function getTimePeriodName(
+  timeStr: string,
+  periods?: NamedTimePeriod[]
+): string | null {
+  const match = getTimePeriodForTime(timeStr, periods);
+  return match ? match.name : null;
+}

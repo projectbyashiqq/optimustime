@@ -266,7 +266,9 @@ export const WeeklyCalendarView: React.FC<WeeklyCalendarViewProps> = ({
                           isDone
                             ? 'bg-emerald-50/40 dark:bg-emerald-950/20 border-emerald-200 dark:border-emerald-900/40 opacity-80'
                             : isWorking
-                            ? 'bg-blue-50/90 dark:bg-blue-950/50 border-blue-400 dark:border-blue-700 shadow-sm ring-1 ring-blue-500/30'
+                            ? isInSleep
+                              ? 'bg-slate-900 text-slate-100 dark:bg-slate-950 border-blue-500 shadow-sm ring-1 ring-blue-500/80'
+                              : 'bg-blue-50/90 dark:bg-blue-950/50 border-blue-400 dark:border-blue-700 shadow-sm ring-1 ring-blue-500/30'
                             : isInSleep
                             ? 'bg-slate-900/95 text-slate-100 dark:bg-slate-950 dark:text-slate-100 border-indigo-900/90 shadow-sm ring-1 ring-indigo-500/40'
                             : task.priority === 'P1'

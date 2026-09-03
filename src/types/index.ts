@@ -199,6 +199,20 @@ export interface CapacitySettings {
   autoSleepScheduleEnabled?: boolean; // When true, 24-hour tracker auto-schedules sleep; when false, no automatic sleep blocks
 }
 
+export interface NamedTimePeriod {
+  id: string;
+  name: string; // e.g. "EarlyMorning", "Morning", "Lunch Time zone", "After Lunch", "Evening", "Night", "deep night"
+  startTime: string; // "05:00 AM"
+  endTime: string; // "08:59 AM"
+  emoji?: string;
+  color?: string;
+}
+
+export interface TimePeriodSettings {
+  isEnabled: boolean; // Customize enable toggle
+  periods: NamedTimePeriod[];
+}
+
 export interface DefaultTaskSettings {
   defaultPriority: PriorityLevel; // Default 'P1'
   defaultCategory: string; // Default 'VRTX'

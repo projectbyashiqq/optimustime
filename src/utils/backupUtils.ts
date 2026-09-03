@@ -13,7 +13,8 @@ import {
   DefaultTaskSettings, 
   SecuritySettings, 
   CloudSyncConfig, 
-  LifeEventLog 
+  LifeEventLog,
+  TimePeriodSettings
 } from '../types';
 
 export interface FullBackupPayload {
@@ -53,6 +54,7 @@ export interface FullBackupPayload {
     capacitySettings: CapacitySettings;
     prioritySettings: PrioritySettings;
     defaultTaskSettings: DefaultTaskSettings;
+    timePeriodSettings?: TimePeriodSettings;
     securitySettings: SecuritySettings;
     cloudSyncConfig: CloudSyncConfig;
     theme: ThemeName;
@@ -81,6 +83,7 @@ export interface SettingsBackupPayload {
     capacitySettings: CapacitySettings;
     prioritySettings: PrioritySettings;
     defaultTaskSettings: DefaultTaskSettings;
+    timePeriodSettings?: TimePeriodSettings;
     securitySettings: SecuritySettings;
     cloudSyncConfig: CloudSyncConfig;
     theme: ThemeName;
@@ -130,6 +133,7 @@ export function createFullSystemBackup(contextState: {
   capacitySettings: CapacitySettings;
   prioritySettings: PrioritySettings;
   defaultTaskSettings: DefaultTaskSettings;
+  timePeriodSettings?: TimePeriodSettings;
   securitySettings: SecuritySettings;
   cloudSyncConfig: CloudSyncConfig;
   theme: ThemeName;
@@ -175,6 +179,7 @@ export function createFullSystemBackup(contextState: {
       capacitySettings: contextState.capacitySettings,
       prioritySettings: contextState.prioritySettings,
       defaultTaskSettings: contextState.defaultTaskSettings,
+      timePeriodSettings: contextState.timePeriodSettings,
       securitySettings: contextState.securitySettings,
       cloudSyncConfig: contextState.cloudSyncConfig,
       theme: contextState.theme
@@ -194,6 +199,7 @@ export function createSettingsOnlyBackup(contextState: {
   capacitySettings: CapacitySettings;
   prioritySettings: PrioritySettings;
   defaultTaskSettings: DefaultTaskSettings;
+  timePeriodSettings?: TimePeriodSettings;
   securitySettings: SecuritySettings;
   cloudSyncConfig: CloudSyncConfig;
   theme: ThemeName;
@@ -220,6 +226,7 @@ export function createSettingsOnlyBackup(contextState: {
       capacitySettings: contextState.capacitySettings,
       prioritySettings: contextState.prioritySettings,
       defaultTaskSettings: contextState.defaultTaskSettings,
+      timePeriodSettings: contextState.timePeriodSettings,
       securitySettings: contextState.securitySettings,
       cloudSyncConfig: contextState.cloudSyncConfig,
       theme: contextState.theme

@@ -27,7 +27,9 @@ import {
   PlanProjectStatus,
   DefaultTaskSettings,
   DaySlice24,
-  SignalNoiseType
+  SignalNoiseType,
+  NamedTimePeriod,
+  TimePeriodSettings
 } from '../types';
 import { detectSignalVsNoise } from '../utils/signalNoiseUtils';
 import { 
@@ -51,7 +53,9 @@ import {
   INITIAL_BUFFER_CATEGORIES,
   INITIAL_EMERGENCY_CATEGORIES,
   INITIAL_PLAN_PROJECTS,
-  DEFAULT_TASK_PRESETS
+  DEFAULT_TASK_PRESETS,
+  DEFAULT_TIME_PERIOD_SETTINGS,
+  DEFAULT_NAMED_TIME_PERIODS
 } from './initialData';
 import { 
   generateProjectCode, 
@@ -205,6 +209,9 @@ interface AppContextType {
   updateCapacitySettings: (settings: CapacitySettings) => void;
   updatePrioritySettings: (settings: PrioritySettings) => void;
   updateDefaultTaskSettings: (settings: DefaultTaskSettings) => void;
+  timePeriodSettings: TimePeriodSettings;
+  updateTimePeriodSettings: (settings: TimePeriodSettings) => void;
+  resetTimePeriodsToDefault: () => void;
   
   // Security & Authentication Gate
   securitySettings: SecuritySettings;
@@ -361,6 +368,34 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return INITIAL_PLAN_PROJECTS;
     }
   });
+
+  // Named Time Periods & Day Zones (customize enable)
+  const [timePeriodSettings, setTimePeriodSettings] = useState<TimePeriodSettings>(() => {
+    try {
+      const saved = localStorage.getItem(`${STORAGE_KEY}_time_periods`);
+      return saved ? { ...DEFAULT_TIME_PERIOD_SETTINGS, ...JSON.parse(saved) } : DEFAULT_TIME_PERIOD_SETTINGS;
+    } catch {
+      return DEFAULT_TIME_PERIOD_SETTINGS;
+    }
+  });
+
+  const updateTimePeriodSettings = useCallback((settings: TimePeriodSettings) => {
+    setTimePeriodSettings(settings);
+    try {
+      localStorage.setItem(`${STORAGE_KEY}_time_periods`, JSON.stringify(settings));
+    } catch (e) {
+      console.error('Failed to save time periods', e);
+    }
+  }, []);
+
+  const resetTimePeriodsToDefault = useCallback(() => {
+    setTimePeriodSettings(DEFAULT_TIME_PERIOD_SETTINGS);
+    try {
+      localStorage.setItem(`${STORAGE_KEY}_time_periods`, JSON.stringify(DEFAULT_TIME_PERIOD_SETTINGS));
+    } catch (e) {
+      console.error('Failed to reset time periods', e);
+    }
+  }, []);
 
   // Buffer Status Note Modal State
   const [bufferNoteModalState, setBufferNoteModalState] = useState<{
@@ -644,6 +679,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       localStorage.setItem(`${STORAGE_KEY}_capacity`, JSON.stringify(capacitySettings));
       localStorage.setItem(`${STORAGE_KEY}_priorities`, JSON.stringify(prioritySettings));
       localStorage.setItem(`${STORAGE_KEY}_default_task_settings`, JSON.stringify(defaultTaskSettings));
+      localStorage.setItem(`${STORAGE_KEY}_time_periods`, JSON.stringify(timePeriodSettings));
       localStorage.setItem(`${STORAGE_KEY}_reminders`, JSON.stringify(reminders));
       localStorage.setItem(`${STORAGE_KEY}_knowledge`, JSON.stringify(knowledge));
       localStorage.setItem(`${STORAGE_KEY}_audit_logs`, JSON.stringify(auditLogs));
@@ -657,7 +693,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     } catch (e) {
       console.error('Failed to sync to LocalStorage', e);
     }
-  }, [tasks, categories, capacitySettings, prioritySettings, defaultTaskSettings, reminders, knowledge, auditLogs, bufferNotes, bufferCategories, emergencyCategories, planProjects, theme, securitySettings, cloudSyncConfig]);
+  }, [tasks, categories, capacitySettings, prioritySettings, defaultTaskSettings, timePeriodSettings, reminders, knowledge, auditLogs, bufferNotes, bufferCategories, emergencyCategories, planProjects, theme, securitySettings, cloudSyncConfig]);
 
   const updateCloudSyncConfig = useCallback((config: CloudSyncConfig) => {
     setCloudSyncConfig(config);
@@ -686,7 +722,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     bufferNotes,
     bufferCategories,
     emergencyCategories,
-    defaultTaskSettings
+    defaultTaskSettings,
+    timePeriodSettings
   });
   useEffect(() => {
     stateRef.current = {
@@ -702,9 +739,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       bufferNotes,
       bufferCategories,
       emergencyCategories,
-      defaultTaskSettings
+      defaultTaskSettings,
+      timePeriodSettings
     };
-  }, [tasks, categories, capacitySettings, prioritySettings, reminders, knowledge, planProjects, theme, securitySettings, bufferNotes, bufferCategories, emergencyCategories, defaultTaskSettings]);
+  }, [tasks, categories, capacitySettings, prioritySettings, reminders, knowledge, planProjects, theme, securitySettings, bufferNotes, bufferCategories, emergencyCategories, defaultTaskSettings, timePeriodSettings]);
 
   const cloudSyncConfigRef = useRef(cloudSyncConfig);
   useEffect(() => {
@@ -728,7 +766,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       bufferNotes: s.bufferNotes,
       bufferCategories: s.bufferCategories,
       emergencyCategories: s.emergencyCategories,
-      defaultTaskSettings: s.defaultTaskSettings
+      defaultTaskSettings: s.defaultTaskSettings,
+      timePeriodSettings: s.timePeriodSettings
     };
   }, []);
 
@@ -748,6 +787,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (Array.isArray(data.bufferCategories)) setBufferCategories(data.bufferCategories as BufferCategoryItem[]);
     if (Array.isArray(data.emergencyCategories)) setEmergencyCategories(data.emergencyCategories as EmergencyCategoryItem[]);
     if (data.defaultTaskSettings) setDefaultTaskSettings(data.defaultTaskSettings as DefaultTaskSettings);
+    if (data.timePeriodSettings) setTimePeriodSettings(data.timePeriodSettings as TimePeriodSettings);
     setTimeout(() => {
       isRemoteUpdateRef.current = false;
     }, 1000);
@@ -2366,6 +2406,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       capacitySettings,
       prioritySettings,
       defaultTaskSettings,
+      timePeriodSettings,
       securitySettings,
       cloudSyncConfig,
       theme
@@ -2373,7 +2414,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, [
     tasks, bufferNotes, planProjects, categories, bufferCategories,
     emergencyCategories, knowledge, reminders, auditLogs, capacitySettings,
-    prioritySettings, defaultTaskSettings, securitySettings, cloudSyncConfig, theme
+    prioritySettings, defaultTaskSettings, timePeriodSettings, securitySettings, cloudSyncConfig, theme
   ]);
 
   const exportSettingsOnlyJson = useCallback((): string => {
@@ -2384,13 +2425,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       capacitySettings,
       prioritySettings,
       defaultTaskSettings,
+      timePeriodSettings,
       securitySettings,
       cloudSyncConfig,
       theme
     });
   }, [
     categories, bufferCategories, emergencyCategories, capacitySettings,
-    prioritySettings, defaultTaskSettings, securitySettings, cloudSyncConfig, theme
+    prioritySettings, defaultTaskSettings, timePeriodSettings, securitySettings, cloudSyncConfig, theme
   ]);
 
   const importStateJson = useCallback((jsonStr: string, mode: 'full' | 'merge' | 'settings_only' = 'full'): boolean => {
@@ -2426,6 +2468,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const incomingCapacity = settingsObj?.capacitySettings || parsed.capacitySettings;
       const incomingPriorities = settingsObj?.prioritySettings || parsed.prioritySettings;
       const incomingDefaults = settingsObj?.defaultTaskSettings || parsed.defaultTaskSettings;
+      const incomingTimePeriods = settingsObj?.timePeriodSettings || parsed.timePeriodSettings;
       const incomingSecurity = settingsObj?.securitySettings || parsed.securitySettings;
       const incomingCloud = settingsObj?.cloudSyncConfig || parsed.cloudSyncConfig;
       const incomingTheme = settingsObj?.theme || parsed.theme;
@@ -2434,6 +2477,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (incomingCapacity) setCapacitySettings(incomingCapacity);
       if (incomingPriorities) setPrioritySettings(incomingPriorities);
       if (incomingDefaults) setDefaultTaskSettings(incomingDefaults);
+      if (incomingTimePeriods) setTimePeriodSettings(incomingTimePeriods);
       if (incomingSecurity) setSecuritySettings(incomingSecurity);
       if (incomingCloud) setCloudSyncConfig(incomingCloud);
       if (incomingTheme) setTheme(incomingTheme);
@@ -2586,6 +2630,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setEmergencyCategories(INITIAL_EMERGENCY_CATEGORIES);
     setPlanProjects([]);
     setAuditLogs([]);
+    setTimePeriodSettings(DEFAULT_TIME_PERIOD_SETTINGS);
     setTheme('light');
   }, [exportStateJson, setTheme]);
 
@@ -2674,6 +2719,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         updateCapacitySettings,
         updatePrioritySettings,
         updateDefaultTaskSettings,
+        timePeriodSettings,
+        updateTimePeriodSettings,
+        resetTimePeriodsToDefault,
         securitySettings,
         updateSecuritySettings,
         isAuthenticated,

@@ -10,8 +10,74 @@ import {
   BufferStatusNote, 
   BufferCategoryItem,
   PlanProjectFolder,
-  DefaultTaskSettings
+  DefaultTaskSettings,
+  NamedTimePeriod,
+  TimePeriodSettings
 } from '../types';
+
+export const DEFAULT_NAMED_TIME_PERIODS: NamedTimePeriod[] = [
+  {
+    id: 'period-1',
+    name: 'EarlyMorning',
+    startTime: '05:00 AM',
+    endTime: '08:59 AM',
+    emoji: '🌅',
+    color: '#f59e0b'
+  },
+  {
+    id: 'period-2',
+    name: 'Morning',
+    startTime: '09:00 AM',
+    endTime: '11:59 AM',
+    emoji: '☀️',
+    color: '#3b82f6'
+  },
+  {
+    id: 'period-3',
+    name: 'Lunch Time zone',
+    startTime: '12:00 PM',
+    endTime: '03:30 PM',
+    emoji: '🍲',
+    color: '#10b981'
+  },
+  {
+    id: 'period-4',
+    name: 'After Lunch',
+    startTime: '03:31 PM',
+    endTime: '05:29 PM',
+    emoji: '☕',
+    color: '#8b5cf6'
+  },
+  {
+    id: 'period-5',
+    name: 'Evening',
+    startTime: '05:30 PM',
+    endTime: '07:59 PM',
+    emoji: '🌇',
+    color: '#ec4899'
+  },
+  {
+    id: 'period-6',
+    name: 'Night',
+    startTime: '08:00 PM',
+    endTime: '02:00 AM',
+    emoji: '🌙',
+    color: '#6366f1'
+  },
+  {
+    id: 'period-7',
+    name: 'deep night',
+    startTime: '02:01 AM',
+    endTime: '04:59 AM',
+    emoji: '🌌',
+    color: '#475569'
+  }
+];
+
+export const DEFAULT_TIME_PERIOD_SETTINGS: TimePeriodSettings = {
+  isEnabled: true,
+  periods: DEFAULT_NAMED_TIME_PERIODS
+};
 
 
 const envSupabaseUrl = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_SUPABASE_URL) || '';

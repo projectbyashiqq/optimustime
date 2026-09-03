@@ -233,7 +233,9 @@ export const CategoryView: React.FC<CategoryViewProps> = ({ onOpenTaskModal }) =
           isDue
             ? 'bg-red-50/40 dark:bg-red-950/30 border-red-300 dark:border-red-900/60 shadow-2xs hover:border-red-400'
             : isRunning
-              ? 'bg-gradient-to-r from-blue-50/90 via-sky-50/60 to-theme-card dark:from-blue-950/70 dark:via-sky-950/40 dark:to-theme-card border-blue-500 shadow-md ring-1 ring-blue-500/50'
+              ? isInSleep
+                ? 'bg-slate-900 text-slate-100 dark:bg-slate-950 border-blue-500 shadow-md ring-1 ring-blue-500/80'
+                : 'bg-gradient-to-r from-blue-50/90 via-sky-50/60 to-theme-card dark:from-blue-950/70 dark:via-sky-950/40 dark:to-theme-card border-blue-500 shadow-md ring-1 ring-blue-500/50'
               : isInSleep
               ? 'bg-slate-900/95 text-slate-100 dark:bg-slate-950 border-indigo-900/90 shadow-2xs'
               : isSimultaneous
@@ -464,7 +466,9 @@ export const CategoryView: React.FC<CategoryViewProps> = ({ onOpenTaskModal }) =
           isDue
             ? 'bg-red-50/30 dark:bg-red-950/20 border-red-300 dark:border-red-900/60 shadow-sm'
             : isRunning
-              ? 'bg-gradient-to-r from-blue-50/90 via-sky-50/50 to-theme-card dark:from-blue-950/60 dark:via-sky-950/30 dark:to-theme-card border-blue-500 shadow-xl shadow-blue-500/20 ring-2 ring-blue-500/60'
+              ? isInSleep
+                ? 'bg-slate-900 text-slate-100 dark:bg-slate-950 dark:text-slate-100 border-blue-500 shadow-xl shadow-blue-500/30 ring-2 ring-blue-500/80'
+                : 'bg-gradient-to-r from-blue-50/90 via-sky-50/50 to-theme-card dark:from-blue-950/60 dark:via-sky-950/30 dark:to-theme-card border-blue-500 shadow-xl shadow-blue-500/20 ring-2 ring-blue-500/60'
               : isInSleep
               ? 'bg-slate-900/95 text-slate-100 dark:bg-slate-950 dark:text-slate-100 border-indigo-900/90 shadow-md ring-1 ring-indigo-500/40 hover:border-indigo-400'
               : isSimultaneous
@@ -577,7 +581,7 @@ export const CategoryView: React.FC<CategoryViewProps> = ({ onOpenTaskModal }) =
               <div className="flex items-baseline gap-2 flex-wrap">
                 <h4 
                   onClick={() => onOpenTaskModal(task)}
-                  className={`${getTaskTitleClasses(task.title, task.status === 'Done', isInSleep)} cursor-pointer hover:text-blue-600 transition-colors`}
+                  className={`${getTaskTitleClasses(task.title, task.status === 'Done', isInSleep && !isDue)} cursor-pointer hover:text-blue-600 transition-colors`}
                 >
                   {task.title}
                 </h4>

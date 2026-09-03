@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
-import { PriorityLevel, Category } from '../types';
+import { PriorityLevel, Category, NamedTimePeriod } from '../types';
+import { DEFAULT_NAMED_TIME_PERIODS } from '../context/initialData';
+import { getTimePeriodForTime } from '../utils/timeUtils';
 import { TimePicker } from '../components/TimePicker';
 import {
   Settings2,
@@ -43,7 +45,8 @@ import {
   Sliders,
   Activity,
   FileSpreadsheet,
-  FileJson
+  FileJson,
+  Sunrise
 } from 'lucide-react';
 import { exportTasksToExcelWorkbook, exportTasksToDetailedCSV } from '../utils/excelExporter';
 import { DEFAULT_SQL_SCHEMA, testSupabaseConnection } from '../services/supabase';
@@ -85,8 +88,17 @@ export const AdminSettingsView: React.FC = () => {
     syncNow,
     testCloudConnection,
     defaultTaskSettings,
-    updateDefaultTaskSettings
+    updateDefaultTaskSettings,
+    timePeriodSettings,
+    updateTimePeriodSettings,
+    resetTimePeriodsToDefault
   } = useApp();
+
+  // Name of Time (Day Zones) States
+  const [periodCustomizeEnabled, setPeriodCustomizeEnabled] = useState(timePeriodSettings.isEnabled);
+  const [periodsList, setPeriodsList] = useState<NamedTimePeriod[]>(timePeriodSettings.periods);
+  const [periodSaveMsg, setPeriodSaveMsg] = useState<string | null>(null);
+  const [testTimeInput, setTestTimeInput] = useState<string>('01:30 PM');
 
   // Local editing states (24-Hours Locked System Tools)
   const [maxWorkHours, setMaxWorkHours] = useState(capacitySettings.maxWorkHours);
@@ -264,6 +276,50 @@ export const AdminSettingsView: React.FC = () => {
     navigator.clipboard.writeText(DEFAULT_SQL_SCHEMA);
     setHasCopiedSql(true);
     setTimeout(() => setHasCopiedSql(false), 3000);
+  };
+
+  // Day Zones (Name of Time) Handlers
+  const handlePeriodChange = (id: string, field: keyof NamedTimePeriod, val: string) => {
+    setPeriodsList(prev => prev.map(p => p.id === id ? { ...p, [field]: val } : p));
+  };
+
+  const handleAddPeriod = () => {
+    const newPeriod: NamedTimePeriod = {
+      id: `period-${Date.now()}`,
+      name: 'Custom Day Zone',
+      startTime: '10:00 PM',
+      endTime: '11:59 PM',
+      emoji: '⚡',
+      color: '#3b82f6'
+    };
+    setPeriodsList(prev => [...prev, newPeriod]);
+  };
+
+  const handleDeletePeriod = (id: string) => {
+    if (periodsList.length <= 1) {
+      alert('You must keep at least one named time period.');
+      return;
+    }
+    setPeriodsList(prev => prev.filter(p => p.id !== id));
+  };
+
+  const handleResetPeriods = () => {
+    if (confirm('Reset all Day Zones to default 7 periods (EarlyMorning, Morning, Lunch Time zone, After Lunch, Evening, Night, deep night)?')) {
+      setPeriodsList(DEFAULT_NAMED_TIME_PERIODS);
+      setPeriodCustomizeEnabled(true);
+      resetTimePeriodsToDefault();
+      setPeriodSaveMsg('Reset to default Day Zones! 🌅');
+      setTimeout(() => setPeriodSaveMsg(null), 3500);
+    }
+  };
+
+  const handleSavePeriods = () => {
+    updateTimePeriodSettings({
+      isEnabled: periodCustomizeEnabled,
+      periods: periodsList
+    });
+    setPeriodSaveMsg('Time Period Day Zones saved successfully! ✨');
+    setTimeout(() => setPeriodSaveMsg(null), 3500);
   };
 
   const handleSaveSecurity = () => {
@@ -1073,6 +1129,202 @@ export const AdminSettingsView: React.FC = () => {
               <span>Save Default Task Adding Presets</span>
             </button>
           </div>
+        </div>
+
+        {/* Name of Time (Day Zones) - Customize Enable */}
+        <div className="glass-panel p-6 rounded-2xl border border-theme-border space-y-5 lg:col-span-2">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-theme-border pb-4 gap-3">
+            <div>
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-amber-500 to-orange-400 text-white flex items-center justify-center shadow-md shadow-amber-500/20">
+                  <Sunrise className="w-4 h-4 stroke-[2.5]" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-theme-text uppercase tracking-wider flex items-center gap-2 font-display">
+                    <span>Name of Time (Day Zones)</span>
+                    <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-950 text-amber-900 dark:text-amber-200 border border-amber-300 dark:border-amber-800">
+                      24-Hour Clock
+                    </span>
+                  </h3>
+                  <p className="text-xs text-theme-muted mt-0.5">
+                    Customize names for each time slice across the 24 hours (EarlyMorning, Morning, Lunch Time zone, After Lunch, Evening, Night, deep night).
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Customize Enable Toggle */}
+            <div className="flex items-center gap-2.5 self-start sm:self-auto bg-theme-card-hover px-3 py-1.5 rounded-xl border border-theme-border shadow-2xs">
+              <span className="text-xs font-bold text-theme-text">Customize Enable</span>
+              <label className="relative inline-flex items-center cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={periodCustomizeEnabled}
+                  onChange={(e) => setPeriodCustomizeEnabled(e.target.checked)}
+                  className="sr-only peer"
+                />
+                <div className="w-9 h-5 bg-slate-300 peer-focus:outline-none rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-amber-500"></div>
+              </label>
+            </div>
+          </div>
+
+          {/* Feedback Message */}
+          {periodSaveMsg && (
+            <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-600 dark:text-emerald-400 text-xs font-bold animate-slide-up flex items-center gap-2">
+              <CheckCircle2 className="w-4 h-4" />
+              <span>{periodSaveMsg}</span>
+            </div>
+          )}
+
+          {!periodCustomizeEnabled ? (
+            <div className="p-6 rounded-xl bg-slate-50/50 dark:bg-slate-900/30 border border-dashed border-theme-border text-center space-y-2">
+              <Moon className="w-8 h-8 text-theme-muted mx-auto opacity-50" />
+              <p className="text-xs font-bold text-theme-muted">
+                Named Time Periods are currently disabled. Toggle &ldquo;Customize Enable&rdquo; above to activate Day Zone nomenclature across your schedules.
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {/* Periods Grid / List */}
+              <div className="space-y-2.5">
+                <div className="hidden sm:grid grid-cols-12 gap-2 px-3 text-[11px] font-bold text-theme-muted uppercase tracking-wider">
+                  <div className="col-span-1">Icon</div>
+                  <div className="col-span-4">Day Zone Name</div>
+                  <div className="col-span-3">Start Time</div>
+                  <div className="col-span-3">End Time</div>
+                  <div className="col-span-1 text-right">Action</div>
+                </div>
+
+                {periodsList.map((period) => (
+                  <div
+                    key={period.id}
+                    className="p-3 rounded-xl bg-theme-card-hover border border-theme-border grid grid-cols-1 sm:grid-cols-12 gap-2.5 items-center transition-all hover:border-amber-400/50 hover:shadow-xs"
+                  >
+                    {/* Emoji */}
+                    <div className="sm:col-span-1 flex items-center gap-2">
+                      <input
+                        type="text"
+                        value={period.emoji || '⏰'}
+                        onChange={(e) => handlePeriodChange(period.id, 'emoji', e.target.value)}
+                        className="w-10 text-center py-1.5 rounded-lg bg-theme-card border border-theme-border text-sm"
+                        title="Emoji / Icon"
+                        maxLength={2}
+                      />
+                    </div>
+
+                    {/* Zone Name */}
+                    <div className="sm:col-span-4">
+                      <label className="text-[10px] font-bold text-theme-muted uppercase sm:hidden block mb-0.5">Zone Name</label>
+                      <input
+                        type="text"
+                        value={period.name}
+                        onChange={(e) => handlePeriodChange(period.id, 'name', e.target.value)}
+                        placeholder="e.g. EarlyMorning"
+                        className="w-full px-3 py-1.5 rounded-lg bg-theme-card border border-theme-border text-xs font-bold text-theme-text focus:outline-none focus:border-amber-500"
+                      />
+                    </div>
+
+                    {/* Start Time */}
+                    <div className="sm:col-span-3">
+                      <label className="text-[10px] font-bold text-theme-muted uppercase sm:hidden block mb-0.5">Start Time</label>
+                      <input
+                        type="text"
+                        value={period.startTime}
+                        onChange={(e) => handlePeriodChange(period.id, 'startTime', e.target.value)}
+                        placeholder="05:00 AM"
+                        className="w-full px-2.5 py-1.5 rounded-lg bg-theme-card border border-theme-border text-xs font-mono font-bold text-theme-text focus:outline-none focus:border-blue-500"
+                      />
+                    </div>
+
+                    {/* End Time */}
+                    <div className="sm:col-span-3">
+                      <label className="text-[10px] font-bold text-theme-muted uppercase sm:hidden block mb-0.5">End Time</label>
+                      <input
+                        type="text"
+                        value={period.endTime}
+                        onChange={(e) => handlePeriodChange(period.id, 'endTime', e.target.value)}
+                        placeholder="08:59 AM"
+                        className="w-full px-2.5 py-1.5 rounded-lg bg-theme-card border border-theme-border text-xs font-mono font-bold text-theme-text focus:outline-none focus:border-blue-500"
+                      />
+                    </div>
+
+                    {/* Delete */}
+                    <div className="sm:col-span-1 flex items-center justify-end">
+                      <button
+                        type="button"
+                        onClick={() => handleDeletePeriod(period.id)}
+                        disabled={periodsList.length <= 1}
+                        className="p-1.5 rounded-lg text-theme-muted hover:text-red-500 hover:bg-theme-card transition-colors disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"
+                        title="Remove Zone"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Action Buttons: Add Zone, Reset, Save */}
+              <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-2">
+                <div className="flex items-center gap-2 w-full sm:w-auto">
+                  <button
+                    type="button"
+                    onClick={handleAddPeriod}
+                    className="flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-theme-card-hover hover:bg-theme-border text-xs font-bold text-theme-text border border-theme-border transition-all cursor-pointer"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    <span>Add Zone</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handleResetPeriods}
+                    className="flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-theme-card-hover hover:bg-theme-border text-xs font-bold text-amber-600 dark:text-amber-400 border border-theme-border transition-all cursor-pointer"
+                    title="Restore default 7 periods"
+                  >
+                    <RotateCcw className="w-3.5 h-3.5" />
+                    <span>Reset Defaults</span>
+                  </button>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleSavePeriods}
+                  className="w-full sm:w-auto flex items-center justify-center gap-2 px-5 py-2 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white text-xs font-bold shadow-md shadow-amber-500/20 transition-all cursor-pointer"
+                >
+                  <Check className="w-4 h-4" />
+                  <span>Save Day Zones</span>
+                </button>
+              </div>
+
+              {/* Live Interactive Day Zone Tester */}
+              <div className="p-3.5 rounded-xl bg-amber-50/40 dark:bg-amber-950/20 border border-amber-200/60 dark:border-amber-900/40 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                <div className="flex items-center gap-2">
+                  <Sparkles className="w-4 h-4 text-amber-500 shrink-0" />
+                  <div>
+                    <span className="text-xs font-bold text-theme-text">Live Day Zone Tester</span>
+                    <p className="text-[11px] text-theme-muted">
+                      Type any time (e.g. 06:15 AM, 02:00 PM, 03:00 AM) to verify how it gets labeled:
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 w-full sm:w-auto">
+                  <input
+                    type="text"
+                    value={testTimeInput}
+                    onChange={(e) => setTestTimeInput(e.target.value)}
+                    placeholder="01:30 PM"
+                    className="w-24 px-2 py-1 rounded-lg bg-theme-card border border-theme-border font-mono font-bold text-xs text-theme-text"
+                  />
+                  <div className="px-3 py-1 rounded-lg bg-amber-100 dark:bg-amber-900/60 text-amber-900 dark:text-amber-200 border border-amber-300 dark:border-amber-800 text-xs font-bold flex items-center gap-1.5 whitespace-nowrap">
+                    <span>{getTimePeriodForTime(testTimeInput, periodsList)?.emoji || '⏰'}</span>
+                    <span>{getTimePeriodForTime(testTimeInput, periodsList)?.name || 'Unmapped'}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Category & SubCategory CRUD */}

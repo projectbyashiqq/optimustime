@@ -471,7 +471,9 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
                       isDone
                         ? 'bg-emerald-50/40 dark:bg-emerald-950/20 border-emerald-200 dark:border-emerald-900/40 opacity-85'
                         : isWorking
-                        ? 'bg-blue-50/80 dark:bg-blue-950/50 border-blue-400 dark:border-blue-700 shadow-md ring-2 ring-blue-500/20'
+                        ? isInSleep
+                          ? 'bg-slate-900 text-slate-100 dark:bg-slate-950 dark:text-slate-100 border-blue-500 shadow-md ring-2 ring-blue-500/80'
+                          : 'bg-blue-50/80 dark:bg-blue-950/50 border-blue-400 dark:border-blue-700 shadow-md ring-2 ring-blue-500/20'
                         : isInSleep
                         ? 'bg-slate-900/95 text-slate-100 dark:bg-slate-950 dark:text-slate-100 border-indigo-900/90 shadow-md ring-1 ring-indigo-500/40 hover:border-indigo-400'
                         : 'bg-theme-card border-theme-border hover:bg-theme-card-hover hover:border-blue-400/60 shadow-sm'

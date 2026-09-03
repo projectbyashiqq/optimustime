@@ -23,7 +23,8 @@ import {
   isDateTimeBeforeNow,
   shouldRolloverToNextDay,
   formatMinutesTo12Hour,
-  calculateFirstRecurringDate
+  calculateFirstRecurringDate,
+  getTimePeriodForTime
 } from '../utils/timeUtils';
 import { ConflictModal } from './ConflictModal';
 import { TimePicker } from './TimePicker';
@@ -84,7 +85,8 @@ export const TaskModal: React.FC<TaskModalProps> = ({
     updateTask, 
     detectConflicts, 
     cascadeShiftDownstream,
-    linkSimultaneousTasks 
+    linkSimultaneousTasks,
+    timePeriodSettings
   } = useApp();
 
   const isEditing = !!taskToEdit;
@@ -1427,6 +1429,16 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                     value={startTime}
                     onChange={handleStartTimeChange}
                   />
+                  {timePeriodSettings?.isEnabled && (() => {
+                    const period = getTimePeriodForTime(startTime, timePeriodSettings.periods);
+                    if (!period) return null;
+                    return (
+                      <div className="mt-1 flex items-center gap-1 text-[11px] font-bold text-amber-600 dark:text-amber-400">
+                        <span>{period.emoji || '⏰'}</span>
+                        <span>{period.name} ({period.startTime} - {period.endTime})</span>
+                      </div>
+                    );
+                  })()}
                 </div>
 
                 <div>

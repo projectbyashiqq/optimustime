@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useApp } from '../context/AppContext';
 import { Task, PriorityLevel, TaskStatus } from '../types';
 import { 
@@ -17,7 +17,9 @@ import {
   getBufferActivityEmoji,
   getBufferActivityColor,
   isTaskInSleepWindow,
-  isTimeInSleepWindow
+  isTimeInSleepWindow,
+  findNextAvailableSlot,
+  getTimePeriodForTime
 } from '../utils/timeUtils';
 import { 
   Play, 
@@ -52,10 +54,12 @@ import {
   Lock,
   Moon,
   Volume2,
-  Target
+  Target,
+  Sunrise
 } from 'lucide-react';
 import { RescheduleModal } from '../components/RescheduleModal';
 import { RecurringManagerModal } from '../components/RecurringManagerModal';
+import { MorningRolloverBanner } from '../components/MorningRolloverBanner';
 import { ListTodo, CalendarDays, Grid3X3, Table as TableIcon } from 'lucide-react';
 
 interface DashboardViewProps {
@@ -73,6 +77,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
     startTask, 
     pauseTask, 
     completeTask, 
+    addTask,
     updateTask,
     rescheduleTask,
     extendTaskDuration,
@@ -90,7 +95,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
     activeBufferPrompt,
     setActiveBufferPrompt,
     openEmergencyModal,
-    setActiveTab
+    setActiveTab,
+    timePeriodSettings
   } = useApp();
 
   const [dashboardMode, setDashboardMode] = useState<DashboardMode>('time');
@@ -102,6 +108,18 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
   const [isRecurringHubOpen, setIsRecurringHubOpen] = useState(false);
   const [nowTime, setNowTime] = useState<Date>(new Date());
   const [showPastGaps, setShowPastGaps] = useState(false);
+
+  // Morning Rollover Review States
+  const [isMorningReviewOpen, setIsMorningReviewOpen] = useState(true);
+  const [dismissedRolloverTaskIds, setDismissedRolloverTaskIds] = useState<string[]>(() => {
+    try {
+      const today = toISODateString(new Date());
+      const saved = localStorage.getItem(`optimustime_rollover_dismissed_${today}`);
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
 
   // Status Change Handler with Smart Reschedule interceptor
   const handleStatusChange = (task: Task, newStatus: TaskStatus) => {
@@ -169,6 +187,119 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
     }, 1000);
     return () => clearInterval(timer);
   }, []);
+
+  // Morning Rollover Review tasks (all past unfinished / incomplete tasks from yesterday or earlier)
+  const todayStr = toISODateString(nowTime);
+  const morningReviewTasks = useMemo(() => {
+    return tasks.filter(t => {
+      if (!t.taskDate || t.taskDate >= todayStr) return false;
+      if (t.status === 'Done' || t.status === 'Terminated') return false;
+      if (dismissedRolloverTaskIds.includes(t.id)) return false;
+      return true;
+    }).sort((a, b) => {
+      // Sort yesterday first, then older
+      if (a.taskDate !== b.taskDate) {
+        return b.taskDate.localeCompare(a.taskDate);
+      }
+      const pWeight: Record<PriorityLevel, number> = { P1: 1, P2: 2, P3: 3, P4: 4, P5: 5 };
+      return (pWeight[a.priority] || 99) - (pWeight[b.priority] || 99);
+    });
+  }, [tasks, todayStr, dismissedRolloverTaskIds]);
+
+  // Morning Review: Reschedule specific task (manual slot picking)
+  const handleMorningReschedule = (taskToReschedule: Task) => {
+    setReschedulingTask(taskToReschedule);
+  };
+
+  // Morning Review: Add/Move to Today (auto conflict-free slot on today)
+  const handleMorningMoveToToday = (taskToMove: Task) => {
+    const slot = findNextAvailableSlot(
+      taskToMove.appointedMinutes,
+      tasks,
+      capacitySettings,
+      taskToMove.id,
+      todayStr
+    );
+
+    let targetDate = todayStr;
+    let targetStart = '09:00 AM';
+    let targetEnd = addMinutesToTime('09:00 AM', taskToMove.appointedMinutes);
+
+    if (slot && slot.date === todayStr) {
+      targetStart = slot.startTime;
+      targetEnd = slot.endTime;
+    } else {
+      const todayTasks = tasks.filter(t => t.taskDate === todayStr && t.status !== 'Terminated');
+      if (todayTasks.length > 0) {
+        const sorted = [...todayTasks].sort((a, b) => parse12HourToMinutes(b.endTime) - parse12HourToMinutes(a.endTime));
+        const latest = sorted[0];
+        const buffer = latest.bufferMinutes ?? (capacitySettings.defaultBufferMinutes || 15);
+        targetStart = addMinutesToTime(latest.endTime, buffer);
+        targetEnd = addMinutesToTime(targetStart, taskToMove.appointedMinutes);
+      }
+    }
+
+    if (taskToMove.id.startsWith('snap-')) {
+      addTask({
+        title: taskToMove.title,
+        description: taskToMove.description,
+        priority: taskToMove.priority,
+        category: taskToMove.category,
+        subCategory: taskToMove.subCategory,
+        appointedMinutes: taskToMove.appointedMinutes,
+        taskDate: targetDate,
+        dayOfWeek: getDayOfWeekFromDate(targetDate),
+        startTime: targetStart,
+        endTime: targetEnd,
+        status: 'Pending',
+        bufferMinutes: taskToMove.bufferMinutes ?? 15,
+        isMandatorySchedule: false,
+        recurrence: 'None',
+        selectedDays: [],
+        notes: taskToMove.notes,
+        links: taskToMove.links,
+        subtasks: taskToMove.subtasks
+      });
+    } else {
+      updateTask({
+        ...taskToMove,
+        taskDate: targetDate,
+        dayOfWeek: getDayOfWeekFromDate(targetDate),
+        startTime: targetStart,
+        endTime: targetEnd,
+        status: 'Pending'
+      });
+    }
+  };
+
+  // Morning Review: Mark Done (completed offline yesterday)
+  const handleMorningMarkDone = (taskToMark: Task) => {
+    updateTask({
+      ...taskToMark,
+      status: 'Done'
+    });
+  };
+
+  // Morning Review: Keep Incomplete (leave in history as Incomplete, dismiss from review)
+  const handleMorningKeepIncomplete = (taskToKeep: Task) => {
+    if (taskToKeep.status !== 'Incomplete') {
+      updateTask({
+        ...taskToKeep,
+        status: 'Incomplete'
+      });
+    }
+    setDismissedRolloverTaskIds(prev => {
+      const next = [...prev, taskToKeep.id];
+      try {
+        localStorage.setItem(`optimustime_rollover_dismissed_${todayStr}`, JSON.stringify(next));
+      } catch {}
+      return next;
+    });
+  };
+
+  const handleDismissMorningReview = () => {
+    setIsMorningReviewOpen(false);
+  };
 
   const dayOfWeek = getDayOfWeekFromDate(selectedDate);
   const isRedLine = isCapacityRedLineExceeded(selectedDate);
@@ -294,6 +425,27 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
             </button>
           </div>
 
+          {/* Morning Rollover Review Quick-Pill */}
+          {morningReviewTasks.length > 0 && (
+            <button
+              onClick={() => setIsMorningReviewOpen(prev => !prev)}
+              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-xs font-bold transition-all shadow-sm ${
+                isMorningReviewOpen
+                  ? 'bg-gradient-to-r from-amber-500 to-orange-500 text-white ring-1 ring-amber-400/50'
+                  : 'bg-amber-100 dark:bg-amber-950/70 text-amber-900 dark:text-amber-200 hover:bg-amber-200 dark:hover:bg-amber-900 border border-amber-300 dark:border-amber-800'
+              }`}
+              title="Review Unfinished Tasks from Yesterday (Granular Manual Control)"
+            >
+              <Sunrise className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
+              <span className="hidden md:inline">Morning Review</span>
+              <span className={`text-[9px] font-black px-1.5 py-0.2 rounded-full ${
+                isMorningReviewOpen ? 'bg-white/30 text-white' : 'bg-amber-500 text-white'
+              }`}>
+                {morningReviewTasks.length}
+              </span>
+            </button>
+          )}
+
           {/* Priority Backlog Toggle Button */}
           <button
             onClick={() => setShowPriorityBacklog(!showPriorityBacklog)}
@@ -387,6 +539,19 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
         </div>
 
       </div>
+
+      {/* Morning Rollover Review Banner (Manual Granular Control) */}
+      {isMorningReviewOpen && morningReviewTasks.length > 0 && (
+        <MorningRolloverBanner
+          tasks={morningReviewTasks}
+          prioritySettings={prioritySettings}
+          onRescheduleTask={handleMorningReschedule}
+          onMoveToToday={handleMorningMoveToToday}
+          onMarkDone={handleMorningMarkDone}
+          onKeepIncomplete={handleMorningKeepIncomplete}
+          onDismissReview={handleDismissMorningReview}
+        />
+      )}
 
       {/* Active Post-Task Buffer Prompt Banner */}
       {activeBufferPrompt && (
@@ -818,7 +983,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
                             isDue
                               ? 'bg-red-50/30 dark:bg-red-950/20 border-red-300 dark:border-red-900/60 shadow-sm'
                               : isRunning
-                                ? 'bg-gradient-to-r from-blue-50/90 via-sky-50/50 to-theme-card dark:from-blue-950/60 dark:via-sky-950/30 dark:to-theme-card border-blue-500 shadow-xl shadow-blue-500/20 ring-2 ring-blue-500/60'
+                                ? isInSleep
+                                  ? 'bg-slate-900 text-slate-100 dark:bg-slate-950 dark:text-slate-100 border-blue-500 shadow-xl shadow-blue-500/30 ring-2 ring-blue-500/80'
+                                  : 'bg-gradient-to-r from-blue-50/90 via-sky-50/50 to-theme-card dark:from-blue-950/60 dark:via-sky-950/30 dark:to-theme-card border-blue-500 shadow-xl shadow-blue-500/20 ring-2 ring-blue-500/60'
                                 : isInSleep
                                   ? 'bg-slate-900/95 text-slate-100 dark:bg-slate-950 dark:text-slate-100 border-indigo-900/90 shadow-md ring-1 ring-indigo-500/40 hover:border-indigo-400'
                                   : isSimultaneous
@@ -861,12 +1028,26 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
                                   }`}>
                                     {task.startTime} - {task.endTime}
                                   </span>
+
+                                  {timePeriodSettings?.isEnabled && (() => {
+                                    const period = getTimePeriodForTime(task.startTime, timePeriodSettings.periods);
+                                    if (!period) return null;
+                                    return (
+                                      <span 
+                                        className="text-[10px] font-bold px-2 py-0.5 rounded-full border flex items-center gap-1 bg-amber-500/10 text-amber-900 dark:text-amber-200 border-amber-300 dark:border-amber-800 shrink-0 shadow-2xs"
+                                        title={`Day Zone: ${period.name} (${period.startTime} - ${period.endTime})`}
+                                      >
+                                        <span>{period.emoji || '⏰'}</span>
+                                        <span>{period.name}</span>
+                                      </span>
+                                    );
+                                  })()}
                                   
-                                  <span className="text-[11px] font-mono text-blue-600 dark:text-blue-400 font-bold">
+                                  <span className={`text-[11px] font-mono font-bold ${isInSleep ? 'text-indigo-300' : 'text-blue-600 dark:text-blue-400'}`}>
                                     {task.projectCode}
                                   </span>
 
-                                  <span className={`text-[11px] font-semibold ${isInSleep ? 'text-slate-400' : 'text-theme-muted'}`}>
+                                  <span className={`text-[11px] font-semibold ${isInSleep ? 'text-slate-300' : 'text-theme-muted'}`}>
                                      {task.category}
                                      {task.subCategory ? ` / ${task.subCategory}` : ''}
                                    </span>
@@ -929,10 +1110,14 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
 
                                 {/* Task Title (Auto-scaled dynamic typography) + Appointed Duration */}
                                 <div className="flex items-baseline gap-2 flex-wrap">
-                                  <h4 className={getTaskTitleClasses(task.title, task.status === 'Done', isInSleep)}>
+                                  <h4 className={getTaskTitleClasses(task.title, task.status === 'Done', isInSleep && !isDue)}>
                                     {task.title}
                                   </h4>
-                                  <span className="font-mono text-xs font-bold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/60 px-2 py-0.5 rounded-md border border-blue-200 dark:border-blue-900/60 shadow-2xs">
+                                  <span className={`font-mono text-xs font-bold px-2 py-0.5 rounded-md border shadow-2xs ${
+                                    isInSleep
+                                      ? 'text-indigo-200 bg-indigo-950/80 border-indigo-800/80'
+                                      : 'text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/60 border-blue-200 dark:border-blue-900/60'
+                                  }`}>
                                     ~{task.appointedMinutes}m
                                   </span>
                                 </div>
@@ -1175,6 +1360,19 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
                                       <span className="font-mono text-xs font-bold text-theme-muted bg-theme-card-hover px-2 py-0.5 rounded border border-theme-border">
                                         {task.startTime} - {task.endTime}
                                       </span>
+                                      {timePeriodSettings?.isEnabled && (() => {
+                                        const period = getTimePeriodForTime(task.startTime, timePeriodSettings.periods);
+                                        if (!period) return null;
+                                        return (
+                                          <span 
+                                            className="text-[10px] font-bold px-2 py-0.5 rounded-full border flex items-center gap-1 bg-amber-500/10 text-amber-900 dark:text-amber-200 border-amber-300 dark:border-amber-800 shrink-0 shadow-2xs"
+                                            title={`Day Zone: ${period.name} (${period.startTime} - ${period.endTime})`}
+                                          >
+                                            <span>{period.emoji || '⏰'}</span>
+                                            <span>{period.name}</span>
+                                          </span>
+                                        );
+                                      })()}
                                       <span className="text-[11px] font-mono text-theme-muted font-bold">
                                         {task.projectCode}
                                       </span>
@@ -1369,7 +1567,25 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
                   </div>
                 ) : (() => {
                   const nowPlus5Min = currentMinutesFromMidnight + 5;
-                  const nowPlus5Str = formatMinutesTo12Hour(nowPlus5Min);
+                  
+                  // Check if there is an active running task right now
+                  const activeRunningTask = tasks.find(t => 
+                    (t.status === 'Working' || (t.startTime && t.endTime && isTaskInRunningSlot(t.taskDate, t.startTime, t.endTime, nowTime))) &&
+                    isTaskScheduledForDate(t, selectedDate)
+                  );
+
+                  let earliestPlanningMin = nowPlus5Min;
+                  if (activeRunningTask) {
+                    const rStart = parse12HourToMinutes(activeRunningTask.startTime);
+                    let rEnd = parse12HourToMinutes(activeRunningTask.endTime);
+                    if (rEnd < rStart) rEnd += 1440;
+                    const rBuf = activeRunningTask.bufferMinutes !== undefined ? activeRunningTask.bufferMinutes : (capacitySettings.defaultBufferMinutes || 15);
+                    const occupiedUntil = rEnd + rBuf;
+                    // Earliest free moment to schedule next work is strictly after running work finishes (+ buffer)
+                    earliestPlanningMin = Math.max(nowPlus5Min, occupiedUntil);
+                  }
+
+                  const earliestPlanningStr = formatMinutesTo12Hour(earliestPlanningMin);
 
                   let firstSuggestion: {
                     startTime: string;
@@ -1392,25 +1608,25 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
                       let gEndMin = parse12HourToMinutes(gap.endTime);
                       if (gEndMin < gStartMin) gEndMin += 1440;
 
-                      if (gEndMin <= currentMinutesFromMidnight) {
-                        // Past gap
+                      if (gEndMin <= currentMinutesFromMidnight || (activeRunningTask && gEndMin <= earliestPlanningMin)) {
+                        // Past gap or gap fully occupied by running task
                         pastGaps.push(gap);
-                      } else if (gStartMin <= currentMinutesFromMidnight && currentMinutesFromMidnight < gEndMin) {
-                        // Active window right now! 1st suggestion starts at Current time + 5 min
-                        const remainingFromPlus5 = gEndMin - nowPlus5Min;
-                        if (remainingFromPlus5 > 0) {
+                      } else if (gStartMin <= earliestPlanningMin && earliestPlanningMin < gEndMin) {
+                        // Active / upcoming window right after current moment or running work!
+                        const remainingFromEarliest = gEndMin - earliestPlanningMin;
+                        if (remainingFromEarliest >= 5) {
                           firstSuggestion = {
-                            startTime: nowPlus5Str,
+                            startTime: earliestPlanningStr,
                             endTime: gap.endTime,
-                            availableMin: remainingFromPlus5,
-                            isCurrentOverlap: true,
+                            availableMin: remainingFromEarliest,
+                            isCurrentOverlap: !activeRunningTask,
                             originalGap: gap
                           };
                         } else {
                           pastGaps.push(gap);
                         }
                       } else {
-                        // Future gap starting after current minute
+                        // Future gap starting after earliestPlanningMin
                         upcomingGaps.push({
                           gap,
                           effectiveStart: gap.startTime,
@@ -1426,8 +1642,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
                       let eMin = parse12HourToMinutes(firstUp.gap.endTime);
                       if (eMin < sMin) eMin += 1440;
 
-                      // Start at max(gap.startTime, nowPlus5Str)
-                      const effStartMin = Math.max(sMin, nowPlus5Min);
+                      // Start at max(gap.startTime, earliestPlanningMin)
+                      const effStartMin = Math.max(sMin, earliestPlanningMin);
                       const effStartStr = formatMinutesTo12Hour(effStartMin);
                       const remaining = Math.max(1, eMin - effStartMin);
 
@@ -1456,13 +1672,18 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
                   return (
                     <div className="space-y-3">
                       
-                      {/* 1st Suggestion Card (Current time + 5 min) */}
+                      {/* 1st Suggestion Card (Current time + 5 min OR right after running task) */}
                       {firstSuggestion && (
                         <div className="p-4 rounded-2xl border-2 border-emerald-500/60 dark:border-emerald-500/50 bg-gradient-to-br from-emerald-500/15 via-teal-500/10 to-blue-500/15 shadow-lg shadow-emerald-500/10 space-y-3 animate-fade-in ring-2 ring-emerald-500/20">
                           <div className="flex items-center justify-between gap-2 flex-wrap">
                             <span className="text-[10px] font-black uppercase tracking-wider px-2.5 py-1 rounded-full bg-emerald-600 text-white shadow-xs flex items-center gap-1">
                               <Sparkles className="w-3 h-3 fill-white" />
-                              <span>1st Suggestion • Starts in 5m ({firstSuggestion.startTime})</span>
+                              <span>
+                                {activeRunningTask 
+                                  ? `1st Suggestion • After Current Work (${firstSuggestion.startTime})`
+                                  : `1st Suggestion • Starts in 5m (${firstSuggestion.startTime})`
+                                }
+                              </span>
                             </span>
                             <span className="text-xs font-mono font-bold text-theme-text bg-theme-card px-2.5 py-0.5 rounded-lg border border-theme-border flex items-center gap-1">
                               <Clock className="w-3 h-3 text-emerald-500" />

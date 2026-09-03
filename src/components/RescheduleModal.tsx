@@ -9,7 +9,8 @@ import {
   toISODateString, 
   addMinutesToTime, 
   parse12HourToMinutes,
-  getDayOfWeekFromDate
+  getDayOfWeekFromDate,
+  isTaskScheduledForDate
 } from '../utils/timeUtils';
 import { 
   Calendar, 
@@ -57,14 +58,19 @@ export const RescheduleModal: React.FC<RescheduleModalProps> = ({
   })();
 
   // 1. Calculate the ideal conflict-free NEXT AVAILABLE slot (even if next day, avoiding sleep time)
+  // Strictly avoid the task's existing slot so we never suggest the same time back to the user
   const suggestedNextSlot = useMemo(() => {
     return findNextAvailableSlot(
       task.appointedMinutes,
       allTasks,
       capacitySettings,
-      task.id
+      task.id,
+      undefined,
+      false,
+      15,
+      { date: task.taskDate, startTime: task.startTime }
     );
-  }, [task.appointedMinutes, allTasks, capacitySettings, task.id]);
+  }, [task.appointedMinutes, allTasks, capacitySettings, task.id, task.taskDate, task.startTime]);
 
   const [anchorDate, setAnchorDate] = useState<string>(() => {
     if (suggestedNextSlot && suggestedNextSlot.date >= todayStr) {
@@ -99,7 +105,23 @@ export const RescheduleModal: React.FC<RescheduleModalProps> = ({
     const dayOfWeek = getDayOfWeekFromDate(dateStr);
     const isToday = (dateStr === todayStr);
     const isPast = (dateStr < todayStr);
-    const earliestAllowed = isToday ? currentMinutes + 5 : undefined;
+    let earliestAllowed = isToday ? currentMinutes + 5 : undefined;
+
+    // If an active task is running right now, no reschedule slot can start during its window
+    if (isToday) {
+      const activeWorkingTask = allTasks.find(t => 
+        t.status === 'Working' && 
+        isTaskScheduledForDate(t, todayStr) && 
+        t.id !== task.id
+      );
+      if (activeWorkingTask) {
+        const aStart = parse12HourToMinutes(activeWorkingTask.startTime);
+        let aEnd = parse12HourToMinutes(activeWorkingTask.endTime);
+        if (aEnd < aStart) aEnd += 1440;
+        const aEndWithBuf = aEnd + (activeWorkingTask.bufferMinutes !== undefined ? activeWorkingTask.bufferMinutes : 15);
+        earliestAllowed = Math.max(earliestAllowed ?? aEndWithBuf, aEndWithBuf);
+      }
+    }
 
     const slots = isPast ? [] : findAllAvailableSlotsOnDate(
       dateStr,
@@ -111,7 +133,8 @@ export const RescheduleModal: React.FC<RescheduleModalProps> = ({
       6, // Up to 6 distinct slots per day
       task.id,
       capacitySettings.sleepStartTime,
-      capacitySettings.sleepEndTime
+      capacitySettings.sleepEndTime,
+      { date: task.taskDate, startTime: task.startTime }
     );
 
     let dayLabel = `+${days} Days`;
@@ -195,7 +218,8 @@ export const RescheduleModal: React.FC<RescheduleModalProps> = ({
       6,
       task.id,
       capacitySettings.sleepStartTime,
-      capacitySettings.sleepEndTime
+      capacitySettings.sleepEndTime,
+      { date: task.taskDate, startTime: task.startTime }
     );
   }, [customDate, task.appointedMinutes, allTasks, capacitySettings, todayStr, currentMinutes, task.id]);
 
