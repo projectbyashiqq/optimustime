@@ -315,6 +315,17 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
   };
 
   const dayOfWeek = getDayOfWeekFromDate(selectedDate);
+
+  // Live clock formatted as 12h AM/PM with seconds
+  const liveTimeStr = nowTime.toLocaleTimeString('en-US', {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: true
+  });
+
+  // Derive current time period from rules
+  const currentPeriod = getTimePeriodForTime(liveTimeStr, timePeriodSettings);
   const isRedLine = isCapacityRedLineExceeded(selectedDate);
   const scheduledMinutes = dailyScheduledMinutes(selectedDate);
 
@@ -407,6 +418,55 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
             <span className="text-[11px] font-bold px-1.5 py-0.2 rounded bg-theme-card text-theme-muted border border-theme-border font-mono group-hover:text-theme-text group-hover:border-blue-400/50">
               {dayOfWeek.slice(0, 3)}
             </span>
+          </div>
+
+          {/* Live Clock + Time Period Pill */}
+          <div
+            className="hidden sm:flex items-center gap-2 px-3 py-1 rounded-xl border shrink-0 transition-all duration-500"
+            style={{
+              background: currentPeriod?.color
+                ? `${currentPeriod.color}18`
+                : 'var(--theme-card-hover)',
+              borderColor: currentPeriod?.color
+                ? `${currentPeriod.color}55`
+                : 'var(--theme-border)'
+            }}
+            title={currentPeriod ? `Time Period: ${currentPeriod.name} (${currentPeriod.startTime} – ${currentPeriod.endTime})` : 'Current Time'}
+          >
+            {/* Pulsing dot */}
+            <div className="relative flex h-2 w-2 shrink-0">
+              <span
+                className="animate-ping absolute inline-flex h-full w-full rounded-full opacity-75"
+                style={{ backgroundColor: currentPeriod?.color || '#3b82f6' }}
+              />
+              <span
+                className="relative inline-flex rounded-full h-2 w-2"
+                style={{ backgroundColor: currentPeriod?.color || '#3b82f6' }}
+              />
+            </div>
+
+            {/* Period emoji */}
+            {currentPeriod?.emoji && (
+              <span className="text-sm leading-none" aria-hidden="true">{currentPeriod.emoji}</span>
+            )}
+
+            {/* Live time */}
+            <span className="font-mono text-xs font-black tracking-wider text-theme-text">
+              {liveTimeStr}
+            </span>
+
+            {/* Period name chip */}
+            {currentPeriod && (
+              <span
+                className="hidden lg:inline-flex items-center text-[10px] font-bold px-1.5 py-0.5 rounded-lg"
+                style={{
+                  backgroundColor: `${currentPeriod.color}22`,
+                  color: currentPeriod.color
+                }}
+              >
+                {currentPeriod.name}
+              </span>
+            )}
           </div>
 
           <div className="flex items-center gap-1">
