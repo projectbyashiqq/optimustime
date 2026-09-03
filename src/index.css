@@ -171,7 +171,7 @@ input[type="date"]::-webkit-calendar-picker-indicator:hover {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  font-family: 'Outfit', sans-serif;
+  font-family: 'Plus Jakarta Sans', Outfit, -apple-system, BlinkMacSystemFont, 'SF Pro Display', sans-serif;
   font-weight: 700;
   letter-spacing: -0.01em;
   user-select: none;
@@ -295,13 +295,14 @@ input[type="time"] {
 
 /* Display Titles & Hero Headings */
 h1, h2, h3, .font-display {
-  font-family: 'Outfit', sans-serif;
+  font-family: 'Plus Jakarta Sans', Outfit, -apple-system, BlinkMacSystemFont, 'SF Pro Display', sans-serif;
   letter-spacing: -0.025em;
   font-feature-settings: "cv05" 1, "ss01" 1;
 }
 
 /* Linear-grade crisp text rendering */
 body {
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Plus Jakarta Sans", Inter, system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
