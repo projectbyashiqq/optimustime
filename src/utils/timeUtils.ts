@@ -1006,9 +1006,9 @@ export function getTaskTitleClasses(title: string, isDone = false, isInSleep = f
   const colorClass = isDone 
     ? 'line-through text-theme-muted opacity-75' 
     : isWorking
-    ? 'text-white drop-shadow-sm font-black'
+    ? 'text-blue-600 dark:text-blue-400 font-black'
     : isInSleep 
-    ? 'text-white dark:text-slate-100 drop-shadow-sm font-black' 
+    ? 'text-indigo-600 dark:text-indigo-300 drop-shadow-sm font-black' 
     : 'text-theme-text font-black';
   
   if (len <= 25) {

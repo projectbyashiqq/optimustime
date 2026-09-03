@@ -168,17 +168,39 @@ body {
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
   font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  letter-spacing: -0.015em;
 }
 
-/* Active working card contrast guarantee: ensure text never vanishes in night themes */
-.card-working-active {
-  color: #FFFFFF !important;
+h1, h2, h3, .font-display {
+  font-family: 'Outfit', sans-serif;
+  letter-spacing: -0.025em;
 }
-.card-working-active .text-theme-muted {
-  color: #CBD5E1 !important;
+
+/* Ambient glow & pulsing 3px left accent bar for active working card (Pristine Dark Theme Readability) */
+@keyframes ambientWorkingGlow {
+  0%, 100% {
+    box-shadow: 0 4px 20px -2px rgba(37, 99, 235, 0.18), inset 0 0 0 1px rgba(59, 130, 246, 0.35);
+  }
+  50% {
+    box-shadow: 0 8px 28px 2px rgba(37, 99, 235, 0.35), inset 0 0 0 1px rgba(59, 130, 246, 0.65);
+  }
 }
-.card-working-active .text-theme-text {
-  color: #FFFFFF !important;
+
+.card-working-ambient {
+  animation: ambientWorkingGlow 3s infinite ease-in-out;
+  position: relative;
+  overflow: hidden;
+}
+
+.glow-accent-bar {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 3.5px;
+  background: linear-gradient(to bottom, #3B82F6, #60A5FA, #2563EB);
+  box-shadow: 0 0 10px 2px rgba(59, 130, 246, 0.75);
+  z-index: 10;
 }
 
 

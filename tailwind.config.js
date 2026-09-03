@@ -22,7 +22,7 @@ export default {
         }
       },
       fontFamily: {
-        display: ['Outfit', 'Inter', 'system-ui', 'sans-serif'],
+        display: ['Outfit', 'sans-serif'],
         sans: ['Inter', 'system-ui', 'sans-serif'],
         mono: ['"Fira Code"', '"JetBrains Mono"', 'monospace'],
         openSans: ['"Open Sans"', 'sans-serif']
