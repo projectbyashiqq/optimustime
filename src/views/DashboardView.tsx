@@ -50,7 +50,9 @@ import {
   Repeat,
   ShieldAlert,
   Lock,
-  Moon
+  Moon,
+  Volume2,
+  Target
 } from 'lucide-react';
 import { RescheduleModal } from '../components/RescheduleModal';
 import { RecurringManagerModal } from '../components/RecurringManagerModal';
@@ -99,6 +101,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
   const [reschedulingTask, setReschedulingTask] = useState<Task | null>(null);
   const [isRecurringHubOpen, setIsRecurringHubOpen] = useState(false);
   const [nowTime, setNowTime] = useState<Date>(new Date());
+  const [showPastGaps, setShowPastGaps] = useState(false);
 
   // Status Change Handler with Smart Reschedule interceptor
   const handleStatusChange = (task: Task, newStatus: TaskStatus) => {
@@ -1364,157 +1367,327 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
                   <div className="p-4 rounded-xl bg-theme-card-hover border border-theme-border text-center text-xs text-theme-muted">
                     Schedule is 100% time-boxed with no remaining gaps!
                   </div>
-                ) : (
-                  <div className="space-y-2">
-                    {gaps.map((gap, idx) => {
+                ) : (() => {
+                  const nowPlus5Min = currentMinutesFromMidnight + 5;
+                  const nowPlus5Str = formatMinutesTo12Hour(nowPlus5Min);
+
+                  let firstSuggestion: {
+                    startTime: string;
+                    endTime: string;
+                    availableMin: number;
+                    isCurrentOverlap: boolean;
+                    originalGap: TimeGap;
+                  } | null = null;
+
+                  const upcomingGaps: Array<{
+                    gap: TimeGap;
+                    effectiveStart: string;
+                    effectiveMin: number;
+                  }> = [];
+                  const pastGaps: TimeGap[] = [];
+
+                  if (isSelectedToday) {
+                    for (const gap of gaps) {
                       const gStartMin = parse12HourToMinutes(gap.startTime);
                       let gEndMin = parse12HourToMinutes(gap.endTime);
                       if (gEndMin < gStartMin) gEndMin += 1440;
 
-                      const isPastGap = isSelectedToday ? (gEndMin <= currentMinutesFromMidnight) : (selectedDate < toISODateString(nowTime));
-                      const isCurrentGap = isSelectedToday && (gStartMin <= currentMinutesFromMidnight && currentMinutesFromMidnight < gEndMin);
-                      const isFutureGap = isSelectedToday ? (gStartMin >= currentMinutesFromMidnight) : (selectedDate > toISODateString(nowTime));
+                      if (gEndMin <= currentMinutesFromMidnight) {
+                        // Past gap
+                        pastGaps.push(gap);
+                      } else if (gStartMin <= currentMinutesFromMidnight && currentMinutesFromMidnight < gEndMin) {
+                        // Active window right now! 1st suggestion starts at Current time + 5 min
+                        const remainingFromPlus5 = gEndMin - nowPlus5Min;
+                        if (remainingFromPlus5 > 0) {
+                          firstSuggestion = {
+                            startTime: nowPlus5Str,
+                            endTime: gap.endTime,
+                            availableMin: remainingFromPlus5,
+                            isCurrentOverlap: true,
+                            originalGap: gap
+                          };
+                        } else {
+                          pastGaps.push(gap);
+                        }
+                      } else {
+                        // Future gap starting after current minute
+                        upcomingGaps.push({
+                          gap,
+                          effectiveStart: gap.startTime,
+                          effectiveMin: gap.durationMinutes
+                        });
+                      }
+                    }
 
-                      return (
-                        <div
-                          key={idx}
-                          className={`w-full p-3 rounded-xl border transition-all flex flex-col gap-2 ${
-                            isCurrentGap
-                              ? 'border-emerald-400 dark:border-emerald-600 bg-gradient-to-r from-emerald-50/70 via-sky-50/50 to-blue-50/70 dark:from-emerald-950/40 dark:via-sky-950/30 dark:to-blue-950/40 ring-2 ring-emerald-400/40 shadow-sm'
-                              : isPastGap
-                              ? 'border-dashed border-amber-300 dark:border-amber-800/80 bg-amber-50/40 dark:bg-amber-950/20'
-                              : 'border-dashed border-blue-300 dark:border-blue-800/80 bg-blue-50/40 dark:bg-blue-950/20 hover:bg-blue-100/50'
-                          }`}
-                        >
-                          <div className="flex items-start justify-between gap-2">
-                            <div>
-                              <div className="flex items-center gap-2 flex-wrap">
-                                <span className={`font-mono text-xs font-bold flex items-center gap-1 ${
-                                  isCurrentGap ? 'text-emerald-700 dark:text-emerald-300' :
-                                  isPastGap ? 'text-amber-800 dark:text-amber-300' :
-                                  'text-blue-700 dark:text-blue-300'
-                                }`}>
-                                  <Clock className="w-3.5 h-3.5" />
-                                  <span>{gap.startTime} - {gap.endTime}</span>
-                                </span>
+                    // If not currently in a free gap, the first upcoming gap becomes the 1st suggestion!
+                    if (!firstSuggestion && upcomingGaps.length > 0) {
+                      const firstUp = upcomingGaps.shift()!;
+                      const sMin = parse12HourToMinutes(firstUp.gap.startTime);
+                      let eMin = parse12HourToMinutes(firstUp.gap.endTime);
+                      if (eMin < sMin) eMin += 1440;
 
-                                {isCurrentGap && (
-                                  <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-emerald-600 text-white shadow-xs animate-pulse">
-                                    ⚡ Free Right Now
-                                  </span>
-                                )}
+                      // Start at max(gap.startTime, nowPlus5Str)
+                      const effStartMin = Math.max(sMin, nowPlus5Min);
+                      const effStartStr = formatMinutesTo12Hour(effStartMin);
+                      const remaining = Math.max(1, eMin - effStartMin);
 
-                                {isPastGap && (
-                                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-200 dark:bg-amber-900/80 text-amber-800 dark:text-amber-200 border border-amber-300 dark:border-amber-700">
-                                    ⏳ Past Free Window
-                                  </span>
-                                )}
+                      firstSuggestion = {
+                        startTime: effStartStr,
+                        endTime: firstUp.gap.endTime,
+                        availableMin: remaining,
+                        isCurrentOverlap: false,
+                        originalGap: firstUp.gap
+                      };
+                    }
+                  } else if (selectedDate < toISODateString(nowTime)) {
+                    // Past date: recent times first (latest evening down to morning)
+                    pastGaps.push(...[...gaps].reverse());
+                  } else {
+                    // Future date: upcoming times from morning forward
+                    for (const gap of gaps) {
+                      upcomingGaps.push({
+                        gap,
+                        effectiveStart: gap.startTime,
+                        effectiveMin: gap.durationMinutes
+                      });
+                    }
+                  }
 
-                                {isFutureGap && (
-                                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800">
-                                    ✨ Upcoming Slot
-                                  </span>
-                                )}
-                              </div>
+                  return (
+                    <div className="space-y-3">
+                      
+                      {/* 1st Suggestion Card (Current time + 5 min) */}
+                      {firstSuggestion && (
+                        <div className="p-4 rounded-2xl border-2 border-emerald-500/60 dark:border-emerald-500/50 bg-gradient-to-br from-emerald-500/15 via-teal-500/10 to-blue-500/15 shadow-lg shadow-emerald-500/10 space-y-3 animate-fade-in ring-2 ring-emerald-500/20">
+                          <div className="flex items-center justify-between gap-2 flex-wrap">
+                            <span className="text-[10px] font-black uppercase tracking-wider px-2.5 py-1 rounded-full bg-emerald-600 text-white shadow-xs flex items-center gap-1">
+                              <Sparkles className="w-3 h-3 fill-white" />
+                              <span>1st Suggestion • Starts in 5m ({firstSuggestion.startTime})</span>
+                            </span>
+                            <span className="text-xs font-mono font-bold text-theme-text bg-theme-card px-2.5 py-0.5 rounded-lg border border-theme-border flex items-center gap-1">
+                              <Clock className="w-3 h-3 text-emerald-500" />
+                              <span>{firstSuggestion.startTime} - {firstSuggestion.endTime}</span>
+                            </span>
+                          </div>
 
-                              <div className="text-[11px] text-theme-muted mt-0.5">
-                                Available: <strong>{gap.durationMinutes} min</strong> • {
-                                  isCurrentGap
-                                    ? 'Active window right now. Suggestion: Start a task now or log current break.'
-                                    : isPastGap
-                                    ? 'Past time without tasks. Suggestion: Add buffer note to account for your day.'
-                                    : 'Future free opening. Suggestion: Schedule a high-ROI task into this slot.'
-                                }
-                              </div>
+                          {/* Big Available Minutes Display for Focus Planning */}
+                          <div className="flex items-baseline gap-2 pt-1 pb-0.5">
+                            <span className={`text-4xl sm:text-5xl font-black font-mono font-display tracking-tight leading-none ${
+                              firstSuggestion.availableMin < 10 
+                                ? 'text-amber-600 dark:text-amber-400' 
+                                : 'text-emerald-600 dark:text-emerald-400'
+                            }`}>
+                              {firstSuggestion.availableMin}
+                            </span>
+                            <div className="flex flex-col">
+                              <span className="text-xs font-black uppercase tracking-wider text-theme-text">
+                                MIN AVAILABLE
+                              </span>
+                              <span className="text-[10px] font-mono text-theme-muted font-bold">
+                                Focus Window: {firstSuggestion.startTime} → {firstSuggestion.endTime}
+                              </span>
                             </div>
                           </div>
 
-                          {/* Action Buttons based on temporal state */}
-                          <div className="flex items-center justify-end gap-1.5 pt-1 border-t border-theme-border/40 flex-wrap">
-                            {isPastGap ? (
-                              <>
-                                <button
-                                  onClick={() => openBufferNoteModal({
-                                    date: selectedDate,
-                                    startTime: gap.startTime,
-                                    endTime: gap.endTime,
-                                    durationMinutes: gap.durationMinutes
-                                  })}
-                                  className="px-3 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold shadow-sm transition-transform active:scale-95 flex items-center gap-1.5 cursor-pointer"
-                                  title="Log what you did during this past free window"
-                                >
-                                  <Coffee className="w-3.5 h-3.5" />
-                                  <span>Add Buffer Note</span>
-                                </button>
+                          {/* Suggestion: Noise work if < 10 min, Signal if >= 10 min */}
+                          {firstSuggestion.availableMin < 10 ? (
+                            <div className="p-2.5 rounded-xl bg-amber-500/15 border border-amber-500/30 text-amber-900 dark:text-amber-200 text-xs flex items-start gap-2">
+                              <Volume2 className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+                              <div>
+                                <strong className="font-bold block">Quick Noise Work Recommended (&lt;10 min):</strong>
+                                <span className="text-[11px] text-amber-800 dark:text-amber-300 leading-tight block mt-0.5">
+                                  Window is under 10 minutes—too short for deep Signal focus. Suggest to do some <strong>noise-type work</strong>: clear inbox, reply to quick chats, organize desk, take a stretch, or log a break.
+                                </span>
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="p-2.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-900 dark:text-emerald-200 text-xs flex items-start gap-2">
+                              <Target className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5" />
+                              <div>
+                                <strong className="font-bold block">Signal Planning Window ({firstSuggestion.availableMin} min):</strong>
+                                <span className="text-[11px] text-emerald-800 dark:text-emerald-300 leading-tight block mt-0.5">
+                                  {firstSuggestion.availableMin >= 30 
+                                    ? 'Great deep focus block! Ideal for high-ROI P1/P2 Signal task execution.' 
+                                    : 'Focused time opening. Ideal for a targeted subtask, document review, or planning next steps.'}
+                                </span>
+                              </div>
+                            </div>
+                          )}
 
-                                <button
-                                  onClick={() => onOpenTaskModal(undefined, selectedDate, gap.startTime)}
-                                  className="p-1.5 rounded-xl bg-theme-card hover:bg-theme-card-hover border border-theme-border text-theme-muted hover:text-theme-text text-xs transition-colors cursor-pointer"
-                                  title="Add retroactively scheduled task"
-                                >
-                                  <Plus className="w-3.5 h-3.5" />
-                                </button>
-                              </>
-                            ) : isCurrentGap ? (
-                              <>
-                                <button
-                                  onClick={() => {
-                                    const timeStr = formatMinutesTo12Hour(currentMinutesFromMidnight);
-                                    const inSleep = isTimeInSleepWindow(timeStr, formatMinutesTo12Hour(currentMinutesFromMidnight + 30), wakingEnd, wakingStart);
-                                    onOpenTaskModal(undefined, selectedDate, inSleep ? undefined : timeStr);
-                                  }}
-                                  className="px-3 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold shadow-sm transition-transform active:scale-95 flex items-center gap-1.5 cursor-pointer"
-                                  title="Schedule and start task now"
-                                >
-                                  <Plus className="w-3.5 h-3.5 stroke-[3]" />
-                                  <span>Start Task Now</span>
-                                </button>
+                          {/* Action Buttons */}
+                          <div className="flex items-center justify-end gap-2 pt-2 border-t border-emerald-500/20 flex-wrap">
+                            <button
+                              onClick={() => onOpenTaskModal(undefined, selectedDate, firstSuggestion.startTime)}
+                              className="px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white text-xs font-black shadow-md shadow-emerald-500/20 transition-transform active:scale-95 flex items-center gap-1.5 cursor-pointer"
+                              title={`Plan task starting at ${firstSuggestion.startTime}`}
+                            >
+                              <Plus className="w-3.5 h-3.5 stroke-[3]" />
+                              <span>Schedule at {firstSuggestion.startTime}</span>
+                            </button>
 
-                                <button
-                                  onClick={() => openBufferNoteModal({
-                                    date: selectedDate,
-                                    startTime: gap.startTime,
-                                    endTime: gap.endTime,
-                                    durationMinutes: gap.durationMinutes
-                                  })}
-                                  className="px-3 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold shadow-sm transition-transform active:scale-95 flex items-center gap-1.5 cursor-pointer"
-                                  title="Log current break activity"
-                                >
-                                  <Coffee className="w-3.5 h-3.5" />
-                                  <span>Log Break Note</span>
-                                </button>
-                              </>
-                            ) : (
-                              <>
-                                <button
-                                  onClick={() => onOpenTaskModal(undefined, selectedDate, gap.startTime)}
-                                  className="px-3 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold shadow-sm transition-transform active:scale-95 flex items-center gap-1.5 cursor-pointer"
-                                  title="Fill gap with new scheduled task"
-                                >
-                                  <Plus className="w-3.5 h-3.5 stroke-[3]" />
-                                  <span>Schedule Task</span>
-                                </button>
-
-                                <button
-                                  onClick={() => openBufferNoteModal({
-                                    date: selectedDate,
-                                    startTime: gap.startTime,
-                                    endTime: gap.endTime,
-                                    durationMinutes: gap.durationMinutes
-                                  })}
-                                  className="p-1.5 rounded-xl bg-theme-card hover:bg-theme-card-hover border border-theme-border text-theme-muted hover:text-amber-500 text-xs transition-colors cursor-pointer"
-                                  title="Pre-log planned buffer note"
-                                >
-                                  <Coffee className="w-3.5 h-3.5" />
-                                </button>
-                              </>
-                            )}
+                            <button
+                              onClick={() => openBufferNoteModal({
+                                date: selectedDate,
+                                startTime: firstSuggestion.startTime,
+                                endTime: firstSuggestion.endTime,
+                                durationMinutes: firstSuggestion.availableMin,
+                                activityTag: firstSuggestion.availableMin < 10 ? 'Break / Rest' : 'Deep Focus Buffer',
+                                notes: firstSuggestion.availableMin < 10 ? 'Quick noise work / micro-break' : 'Dedicated focus buffer'
+                              })}
+                              className="px-3 py-1.5 rounded-xl bg-theme-card hover:bg-theme-card-hover border border-theme-border text-theme-text text-xs font-bold transition-colors flex items-center gap-1.5 cursor-pointer"
+                              title="Log buffer note"
+                            >
+                              <Coffee className="w-3.5 h-3.5 text-amber-500" />
+                              <span>Log Buffer</span>
+                            </button>
                           </div>
                         </div>
-                      );
-                    })}
-                  </div>
-                )}
+                      )}
+
+                      {/* Remaining Upcoming Gaps (Recent / Earliest First) */}
+                      {upcomingGaps.map((item, idx) => {
+                        const gap = item.gap;
+                        const isLess10 = gap.durationMinutes < 10;
+
+                        return (
+                          <div
+                            key={`upcoming-${idx}`}
+                            className="w-full p-3.5 rounded-xl border border-blue-200 dark:border-blue-900/60 bg-gradient-to-r from-blue-50/40 via-indigo-50/20 to-theme-card dark:from-blue-950/20 dark:via-indigo-950/10 dark:to-theme-card space-y-2.5 transition-all hover:border-blue-400 shadow-2xs"
+                          >
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="font-mono text-xs font-bold text-blue-700 dark:text-blue-300 flex items-center gap-1">
+                                <Clock className="w-3.5 h-3.5" />
+                                <span>{gap.startTime} - {gap.endTime}</span>
+                              </span>
+                              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800">
+                                ✨ Upcoming Slot #{firstSuggestion ? idx + 2 : idx + 1}
+                              </span>
+                            </div>
+
+                            {/* Big Available Minutes Display */}
+                            <div className="flex items-baseline gap-2 py-0.5">
+                              <span className={`text-3xl font-black font-mono font-display tracking-tight leading-none ${
+                                isLess10 ? 'text-amber-600 dark:text-amber-400' : 'text-blue-600 dark:text-blue-400'
+                              }`}>
+                                {gap.durationMinutes}
+                              </span>
+                              <div className="flex flex-col">
+                                <span className="text-xs font-black uppercase tracking-wider text-theme-muted">
+                                  MIN AVAILABLE
+                                </span>
+                                <span className="text-[10px] font-mono text-theme-muted">
+                                  {gap.startTime} → {gap.endTime}
+                                </span>
+                              </div>
+                            </div>
+
+                            {/* Suggestion based on < 10 min */}
+                            {isLess10 ? (
+                              <div className="p-2 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-800 dark:text-amber-300 text-[11px] flex items-center gap-1.5">
+                                <Volume2 className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 shrink-0" />
+                                <span><strong>Noise work suggested (&lt;10m):</strong> Inbox triage, admin chores, or brief break.</span>
+                              </div>
+                            ) : (
+                              <div className="text-[11px] text-theme-muted flex items-center gap-1.5">
+                                <Target className="w-3.5 h-3.5 text-blue-500 shrink-0" />
+                                <span>{gap.durationMinutes >= 30 ? '🚀 Deep Signal Work Block: Perfect for high-priority task execution.' : '🎯 Focused Task Opening: Great for a single focused task.'}</span>
+                              </div>
+                            )}
+
+                            {/* Actions */}
+                            <div className="flex items-center justify-end gap-1.5 pt-1.5 border-t border-theme-border/40">
+                              <button
+                                onClick={() => onOpenTaskModal(undefined, selectedDate, gap.startTime)}
+                                className="px-3 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold shadow-xs transition-transform active:scale-95 flex items-center gap-1 cursor-pointer"
+                              >
+                                <Plus className="w-3.5 h-3.5 stroke-[3]" />
+                                <span>Schedule Task</span>
+                              </button>
+
+                              <button
+                                onClick={() => openBufferNoteModal({
+                                  date: selectedDate,
+                                  startTime: gap.startTime,
+                                  endTime: gap.endTime,
+                                  durationMinutes: gap.durationMinutes,
+                                  activityTag: isLess10 ? 'Break / Rest' : 'Deep Focus Buffer'
+                                })}
+                                className="p-1.5 rounded-xl bg-theme-card hover:bg-theme-card-hover border border-theme-border text-theme-muted hover:text-amber-500 text-xs transition-colors cursor-pointer"
+                                title="Pre-log planned buffer note"
+                              >
+                                <Coffee className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+
+                      {/* Earlier Today Past Gaps (Collapsible so recent times stay first) */}
+                      {pastGaps.length > 0 && (
+                        <div className="pt-2 border-t border-theme-border/60 space-y-2">
+                          <button
+                            type="button"
+                            onClick={() => setShowPastGaps(prev => !prev)}
+                            className="w-full flex items-center justify-between p-2.5 rounded-xl bg-theme-card hover:bg-theme-card-hover border border-theme-border text-xs font-bold text-theme-muted hover:text-theme-text transition-colors cursor-pointer shadow-2xs"
+                          >
+                            <span className="flex items-center gap-1.5">
+                              <Clock className="w-3.5 h-3.5 text-amber-500" />
+                              <span>Earlier Today • {pastGaps.length} Past Free Windows</span>
+                            </span>
+                            <span className="text-[11px] text-amber-600 dark:text-amber-400 font-bold">
+                              {showPastGaps ? 'Hide Earlier Gaps ▲' : 'Show Earlier Gaps ▼'}
+                            </span>
+                          </button>
+
+                          {showPastGaps && (
+                            <div className="space-y-2 animate-fade-in pl-1">
+                              {pastGaps.map((gap, idx) => (
+                                <div
+                                  key={`past-${idx}`}
+                                  className="w-full p-3 rounded-xl border border-dashed border-amber-300 dark:border-amber-800/70 bg-amber-50/40 dark:bg-amber-950/20 space-y-2"
+                                >
+                                  <div className="flex items-center justify-between gap-2">
+                                    <span className="font-mono text-xs font-bold text-amber-800 dark:text-amber-300">
+                                      {gap.startTime} - {gap.endTime}
+                                    </span>
+                                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-300">
+                                      ⏳ Past Window
+                                    </span>
+                                  </div>
+
+                                  <div className="flex items-baseline gap-1.5 py-0.5">
+                                    <span className="text-2xl font-black font-mono font-display text-amber-700 dark:text-amber-400">
+                                      {gap.durationMinutes}
+                                    </span>
+                                    <span className="text-[10px] font-black uppercase tracking-wider text-theme-muted">
+                                      MIN ELAPSED
+                                    </span>
+                                  </div>
+
+                                  <div className="flex items-center justify-end gap-1.5 pt-1 border-t border-amber-200/50 dark:border-amber-900/30">
+                                    <button
+                                      onClick={() => openBufferNoteModal({
+                                        date: selectedDate,
+                                        startTime: gap.startTime,
+                                        endTime: gap.endTime,
+                                        durationMinutes: gap.durationMinutes
+                                      })}
+                                      className="px-2.5 py-1 rounded-lg bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold shadow-xs transition-transform active:scale-95 flex items-center gap-1 cursor-pointer"
+                                    >
+                                      <Coffee className="w-3.5 h-3.5" />
+                                      <span>Add Buffer Note</span>
+                                    </button>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                    </div>
+                  );
+                })()}
               </div>
             );
           })()}
