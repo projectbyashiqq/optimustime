@@ -84,12 +84,26 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
 
   // Combined Chronological Items (Tasks & Buffer Notes)
   const timelineItems = useMemo((): TimelineItem[] => {
-    const taskItems: TimelineItem[] = dayTasks.map(t => ({
-      kind: 'task',
-      task: t,
-      startMin: parse12HourToMinutes(t.startTime),
-      endMin: parse12HourToMinutes(t.endTime)
-    }));
+    const taskItems: TimelineItem[] = dayTasks.map(t => {
+      const sMin = parse12HourToMinutes(t.startTime);
+      let eMin = parse12HourToMinutes(t.endTime);
+      if (t.status === 'Done') {
+        if (t.actualEndTime) {
+          const aEnd = parse12HourToMinutes(t.actualEndTime);
+          if (aEnd > sMin && aEnd < eMin) {
+            eMin = aEnd;
+          }
+        } else if (t.totalActualMinutes && t.totalActualMinutes > 0 && t.totalActualMinutes < (eMin - sMin)) {
+          eMin = sMin + t.totalActualMinutes;
+        }
+      }
+      return {
+        kind: 'task',
+        task: t,
+        startMin: sMin,
+        endMin: eMin
+      };
+    });
 
     const bufferItems: TimelineItem[] = dayBufferNotes.map(n => ({
       kind: 'buffer_note',
@@ -477,8 +491,26 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
 
                           <span className="text-xs font-mono font-bold text-blue-600 dark:text-blue-400 flex items-center gap-1">
                             <Clock className="w-3.5 h-3.5" />
-                            <span>{task.startTime} - {task.endTime} ({task.appointedMinutes}m)</span>
+                            <span>
+                              {task.status === 'Done' && task.actualEndTime && task.actualEndTime !== task.endTime
+                                ? `${task.startTime} - ${task.actualEndTime} (Done early • planned ${task.appointedMinutes}m)`
+                                : `${task.startTime} - ${task.endTime} (${task.appointedMinutes}m)`}
+                            </span>
                           </span>
+
+                          {task.status === 'Done' && task.completedBeforeTimeOccurred && (
+                            <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800 flex items-center gap-1">
+                              <span>✨</span>
+                              <span>DONE IN ADVANCE • SLOT FREED UP</span>
+                            </span>
+                          )}
+
+                          {task.status === 'Done' && !task.completedBeforeTimeOccurred && task.savedFreeMinutes && task.savedFreeMinutes > 0 && (
+                            <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800 flex items-center gap-1">
+                              <span>⚡</span>
+                              <span>FINISHED EARLY (+{task.savedFreeMinutes}m FREE TIME)</span>
+                            </span>
+                          )}
 
                           <span className="text-[10px] font-mono text-theme-muted font-bold px-2 py-0.5 rounded bg-theme-card-hover border border-theme-border">
                             {task.projectCode}

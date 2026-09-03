@@ -172,13 +172,35 @@ export function findScheduleGaps(
   const activeTasks = tasks.filter(t => t.status !== 'Terminated' && t.startTime && t.endTime && t.startTime !== 'All Day');
   
   // Combine task intervals (including task + bufferMinutes) and logged bufferNotes intervals
-  const taskIntervals = activeTasks.map(t => {
+  const taskIntervals: { start: number; end: number }[] = [];
+
+  for (const t of activeTasks as Array<{ startTime: string; endTime: string; status: string; bufferMinutes?: number; actualEndTime?: string; completedBeforeTimeOccurred?: boolean; totalActualMinutes?: number }>) {
+    // If task was completed before its scheduled window even occurred:
+    // The scheduled slot is NOT occupied by work—the entire scheduled slot is FREE TIME!
+    if (t.status === 'Done' && t.completedBeforeTimeOccurred) {
+      continue;
+    }
+
     const s = parse12HourToMinutes(t.startTime);
     let e = parse12HourToMinutes(t.endTime);
+
+    // If task is Done and finished early, only occupy up to its actual completion time + buffer!
+    // The rest of its scheduled window is freed up as FREE TIME!
+    if (t.status === 'Done') {
+      if (t.actualEndTime) {
+        const aEnd = parse12HourToMinutes(t.actualEndTime);
+        if (aEnd > s && aEnd < e) {
+          e = aEnd;
+        }
+      } else if (t.totalActualMinutes && t.totalActualMinutes > 0 && t.totalActualMinutes < (e - s)) {
+        e = s + t.totalActualMinutes;
+      }
+    }
+
     if (e < s) e += 1440;
     const buf = t.bufferMinutes !== undefined ? t.bufferMinutes : defaultBuffer;
-    return { start: s, end: e + buf };
-  });
+    taskIntervals.push({ start: s, end: e + buf });
+  }
 
   const bufferIntervals = (bufferNotes || []).map(b => {
     const s = parse12HourToMinutes(b.startTime);
@@ -969,8 +991,28 @@ export function get24HourContinuousTimeline(
 
   // 2. Tasks
   for (const t of dayTasks) {
+    // If task is Done and completed before its scheduled window even occurred:
+    // The scheduled slot is NOT occupied by work—it is 100% FREE TIME (unaccounted_gap)!
+    if (t.status === 'Done' && t.completedBeforeTimeOccurred) {
+      continue;
+    }
+
     let s = parse12HourToMinutes(t.startTime);
     let e = parse12HourToMinutes(t.endTime);
+
+    // If task is Done and finished early, only occupy up to its actual completion time!
+    // The remainder of its scheduled window automatically becomes an unaccounted_gap (Free Time)!
+    if (t.status === 'Done') {
+      if (t.actualEndTime) {
+        const aEnd = parse12HourToMinutes(t.actualEndTime);
+        if (aEnd > s && aEnd < e) {
+          e = aEnd;
+        }
+      } else if (t.totalActualMinutes && t.totalActualMinutes > 0 && t.totalActualMinutes < (e - s)) {
+        e = s + t.totalActualMinutes;
+      }
+    }
+
     if (e <= s) e += 1440;
 
     let sliceType: DaySlice24['type'] = 'work_pending';

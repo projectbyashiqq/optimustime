@@ -1590,6 +1590,44 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const isRecurring = target.recurrence && target.recurrence !== 'None';
       const delayMins = Math.max(0, actualDuration - target.appointedMinutes);
 
+      const curMin = now.getHours() * 60 + now.getMinutes();
+      const exactCurrentTimeStr = formatMinutesTo12Hour(curMin);
+      const isToday = target.taskDate === todayStr;
+
+      let scheduledStartMin = 0;
+      let scheduledEndMin = 0;
+      if (target.startTime && target.startTime !== 'All Day') {
+        scheduledStartMin = parse12HourToMinutes(target.startTime);
+      }
+      if (target.endTime && target.endTime !== 'All Day') {
+        scheduledEndMin = parse12HourToMinutes(target.endTime);
+      }
+
+      // Check if task completed before its scheduled window began, or finished early before scheduled end
+      const completedBeforeTimeOccurred = isToday && scheduledStartMin > 0 && curMin < (scheduledStartMin - 2);
+      let actualEndTime = target.endTime;
+      let savedFreeMinutes = 0;
+
+      if (completedBeforeTimeOccurred) {
+        // Completed before the scheduled slot even began: entire scheduled slot is liberated as free time!
+        actualEndTime = exactCurrentTimeStr;
+        savedFreeMinutes = target.appointedMinutes;
+      } else if (scheduledEndMin > 0) {
+        if (isToday && curMin < scheduledEndMin) {
+          actualEndTime = exactCurrentTimeStr;
+          savedFreeMinutes = Math.max(0, scheduledEndMin - curMin);
+        } else if (actualDuration < target.appointedMinutes) {
+          savedFreeMinutes = target.appointedMinutes - actualDuration;
+          actualEndTime = addMinutesToTime(target.startTime, actualDuration);
+        }
+      }
+
+      const completionMessage = completedBeforeTimeOccurred
+        ? `✨ Early Completion: "${target.title}" completed before scheduled time! +${savedFreeMinutes}m scheduled slot liberated as FREE TIME.`
+        : savedFreeMinutes > 0
+        ? `✓ Completed "${target.title}" [${target.priority}] early in ${actualDuration}m • Saved +${savedFreeMinutes}m as FREE TIME!`
+        : `✓ Completed "${target.title}" [${target.priority}] in ${actualDuration}m (${isLate ? `Delayed by +${delayMins}m` : 'On-Time Precision'})`;
+
       logLifeEvent({
         eventType: 'TASK_COMPLETED',
         taskId: target.id,
@@ -1597,11 +1635,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         projectCode: target.projectCode,
         priority: target.priority,
         category: target.category,
-        message: `✓ Completed "${target.title}" [${target.priority}] in ${actualDuration}m (${isLate ? `Delayed by +${delayMins}m` : 'On-Time Precision'})`,
+        message: completionMessage,
         details: {
           durationMinutes: actualDuration,
           appointedMinutes: target.appointedMinutes,
           delayMinutes: delayMins,
+          savedFreeMinutes,
+          completedBeforeTimeOccurred,
+          actualEndTime,
           isLate
         }
       });
@@ -1637,6 +1678,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           selectedDays: [],
           bufferMinutes,
           totalActualMinutes: actualDuration,
+          actualEndTime,
+          completedBeforeTimeOccurred,
+          savedFreeMinutes,
           executionLogs: logs,
           dateAdded: new Date().toISOString()
         };
@@ -1677,6 +1721,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             status: 'Done' as TaskStatus,
             bufferMinutes,
             totalActualMinutes: actualDuration,
+            actualEndTime,
+            completedBeforeTimeOccurred,
+            savedFreeMinutes,
             executionLogs: logs
           };
         }
@@ -1699,10 +1746,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (completedTarget) {
       const current12h = getCurrentRoundedTime12Hour(1);
       const bufMin = isLateFinish ? 5 : 15;
-      const bufferEnd12h = addMinutesToTime(current12h, bufMin);
+      const bufferStart = (completedTarget as Task).actualEndTime || current12h;
+      const bufferEnd12h = addMinutesToTime(bufferStart, bufMin);
       setActiveBufferPrompt({
         date: (completedTarget as Task).taskDate || todayStr,
-        startTime: current12h,
+        startTime: bufferStart,
         endTime: bufferEnd12h,
         durationMinutes: bufMin,
         relatedTaskId: (completedTarget as Task).id,

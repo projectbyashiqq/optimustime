@@ -90,6 +90,9 @@ export interface Task {
   originalAppointedMinutes?: number;
   startDiscrepancyMinutes?: number; // < 0 = early, > 0 = late, 0 = on time
   actualStartTime?: string;
+  actualEndTime?: string; // e.g. "02:45 PM" when finished early
+  completedBeforeTimeOccurred?: boolean; // True if task was completed before scheduled window began
+  savedFreeMinutes?: number; // Minutes of free time gained by early completion
 
   // Mandatory / Fixed Schedule Flag (Non-reschedulable, irreplaceable & protected from auto-shifts)
   isMandatorySchedule?: boolean;
