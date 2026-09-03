@@ -40,7 +40,8 @@ export const DEFAULT_CAPACITY: CapacitySettings = {
   dayEndTime: '11:00 PM',
   sleepStartTime: '11:00 PM',
   sleepEndTime: '06:00 AM',
-  defaultBufferMinutes: 15
+  defaultBufferMinutes: 15,
+  autoSleepScheduleEnabled: false
 };
 
 export const DEFAULT_TASK_PRESETS: DefaultTaskSettings = {

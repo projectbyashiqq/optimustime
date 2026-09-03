@@ -97,6 +97,7 @@ export const AdminSettingsView: React.FC = () => {
   const [sleepStartTime, setSleepStartTime] = useState(capacitySettings.sleepStartTime || capacitySettings.dayEndTime || '11:00 PM');
   const [sleepEndTime, setSleepEndTime] = useState(capacitySettings.sleepEndTime || capacitySettings.dayStartTime || '06:00 AM');
   const [defaultBufferMinutes, setDefaultBufferMinutes] = useState(capacitySettings.defaultBufferMinutes || 15);
+  const [autoSleepScheduleEnabled, setAutoSleepScheduleEnabled] = useState(Boolean(capacitySettings.autoSleepScheduleEnabled));
   const [capacityStatusMsg, setCapacityStatusMsg] = useState<string | null>(null);
 
   // Security Editing State
@@ -162,6 +163,7 @@ export const AdminSettingsView: React.FC = () => {
     setSleepStartTime(capacitySettings.sleepStartTime || capacitySettings.dayEndTime || '11:00 PM');
     setSleepEndTime(capacitySettings.sleepEndTime || capacitySettings.dayStartTime || '06:00 AM');
     setDefaultBufferMinutes(capacitySettings.defaultBufferMinutes || 15);
+    setAutoSleepScheduleEnabled(Boolean(capacitySettings.autoSleepScheduleEnabled));
   }, [capacitySettings]);
 
   // Keep task defaults synced when context updates
@@ -289,7 +291,8 @@ export const AdminSettingsView: React.FC = () => {
       dayEndTime,
       sleepStartTime,
       sleepEndTime,
-      defaultBufferMinutes: Number(defaultBufferMinutes)
+      defaultBufferMinutes: Number(defaultBufferMinutes),
+      autoSleepScheduleEnabled
     });
     setCapacityStatusMsg('24-Hour Capacity & Red-Line Protocol saved successfully! ✅');
     setTimeout(() => setCapacityStatusMsg(null), 4000);
@@ -632,6 +635,32 @@ export const AdminSettingsView: React.FC = () => {
                     align="right"
                   />
                 </div>
+              </div>
+
+              {/* Auto-Schedule Sleep in 24-Hour Tracker Toggle */}
+              <div className="flex items-center justify-between p-3.5 rounded-xl bg-theme-card border border-indigo-200 dark:border-indigo-900/60 transition-all">
+                <div className="space-y-0.5">
+                  <div className="text-xs font-bold text-theme-text flex items-center gap-1.5">
+                    <Moon className="w-3.5 h-3.5 text-indigo-500" />
+                    <span>Auto-Schedule Sleep Cycle in 24-Hour Tracker</span>
+                  </div>
+                  <p className="text-[11px] text-theme-muted max-w-md">
+                    When enabled, automatically generates sleep cycles in the 24-Hour Tracker during bedtime hours ({sleepStartTime} → {sleepEndTime}). When disabled, your timeline only contains activities you schedule or log yourself.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setAutoSleepScheduleEnabled(!autoSleepScheduleEnabled)}
+                  className={`w-12 h-6 flex items-center rounded-full p-1 transition-colors shrink-0 cursor-pointer ${
+                    autoSleepScheduleEnabled ? 'bg-indigo-600' : 'bg-slate-300 dark:bg-slate-700'
+                  }`}
+                >
+                  <div
+                    className={`bg-white w-4 h-4 rounded-full shadow-md transform transition-transform ${
+                      autoSleepScheduleEnabled ? 'translate-x-6' : 'translate-x-0'
+                    }`}
+                  />
+                </button>
               </div>
             </div>
 

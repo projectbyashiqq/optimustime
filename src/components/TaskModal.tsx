@@ -58,6 +58,7 @@ interface TaskModalProps {
   initialStartTime?: string;
   initialProjectCode?: string;
   initialCategory?: string;
+  initialPlanProjectId?: string;
   onClose: () => void;
 }
 
@@ -67,6 +68,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
   initialStartTime,
   initialProjectCode,
   initialCategory,
+  initialPlanProjectId,
   onClose
 }) => {
   const { 
@@ -131,7 +133,9 @@ export const TaskModal: React.FC<TaskModalProps> = ({
   );
 
   // Plan / Project Folder Grouping
-  const [planProjectId, setPlanProjectId] = useState<string | undefined>(taskToEdit?.planProjectId);
+  const [planProjectId, setPlanProjectId] = useState<string | undefined>(
+    taskToEdit?.planProjectId || initialPlanProjectId
+  );
   
   const defaultMin = prioritySettings[taskToEdit?.priority || taskDefaults.defaultPriority || 'P1']?.defaultMinutes ?? 90;
   const [appointedMinutes, setAppointedMinutes] = useState<number>(
@@ -535,7 +539,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
       startTime: newCalculatedStartTime,
       endTime: newEnd,
       status,
-      bufferMinutes: taskToEdit?.bufferMinutes ?? autoBuffer,
+      bufferMinutes,
       recurrence,
       selectedDays: recurrence === 'Selected Days' ? selectedDays : [],
       isMandatorySchedule,
@@ -576,7 +580,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
       startTime,
       endTime,
       status,
-      bufferMinutes: 15,
+      bufferMinutes,
       recurrence,
       selectedDays: recurrence === 'Selected Days' ? selectedDays : [],
       isMandatorySchedule,
@@ -619,7 +623,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
       startTime: chosenStart,
       endTime: chosenEnd,
       status,
-      bufferMinutes: 15,
+      bufferMinutes,
       recurrence,
       selectedDays: recurrence === 'Selected Days' ? selectedDays : [],
       isMandatorySchedule,
@@ -1103,7 +1107,17 @@ export const TaskModal: React.FC<TaskModalProps> = ({
 
               <select
                 value={planProjectId || ''}
-                onChange={(e) => setPlanProjectId(e.target.value || undefined)}
+                onChange={(e) => {
+                  const val = e.target.value || undefined;
+                  setPlanProjectId(val);
+                  if (val) {
+                    const matchedFolder = planProjects.find(p => p.id === val);
+                    if (matchedFolder && (!category || category === 'Unknown' || category === taskDefaults.defaultCategory)) {
+                      setCategory(matchedFolder.category);
+                      setHasConfirmedCategory(true);
+                    }
+                  }
+                }}
                 className="w-full text-xs px-3 py-1.5 rounded-xl bg-theme-card border border-theme-border text-theme-text font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500"
               >
                 <option value="">-- No Plan / Project (Stand-alone Task) --</option>

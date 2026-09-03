@@ -45,7 +45,7 @@ import {
 } from 'lucide-react';
 
 interface PlansProjectsViewProps {
-  onOpenTaskModal: (task?: Task, date?: string, startTime?: string, projectCode?: string, category?: string) => void;
+  onOpenTaskModal: (task?: Task, date?: string, startTime?: string, projectCode?: string, category?: string, planProjectId?: string) => void;
 }
 
 export const PlansProjectsView: React.FC<PlansProjectsViewProps> = ({ onOpenTaskModal }) => {
@@ -219,7 +219,7 @@ export const PlansProjectsView: React.FC<PlansProjectsViewProps> = ({ onOpenTask
   };
 
   const handleCreateTaskForFolder = (folder: PlanProjectFolder) => {
-    onOpenTaskModal(undefined, folder.startDate || todayStr, undefined, folder.code, folder.category);
+    onOpenTaskModal(undefined, folder.startDate || todayStr, undefined, folder.code, folder.category, folder.id);
   };
 
   return (
@@ -683,10 +683,17 @@ export const PlansProjectsView: React.FC<PlansProjectsViewProps> = ({ onOpenTask
               </div>
 
               {folderTasks.length === 0 ? (
-                <div className="p-12 text-center rounded-3xl border border-dashed border-theme-border text-theme-muted space-y-2 my-4">
+                <div className="p-12 text-center rounded-3xl border border-dashed border-theme-border text-theme-muted space-y-3 my-4">
                   <Folder className="w-10 h-10 mx-auto opacity-40 text-blue-500" />
                   <p className="text-sm font-bold text-theme-text">No Tasks in this folder yet</p>
                   <p className="text-xs">Click "+ Add Task" or link existing tasks above to group them under this {selectedFolder.type}.</p>
+                  <button
+                    onClick={() => handleCreateTaskForFolder(selectedFolder)}
+                    className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold shadow-sm inline-flex items-center gap-1.5 transition-all"
+                  >
+                    <Plus className="w-3.5 h-3.5 stroke-[3]" />
+                    <span>Create First Task for this {selectedFolder.type === 'plan' ? 'Plan' : 'Project'}</span>
+                  </button>
                 </div>
               ) : (
                 folderTasks.map((task) => {

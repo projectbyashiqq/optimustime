@@ -681,7 +681,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     knowledge,
     planProjects,
     theme,
-    securitySettings
+    securitySettings,
+    bufferNotes,
+    bufferCategories,
+    emergencyCategories,
+    defaultTaskSettings
   });
   useEffect(() => {
     stateRef.current = {
@@ -693,9 +697,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       knowledge,
       planProjects,
       theme,
-      securitySettings
+      securitySettings,
+      bufferNotes,
+      bufferCategories,
+      emergencyCategories,
+      defaultTaskSettings
     };
-  }, [tasks, categories, capacitySettings, prioritySettings, reminders, knowledge, planProjects, theme, securitySettings]);
+  }, [tasks, categories, capacitySettings, prioritySettings, reminders, knowledge, planProjects, theme, securitySettings, bufferNotes, bufferCategories, emergencyCategories, defaultTaskSettings]);
 
   const cloudSyncConfigRef = useRef(cloudSyncConfig);
   useEffect(() => {
@@ -715,7 +723,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       knowledge: s.knowledge,
       planProjects: s.planProjects,
       theme: s.theme,
-      securitySettings: s.securitySettings
+      securitySettings: s.securitySettings,
+      bufferNotes: s.bufferNotes,
+      bufferCategories: s.bufferCategories,
+      emergencyCategories: s.emergencyCategories,
+      defaultTaskSettings: s.defaultTaskSettings
     };
   }, []);
 
@@ -728,8 +740,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (data.prioritySettings) setPrioritySettings(data.prioritySettings as PrioritySettings);
     if (Array.isArray(data.reminders)) setReminders(data.reminders as Reminder[]);
     if (Array.isArray(data.knowledge)) setKnowledge(data.knowledge as KnowledgeItem[]);
+    if (Array.isArray(data.planProjects)) setPlanProjects(data.planProjects as PlanProjectFolder[]);
     if (typeof data.theme === 'string') setTheme(data.theme as ThemeName);
     if (data.securitySettings) setSecuritySettings(data.securitySettings as SecuritySettings);
+    if (Array.isArray(data.bufferNotes)) setBufferNotes(data.bufferNotes as BufferStatusNote[]);
+    if (Array.isArray(data.bufferCategories)) setBufferCategories(data.bufferCategories as BufferCategoryItem[]);
+    if (Array.isArray(data.emergencyCategories)) setEmergencyCategories(data.emergencyCategories as EmergencyCategoryItem[]);
+    if (data.defaultTaskSettings) setDefaultTaskSettings(data.defaultTaskSettings as DefaultTaskSettings);
     setTimeout(() => {
       isRemoteUpdateRef.current = false;
     }, 1000);
@@ -855,7 +872,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     reminders,
     knowledge,
     theme,
-    securitySettings
+    securitySettings,
+    bufferNotes,
+    bufferCategories,
+    planProjects,
+    defaultTaskSettings
   ]);
 
   // Security & Authentication Methods

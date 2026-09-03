@@ -104,18 +104,19 @@ export const BufferNoteModal: React.FC = () => {
         const s = initialData?.startTime || getCurrentRoundedTime12Hour(15);
         const duration = initialData?.durationMinutes || 15;
         const e = initialData?.endTime || addMinutesToTime(s, duration);
-        const initialTag = bufferCategories[0]?.label || 'Break / Rest';
+        const initialTag = initialData?.activityTag || bufferCategories[0]?.label || 'Break / Rest';
 
         setDate(d);
         setStartTime(s);
         setEndTime(e);
         setActivityTag(initialTag);
-        setNotes('');
-        setEnergyLevel(4);
+        setNotes(initialData?.notes || '');
+        setEnergyLevel(initialData?.energyLevel ?? 4);
         const detected = detectSignalVsNoise({
           title: initialTag,
+          notes: initialData?.notes || '',
           tag: initialTag,
-          energyLevel: 4
+          energyLevel: initialData?.energyLevel ?? 4
         });
         setSignalNoise(detected.type);
         setManualOverrideSN(false);

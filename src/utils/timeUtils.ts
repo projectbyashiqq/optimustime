@@ -877,32 +877,7 @@ export function get24HourContinuousTimeline(
 
   const rawIntervals: RawInterval[] = [];
 
-  // 1. Sleep intervals:
-  // Before dayStartTime (0 to dayStartMin)
-  if (dayStartMin > 0) {
-    rawIntervals.push({
-      start: 0,
-      end: dayStartMin,
-      type: 'sleep',
-      title: 'Sleep Cycle & Rest',
-      signalNoise: 'signal',
-      snReason: 'Essential Circadian Recovery & Sleep'
-    });
-  }
-  // After dayEndTime (dayEndMin % 1440 to 1440)
-  if (dayEndMin >= 1440) {
-    // End was > midnight
-    // Any remaining gap up to 1440 was part of the day
-  } else if (dayEndMin < 1440) {
-    rawIntervals.push({
-      start: dayEndMin,
-      end: 1440,
-      type: 'sleep',
-      title: 'Sleep Cycle & Rest',
-      signalNoise: 'signal',
-      snReason: 'Essential Circadian Recovery & Sleep'
-    });
-  }
+  // 1. Tasks & Post-Task Buffers
 
   // 2. Tasks
   for (const t of dayTasks) {
@@ -992,8 +967,63 @@ export function get24HourContinuousTimeline(
     }
   }
 
-  // Sort all intervals chronologically by start time
-  rawIntervals.sort((a, b) => a.start - b.start || (b.end - a.end));
+  // 3. Optional Auto Sleep Schedule (ONLY if user explicitly enabled it in Capacity Settings)
+  if (capacitySettings.autoSleepScheduleEnabled) {
+    const sleepStartMin = parse12HourToMinutes(capacitySettings.sleepStartTime || capacitySettings.dayEndTime || '11:00 PM');
+    const sleepEndMin = parse12HourToMinutes(capacitySettings.sleepEndTime || capacitySettings.dayStartTime || '06:00 AM');
+
+    // Helper to add sleep into unoccupied portions of a window [wStart, wEnd]
+    const addSleepIntoUnoccupied = (wStart: number, wEnd: number) => {
+      if (wEnd <= wStart) return;
+      const occupiedInWindow = rawIntervals
+        .filter(r => r.start < wEnd && r.end > wStart)
+        .map(r => ({ start: Math.max(wStart, r.start), end: Math.min(wEnd, r.end) }))
+        .sort((a, b) => a.start - b.start);
+
+      let cur = wStart;
+      for (const occ of occupiedInWindow) {
+        if (occ.start > cur) {
+          rawIntervals.push({
+            start: cur,
+            end: occ.start,
+            type: 'sleep',
+            title: 'Sleep Cycle & Rest',
+            signalNoise: 'signal',
+            snReason: 'Essential Circadian Recovery & Sleep'
+          });
+        }
+        cur = Math.max(cur, occ.end);
+      }
+      if (cur < wEnd) {
+        rawIntervals.push({
+          start: cur,
+          end: wEnd,
+          type: 'sleep',
+          title: 'Sleep Cycle & Rest',
+          signalNoise: 'signal',
+          snReason: 'Essential Circadian Recovery & Sleep'
+        });
+      }
+    };
+
+    // Morning sleep window (0 to sleepEndMin)
+    if (sleepEndMin > 0) {
+      addSleepIntoUnoccupied(0, Math.min(1440, sleepEndMin));
+    }
+    // Night sleep window (sleepStartMin to 1440)
+    if (sleepStartMin < 1440) {
+      addSleepIntoUnoccupied(Math.max(0, sleepStartMin), 1440);
+    }
+  }
+
+  // Sort all intervals chronologically by start time.
+  // Prioritize user tasks and buffer notes over auto-sleep if their start times coincide.
+  rawIntervals.sort((a, b) => {
+    if (a.start !== b.start) return a.start - b.start;
+    if (a.type === 'sleep' && b.type !== 'sleep') return 1;
+    if (b.type === 'sleep' && a.type !== 'sleep') return -1;
+    return b.end - a.end;
+  });
 
   // Stitch into continuous 1,440-minute slices
   const slices: DaySlice24[] = [];

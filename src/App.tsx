@@ -35,6 +35,7 @@ export const AppContent: React.FC = () => {
   const [modalInitialStartTime, setModalInitialStartTime] = useState<string | undefined>(undefined);
   const [modalInitialProjectCode, setModalInitialProjectCode] = useState<string | undefined>(undefined);
   const [modalInitialCategory, setModalInitialCategory] = useState<string | undefined>(undefined);
+  const [modalInitialPlanProjectId, setModalInitialPlanProjectId] = useState<string | undefined>(undefined);
   const [isRecurringManagerOpen, setIsRecurringManagerOpen] = useState(false);
 
   const handleOpenTaskModal = (
@@ -42,13 +43,15 @@ export const AppContent: React.FC = () => {
     date?: string, 
     startTime?: string,
     projectCode?: string,
-    category?: string
+    category?: string,
+    planProjectId?: string
   ) => {
     setTaskToEdit(task || null);
     setModalInitialDate(date);
     setModalInitialStartTime(startTime);
     setModalInitialProjectCode(projectCode);
     setModalInitialCategory(category);
+    setModalInitialPlanProjectId(planProjectId);
     setIsTaskModalOpen(true);
   };
 
@@ -59,6 +62,7 @@ export const AppContent: React.FC = () => {
     setModalInitialStartTime(undefined);
     setModalInitialProjectCode(undefined);
     setModalInitialCategory(undefined);
+    setModalInitialPlanProjectId(undefined);
   };
 
   return (
@@ -109,6 +113,7 @@ export const AppContent: React.FC = () => {
           initialStartTime={modalInitialStartTime}
           initialProjectCode={modalInitialProjectCode}
           initialCategory={modalInitialCategory}
+          initialPlanProjectId={modalInitialPlanProjectId}
           onClose={handleCloseTaskModal}
         />
       )}

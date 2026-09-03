@@ -193,6 +193,7 @@ export interface CapacitySettings {
   sleepStartTime?: string; // Estimated Bedtime (e.g. "11:00 PM")
   sleepEndTime?: string; // Estimated Wake-up (e.g. "06:00 AM")
   defaultBufferMinutes: number; // Automated Buffer Time between tasks (Default: 15 min)
+  autoSleepScheduleEnabled?: boolean; // When true, 24-hour tracker auto-schedules sleep; when false, no automatic sleep blocks
 }
 
 export interface DefaultTaskSettings {
