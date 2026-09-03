@@ -2,7 +2,7 @@
  * Time utility functions for OptimusTime Time-Boxing and Automation Engines
  */
 
-import { Task, BufferStatusNote, CapacitySettings, DaySlice24, DayBreakdown24Metrics, SignalNoiseType, NamedTimePeriod } from '../types';
+import { Task, BufferStatusNote, CapacitySettings, DaySlice24, DayBreakdown24Metrics, SignalNoiseType, NamedTimePeriod, TimePeriodSettings } from '../types';
 import { detectSignalVsNoise } from './signalNoiseUtils';
 
 export const DAYS_OF_WEEK = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
@@ -2409,15 +2409,25 @@ export function isTaskInSleepWindow(
  */
 export function getTimePeriodForTime(
   timeStr: string,
-  periods?: NamedTimePeriod[]
+  periodsOrSettings?: NamedTimePeriod[] | TimePeriodSettings
 ): NamedTimePeriod | null {
   if (!timeStr || timeStr === 'All Day') return null;
   const targetMin = parse12HourToMinutes(timeStr);
   if (isNaN(targetMin)) return null;
 
-  if (!periods || periods.length === 0) return null;
+  if (!periodsOrSettings) return null;
 
-  for (const period of periods) {
+  let periodList: NamedTimePeriod[];
+  if ('isEnabled' in periodsOrSettings) {
+    if (!periodsOrSettings.isEnabled) return null;
+    periodList = periodsOrSettings.periods || [];
+  } else {
+    periodList = periodsOrSettings;
+  }
+
+  if (periodList.length === 0) return null;
+
+  for (const period of periodList) {
     const startMin = parse12HourToMinutes(period.startTime);
     const endMin = parse12HourToMinutes(period.endTime);
 
@@ -2438,8 +2448,8 @@ export function getTimePeriodForTime(
 
 export function getTimePeriodName(
   timeStr: string,
-  periods?: NamedTimePeriod[]
+  periodsOrSettings?: NamedTimePeriod[] | TimePeriodSettings
 ): string | null {
-  const match = getTimePeriodForTime(timeStr, periods);
+  const match = getTimePeriodForTime(timeStr, periodsOrSettings);
   return match ? match.name : null;
 }

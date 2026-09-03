@@ -1685,9 +1685,19 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
                                 }
                               </span>
                             </span>
-                            <span className="text-xs font-mono font-bold text-theme-text bg-theme-card px-2.5 py-0.5 rounded-lg border border-theme-border flex items-center gap-1">
+                            <span className="text-xs font-mono font-bold text-theme-text bg-theme-card px-2.5 py-0.5 rounded-lg border border-theme-border flex items-center gap-1.5 flex-wrap">
                               <Clock className="w-3 h-3 text-emerald-500" />
                               <span>{firstSuggestion.startTime} - {firstSuggestion.endTime}</span>
+                              {(() => {
+                                const period = getTimePeriodForTime(firstSuggestion.startTime, timePeriodSettings);
+                                if (!period) return null;
+                                return (
+                                  <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-indigo-50 dark:bg-indigo-950/70 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 flex items-center gap-0.5">
+                                    <span>{period.emoji}</span>
+                                    <span>{period.name}</span>
+                                  </span>
+                                );
+                              })()}
                             </span>
                           </div>
 
@@ -1775,10 +1785,20 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
                             key={`upcoming-${idx}`}
                             className="w-full p-3.5 rounded-xl border border-blue-200 dark:border-blue-900/60 bg-gradient-to-r from-blue-50/40 via-indigo-50/20 to-theme-card dark:from-blue-950/20 dark:via-indigo-950/10 dark:to-theme-card space-y-2.5 transition-all hover:border-blue-400 shadow-2xs"
                           >
-                            <div className="flex items-center justify-between gap-2">
-                              <span className="font-mono text-xs font-bold text-blue-700 dark:text-blue-300 flex items-center gap-1">
+                            <div className="flex items-center justify-between gap-2 flex-wrap">
+                              <span className="font-mono text-xs font-bold text-blue-700 dark:text-blue-300 flex items-center gap-1.5 flex-wrap">
                                 <Clock className="w-3.5 h-3.5" />
                                 <span>{gap.startTime} - {gap.endTime}</span>
+                                {(() => {
+                                  const period = getTimePeriodForTime(gap.startTime, timePeriodSettings);
+                                  if (!period) return null;
+                                  return (
+                                    <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-indigo-50 dark:bg-indigo-950/70 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 flex items-center gap-0.5">
+                                      <span>{period.emoji}</span>
+                                      <span>{period.name}</span>
+                                    </span>
+                                  );
+                                })()}
                               </span>
                               <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800">
                                 ✨ Upcoming Slot #{firstSuggestion ? idx + 2 : idx + 1}

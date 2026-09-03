@@ -14,7 +14,8 @@ import {
   Sparkles,
   ArrowRight
 } from 'lucide-react';
-import { getDayOfWeekFromDate, toISODateString } from '../utils/timeUtils';
+import { getDayOfWeekFromDate, toISODateString, getTimePeriodForTime } from '../utils/timeUtils';
+import { useApp } from '../context/AppContext';
 
 interface MorningRolloverBannerProps {
   tasks: Task[];
@@ -35,6 +36,7 @@ export const MorningRolloverBanner: React.FC<MorningRolloverBannerProps> = ({
   onKeepIncomplete,
   onDismissReview
 }) => {
+  const { timePeriodSettings } = useApp();
   const [isExpanded, setIsExpanded] = useState(true);
 
   if (!tasks || tasks.length === 0) return null;
@@ -148,9 +150,19 @@ export const MorningRolloverBanner: React.FC<MorningRolloverBannerProps> = ({
                     )}
 
                     {/* Scheduled Origin */}
-                    <span className="flex items-center gap-1 text-[11px] text-amber-800 dark:text-amber-300 font-mono font-semibold">
+                    <span className="flex items-center gap-1.5 text-[11px] text-amber-800 dark:text-amber-300 font-mono font-semibold flex-wrap">
                       <Clock className="w-3 h-3 text-amber-500" />
                       <span>{dateLabel} • {task.startTime} ({task.appointedMinutes}m)</span>
+                      {(() => {
+                        const period = getTimePeriodForTime(task.startTime, timePeriodSettings);
+                        if (!period) return null;
+                        return (
+                          <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-100 dark:bg-amber-950/80 text-amber-900 dark:text-amber-200 border border-amber-300/80 dark:border-amber-700/80 flex items-center gap-0.5">
+                            <span>{period.emoji}</span>
+                            <span>{period.name}</span>
+                          </span>
+                        );
+                      })()}
                     </span>
                   </div>
 

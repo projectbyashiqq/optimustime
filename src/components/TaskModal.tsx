@@ -696,7 +696,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                 <h2 className="text-base sm:text-lg font-bold text-theme-text">
                   {isEditing ? 'Edit Task Matrix' : 'Create New Scheduled Task'}
                 </h2>
-                <div className="flex items-center gap-2 text-xs text-theme-muted">
+                <div className="flex items-center gap-2 text-xs text-theme-muted flex-wrap">
                   <span>Code:</span>
                   <input
                     type="text"
@@ -706,6 +706,16 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                     title="Unique Project Code (Custom Editable)"
                   />
                   <span>• {dayOfWeek}</span>
+                  {timePeriodSettings?.isEnabled && (() => {
+                    const period = getTimePeriodForTime(startTime, timePeriodSettings);
+                    if (!period) return null;
+                    return (
+                      <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-indigo-100 dark:bg-indigo-950/80 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 flex items-center gap-1 shadow-2xs">
+                        <span>{period.emoji || '⏰'}</span>
+                        <span>{period.name}</span>
+                      </span>
+                    );
+                  })()}
                 </div>
               </div>
             </div>
@@ -1430,12 +1440,13 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                     onChange={handleStartTimeChange}
                   />
                   {timePeriodSettings?.isEnabled && (() => {
-                    const period = getTimePeriodForTime(startTime, timePeriodSettings.periods);
+                    const period = getTimePeriodForTime(startTime, timePeriodSettings);
                     if (!period) return null;
                     return (
-                      <div className="mt-1 flex items-center gap-1 text-[11px] font-bold text-amber-600 dark:text-amber-400">
+                      <div className="mt-1.5 flex items-center gap-1.5 text-xs font-bold text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-950/60 px-2.5 py-1 rounded-lg border border-indigo-200 dark:border-indigo-800/80 shadow-2xs">
                         <span>{period.emoji || '⏰'}</span>
-                        <span>{period.name} ({period.startTime} - {period.endTime})</span>
+                        <span>{period.name}</span>
+                        <span className="text-[10px] text-theme-muted font-normal font-mono">({period.startTime} - {period.endTime})</span>
                       </div>
                     );
                   })()}

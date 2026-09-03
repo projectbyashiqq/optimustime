@@ -10,8 +10,10 @@ import {
   addMinutesToTime, 
   parse12HourToMinutes,
   getDayOfWeekFromDate,
-  isTaskScheduledForDate
+  isTaskScheduledForDate,
+  getTimePeriodForTime
 } from '../utils/timeUtils';
+import { useApp } from '../context/AppContext';
 import { 
   Calendar, 
   Clock, 
@@ -47,6 +49,7 @@ export const RescheduleModal: React.FC<RescheduleModalProps> = ({
   onConfirmReschedule,
   onClose
 }) => {
+  const { timePeriodSettings } = useApp();
   const isRecurring = Boolean(task.recurrence && task.recurrence !== 'None');
   const [recurringScope, setRecurringScope] = useState<'single' | 'series'>('single');
 
@@ -285,9 +288,26 @@ export const RescheduleModal: React.FC<RescheduleModalProps> = ({
                   {task.projectCode}
                 </span>
               </div>
-              <p className="text-xs text-theme-muted mt-0.5">
-                Task: <strong className="text-theme-text">{task.title}</strong> • Duration: <span className="font-bold text-blue-600 dark:text-blue-400">{task.appointedMinutes} mins</span> (Active hours: {capacitySettings.dayStartTime} - {capacitySettings.dayEndTime})
-              </p>
+              <div className="text-xs text-theme-muted mt-1 flex items-center gap-2 flex-wrap">
+                <span>Task: <strong className="text-theme-text">{task.title}</strong></span>
+                {task.startTime && task.startTime !== 'All Day' && (
+                  <span className="flex items-center gap-1">
+                    <span>• Current:</span>
+                    <strong className="font-mono text-theme-text">{task.startTime}</strong>
+                    {(() => {
+                      const period = getTimePeriodForTime(task.startTime, timePeriodSettings);
+                      if (!period) return null;
+                      return (
+                        <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-indigo-50 dark:bg-indigo-950/70 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 flex items-center gap-0.5">
+                          <span>{period.emoji}</span>
+                          <span>{period.name}</span>
+                        </span>
+                      );
+                    })()}
+                  </span>
+                )}
+                <span>• Duration: <span className="font-bold text-blue-600 dark:text-blue-400">{task.appointedMinutes} mins</span></span>
+              </div>
             </div>
           </div>
           <button 
@@ -365,6 +385,16 @@ export const RescheduleModal: React.FC<RescheduleModalProps> = ({
                   <span className="text-emerald-600 dark:text-emerald-400 font-mono font-black">
                     • {suggestedNextSlot.startTime} - {suggestedNextSlot.endTime}
                   </span>
+                  {(() => {
+                    const period = getTimePeriodForTime(suggestedNextSlot.startTime, timePeriodSettings);
+                    if (!period) return null;
+                    return (
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-indigo-100 dark:bg-indigo-950/80 text-indigo-800 dark:text-indigo-200 border border-indigo-300 dark:border-indigo-700 flex items-center gap-1 shadow-2xs">
+                        <span>{period.emoji}</span>
+                        <span>{period.name}</span>
+                      </span>
+                    );
+                  })()}
                   <span className="text-xs font-normal text-theme-muted">
                     ({suggestedNextSlot.durationMinutes} mins)
                   </span>
@@ -646,12 +676,22 @@ export const RescheduleModal: React.FC<RescheduleModalProps> = ({
                                   </div>
                                 </div>
 
-                                <div>
+                                <div className="flex items-center justify-between gap-1 mt-0.5 flex-wrap">
                                   <div className="text-xs font-black font-mono text-theme-text flex items-center gap-1">
                                     <span>{slot.startTime}</span>
                                     <ArrowRight className="w-3 h-3 text-theme-muted" />
                                     <span>{slot.endTime}</span>
                                   </div>
+                                  {(() => {
+                                    const period = getTimePeriodForTime(slot.startTime, timePeriodSettings);
+                                    if (!period) return null;
+                                    return (
+                                      <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-indigo-50 dark:bg-indigo-950/70 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 shrink-0 flex items-center gap-0.5">
+                                        <span>{period.emoji}</span>
+                                        <span>{period.name}</span>
+                                      </span>
+                                    );
+                                  })()}
                                 </div>
 
                                 <div className="flex items-center justify-between text-[10px] text-theme-muted font-medium pt-1 border-t border-theme-border/40">
@@ -706,8 +746,18 @@ export const RescheduleModal: React.FC<RescheduleModalProps> = ({
                             <span>{slot.date}</span>
                             <span className="text-theme-muted font-normal">({slot.dayOfWeek})</span>
                           </div>
-                          <div className="text-xs font-mono font-bold text-purple-600 dark:text-purple-400">
-                            {slot.startTime} - {slot.endTime} ({task.appointedMinutes}m)
+                          <div className="text-xs font-mono font-bold text-purple-600 dark:text-purple-400 flex items-center gap-1.5 flex-wrap">
+                            <span>{slot.startTime} - {slot.endTime} ({task.appointedMinutes}m)</span>
+                            {(() => {
+                              const period = getTimePeriodForTime(slot.startTime, timePeriodSettings);
+                              if (!period) return null;
+                              return (
+                                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-indigo-50 dark:bg-indigo-950/70 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 flex items-center gap-0.5">
+                                  <span>{period.emoji}</span>
+                                  <span>{period.name}</span>
+                                </span>
+                              );
+                            })()}
                           </div>
                         </div>
                       </div>
@@ -781,8 +831,20 @@ export const RescheduleModal: React.FC<RescheduleModalProps> = ({
                               </div>
                             )}
                           </div>
-                          <div className="text-xs font-mono font-bold text-theme-text">
-                            {slot.startTime} - {slot.endTime}
+                          <div className="flex items-center justify-between gap-1 mt-0.5 flex-wrap">
+                            <div className="text-xs font-mono font-bold text-theme-text">
+                              {slot.startTime} - {slot.endTime}
+                            </div>
+                            {(() => {
+                              const period = getTimePeriodForTime(slot.startTime, timePeriodSettings);
+                              if (!period) return null;
+                              return (
+                                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-indigo-50 dark:bg-indigo-950/70 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 shrink-0 flex items-center gap-0.5">
+                                  <span>{period.emoji}</span>
+                                  <span>{period.name}</span>
+                                </span>
+                              );
+                            })()}
                           </div>
                         </div>
                       );
