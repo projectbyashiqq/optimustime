@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
 import { Task, TaskStatus } from '../types';
-import { playNotificationChime, toISODateString, getDayOfWeekFromDate, generateProjectCode } from '../utils/timeUtils';
+import { playNotificationChime, toISODateString, getDayOfWeekFromDate, generateProjectCode, formatDisplayDate } from '../utils/timeUtils';
 import { 
   Bell, 
   Plus, 
@@ -306,7 +306,7 @@ export const ReminderCenterView: React.FC<ReminderCenterViewProps> = ({ onOpenTa
                       {/* Date & Full-day */}
                       <span className="font-mono text-xs font-bold text-theme-text bg-theme-card-hover px-2 py-0.5 rounded border border-theme-border flex items-center gap-1">
                         <Calendar className="w-3 h-3 text-theme-muted" />
-                        {task.taskDate} • Full-Day
+                        {formatDisplayDate(task.taskDate)} • Full-Day
                       </span>
 
                       {task.subCategory && (

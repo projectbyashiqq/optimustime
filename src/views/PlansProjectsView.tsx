@@ -10,7 +10,8 @@ import {
   getTaskTitleClasses,
   isTaskInRunningSlot,
   isTaskPastDue,
-  findSimultaneousTasks
+  findSimultaneousTasks,
+  formatDisplayDate
 } from '../utils/timeUtils';
 import { PlanProjectModal } from '../components/PlanProjectModal';
 import { RescheduleModal } from '../components/RescheduleModal';
@@ -768,7 +769,7 @@ export const PlansProjectsView: React.FC<PlansProjectsViewProps> = ({ onOpenTask
                             <div className="flex items-center gap-2 flex-wrap">
                               <span className="text-theme-muted flex items-center gap-1 font-mono font-semibold text-xs">
                                 <Calendar className="w-3.5 h-3.5 text-blue-500" />
-                                {task.taskDate} ({getDayOfWeekFromDate(task.taskDate).slice(0, 3)})
+                                {formatDisplayDate(task.taskDate)} ({getDayOfWeekFromDate(task.taskDate).slice(0, 3)})
                               </span>
 
                               <span className="font-mono text-xs font-bold text-theme-text bg-theme-card-hover px-2 py-0.5 rounded border border-theme-border">
@@ -1008,7 +1009,7 @@ export const PlansProjectsView: React.FC<PlansProjectsViewProps> = ({ onOpenTask
                         {t.title}
                       </div>
                       <div className="text-[10px] font-mono text-theme-muted">
-                        [{t.projectCode}] • {t.taskDate} • {t.startTime} ({t.appointedMinutes}m)
+                        [{t.projectCode}] • {formatDisplayDate(t.taskDate)} • {t.startTime} ({t.appointedMinutes}m)
                       </div>
                     </div>
 

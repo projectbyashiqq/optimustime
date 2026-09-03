@@ -9,7 +9,8 @@ import {
   isTaskPastDue,
   findSimultaneousTasks,
   getDayOfWeekFromDate,
-  isTaskInSleepWindow
+  isTaskInSleepWindow,
+  formatDisplayDate
 } from '../../utils/timeUtils';
 import { 
   Table as TableIcon, 
@@ -606,7 +607,7 @@ export const TableView: React.FC<TableViewProps> = ({
                       <td className="p-3.5 whitespace-nowrap font-mono text-theme-muted">
                         <div className="flex items-center gap-1.5">
                           <span className={task.taskDate === todayStr ? 'font-bold text-blue-600 dark:text-blue-400' : 'text-theme-text'}>
-                            {task.taskDate}
+                            {formatDisplayDate(task.taskDate)}
                           </span>
                           <span className="text-[10px] px-1.5 py-0.2 rounded bg-theme-card-hover border border-theme-border">
                             {task.dayOfWeek.slice(0, 3)}
@@ -794,7 +795,7 @@ export const TableView: React.FC<TableViewProps> = ({
                       {task.category}
                     </span>
                     <span>•</span>
-                    <span>{task.taskDate}</span>
+                    <span>{formatDisplayDate(task.taskDate)}</span>
                     <span>•</span>
                     <span className="font-mono font-bold text-theme-text">
                       {task.startTime && task.endTime ? `${task.startTime} - ${task.endTime}` : `${task.appointedMinutes}m`}

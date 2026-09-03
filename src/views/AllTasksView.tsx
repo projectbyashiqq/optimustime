@@ -10,7 +10,8 @@ import {
   findSimultaneousTasks,
   getDayOfWeekFromDate,
   getTaskTitleClasses,
-  isTaskInSleepWindow
+  isTaskInSleepWindow,
+  formatDisplayDate
 } from '../utils/timeUtils';
 import { 
   Calendar, 
@@ -665,7 +666,7 @@ export const AllTasksView: React.FC<AllTasksViewProps> = ({ onOpenTaskModal }) =
 
                 <span className="text-theme-muted flex items-center gap-1 font-mono font-semibold">
                   <Calendar className="w-3.5 h-3.5 text-blue-500" />
-                  {task.taskDate} ({task.dayOfWeek.slice(0, 3)})
+                  {formatDisplayDate(task.taskDate)} ({task.dayOfWeek.slice(0, 3)})
                 </span>
 
                 <span className="font-mono text-theme-text font-bold bg-theme-card-hover px-2 py-0.5 rounded border border-theme-border">
@@ -1405,7 +1406,7 @@ export const AllTasksView: React.FC<AllTasksViewProps> = ({ onOpenTaskModal }) =
                                 <span className="font-mono text-[10px] text-theme-muted shrink-0">{task.projectCode}</span>
                                 <span className="font-bold text-xs line-through text-theme-muted truncate">{task.title}</span>
                                 <span className="text-[10px] font-mono text-theme-muted hidden sm:inline shrink-0">
-                                  {task.taskDate} • {task.startTime}-{task.endTime} ({task.appointedMinutes}m)
+                                  {formatDisplayDate(task.taskDate)} • {task.startTime}-{task.endTime} ({task.appointedMinutes}m)
                                 </span>
                                 <span className={`text-[9px] font-black px-1.5 py-0.2 rounded-full text-white shrink-0 ${isDone ? 'bg-emerald-600' : 'bg-red-600'}`}>
                                   {isDone ? '✓ Done' : '✕ Terminated'}
@@ -1462,7 +1463,7 @@ export const AllTasksView: React.FC<AllTasksViewProps> = ({ onOpenTaskModal }) =
                                     </span>
                                     <span className="text-theme-muted flex items-center gap-1 font-mono font-semibold">
                                       <Calendar className="w-3.5 h-3.5 text-theme-muted" />
-                                      {task.taskDate}
+                                      {formatDisplayDate(task.taskDate)}
                                     </span>
                                     <span className="font-mono text-theme-muted font-bold">
                                       {task.startTime} - {task.endTime}

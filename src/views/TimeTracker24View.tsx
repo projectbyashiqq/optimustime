@@ -11,7 +11,8 @@ import {
   formatMinutesTo12Hour, 
   diffTimeInMinutes,
   addMinutesToTime,
-  getCurrentRoundedTime12Hour
+  getCurrentRoundedTime12Hour,
+  formatDisplayDate
 } from '../utils/timeUtils';
 import { 
   detectSignalVsNoise, 
@@ -327,21 +328,19 @@ export const TimeTracker24View: React.FC<TimeTracker24ViewProps> = ({ onOpenTask
                 trackerDateInputRef.current?.focus();
               }
             }}
-            className="flex items-center gap-2 bg-theme-card-hover hover:bg-theme-card hover:border-blue-500 px-3 py-2 rounded-2xl border border-theme-border cursor-pointer transition-all shadow-2xs group active:scale-98"
+            className="flex items-center gap-2 bg-theme-card-hover hover:bg-theme-card hover:border-blue-500 px-3 py-2 rounded-2xl border border-theme-border cursor-pointer transition-all shadow-2xs group active:scale-98 relative"
             title="Click anywhere to open full calendar"
           >
             <Calendar className="w-4 h-4 text-blue-500 shrink-0 group-hover:scale-110 transition-transform" />
+            <span className="font-bold text-xs sm:text-sm text-theme-text font-mono tracking-tight">
+              {formatDisplayDate(selectedDate)}
+            </span>
             <input
               ref={trackerDateInputRef}
               type="date"
               value={selectedDate}
               onChange={(e) => setSelectedDate(e.target.value)}
-              onClick={(e) => {
-                try {
-                  (e.target as HTMLInputElement).showPicker?.();
-                } catch {}
-              }}
-              className="font-bold text-xs sm:text-sm text-theme-text bg-transparent focus:outline-none cursor-pointer"
+              className="absolute inset-0 opacity-0 pointer-events-none w-full h-full"
             />
             <span className="text-[10px] font-black px-1.5 py-0.5 rounded-md bg-theme-card text-theme-muted border border-theme-border font-mono group-hover:text-theme-text group-hover:border-blue-400/50">
               {dayOfWeek.slice(0, 3)}

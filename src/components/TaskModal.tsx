@@ -24,7 +24,8 @@ import {
   shouldRolloverToNextDay,
   formatMinutesTo12Hour,
   calculateFirstRecurringDate,
-  getTimePeriodForTime
+  getTimePeriodForTime,
+  formatDisplayDate
 } from '../utils/timeUtils';
 import { ConflictModal } from './ConflictModal';
 import { TimePicker } from './TimePicker';
@@ -797,7 +798,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                   <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0" />
                   <div className="truncate">
                     <div className="text-[9px] text-theme-muted font-bold">3. Date</div>
-                    <div className="font-mono font-bold text-theme-text truncate">{taskDate}</div>
+                    <div className="font-mono font-bold text-theme-text truncate">{formatDisplayDate(taskDate)}</div>
                   </div>
                 </div>
 
@@ -1200,7 +1201,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                   <div className="flex items-center gap-2">
                     <AlertOctagon className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0" />
                     <span>
-                      ⚠️ <strong>Past Time Warning:</strong> Scheduled start ({startTime} on {taskDate}) is <strong>earlier than current time</strong> ({pastTimeCheck.currentTimeStr}).
+                      ⚠️ <strong>Past Time Warning:</strong> Scheduled start ({startTime} on {formatDisplayDate(taskDate)}) is <strong>earlier than current time</strong> ({pastTimeCheck.currentTimeStr}).
                     </span>
                   </div>
                   <button
@@ -1257,7 +1258,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                 <div className="flex items-center justify-between text-[10px] font-bold">
                   <span className="text-theme-muted flex items-center gap-1 font-sans">
                     <Sparkles className="w-3 h-3 text-blue-500" />
-                    <span>Free Time Slots on {taskDate}:</span>
+                    <span>Free Time Slots on {formatDisplayDate(taskDate)}:</span>
                   </span>
                   <button
                     type="button"
@@ -1376,9 +1377,14 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                   className="cursor-pointer group"
                   title="Click to open calendar"
                 >
-                  <label className="text-[11px] font-bold text-theme-text flex items-center gap-1 mb-1 cursor-pointer">
-                    <Calendar className="w-3.5 h-3.5 text-blue-500 group-hover:scale-110 transition-transform" />
-                    <span>Task Date</span>
+                  <label className="text-[11px] font-bold text-theme-text flex items-center justify-between mb-1 cursor-pointer">
+                    <span className="flex items-center gap-1">
+                      <Calendar className="w-3.5 h-3.5 text-blue-500 group-hover:scale-110 transition-transform" />
+                      <span>Task Date</span>
+                    </span>
+                    <span className="text-[11px] font-mono font-bold text-blue-600 dark:text-blue-400">
+                      {formatDisplayDate(taskDate)}
+                    </span>
                   </label>
                   <input
                     ref={taskDateInputRef}
@@ -1947,7 +1953,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                     Scheduled Start:
                   </span>
                   <strong className="text-xs font-mono text-theme-text block mt-0.5">
-                    {taskDate} @ {startTime}
+                    {formatDisplayDate(taskDate)} @ {startTime}
                   </strong>
                 </div>
 
@@ -1956,7 +1962,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                     Current Time (Now):
                   </span>
                   <strong className="text-xs font-mono text-emerald-600 dark:text-emerald-400 block mt-0.5">
-                    {pastTimeCheck.todayStr} @ {pastTimeCheck.currentTimeStr}
+                    {formatDisplayDate(pastTimeCheck.todayStr)} @ {pastTimeCheck.currentTimeStr}
                   </strong>
                 </div>
               </div>

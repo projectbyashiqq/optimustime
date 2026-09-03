@@ -7,7 +7,8 @@ import {
   getDayOfWeekFromDate, 
   generateProjectCode,
   isDateTimeBeforeNow,
-  shouldRolloverToNextDay 
+  shouldRolloverToNextDay,
+  formatDisplayDate
 } from '../utils/timeUtils';
 import { 
   StickyNote, 
@@ -943,7 +944,7 @@ export const NotesView: React.FC<NotesViewProps> = ({ onOpenTaskModal }) => {
                   <div className="flex items-center gap-2 font-mono text-[11px] text-theme-muted">
                     <span className="flex items-center gap-1">
                       <Calendar className="w-3 h-3 text-blue-500" />
-                      <span>{note.taskDate}</span>
+                      <span>{formatDisplayDate(note.taskDate)}</span>
                     </span>
                     {note.startTime && note.startTime !== 'All Day' && (
                       <span className="flex items-center gap-1 text-amber-600 dark:text-amber-400 font-bold">

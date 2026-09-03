@@ -79,18 +79,49 @@ export function diffTimeInMinutes(startTimeStr: string, endTimeStr: string): num
   return end - start;
 }
 
-// Format date into standard display format e.g. "31 August 2026 (Monday)"
+// Format date into standard display format e.g. "01 Jan 2026 (Monday)"
 export function formatHeaderDate(date: Date = new Date()): string {
   const day = date.getDate().toString().padStart(2, '0');
   const monthNames = [
-    'January', 'February', 'March', 'April', 'May', 'June',
-    'July', 'August', 'September', 'October', 'November', 'December'
+    'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
   ];
   const month = monthNames[date.getMonth()];
   const year = date.getFullYear();
   const dayName = DAYS_OF_WEEK[date.getDay()];
 
   return `${day} ${month} ${year} (${dayName})`;
+}
+
+// Master Date Formatter: Always formats to "01 Jan 2026"
+export function formatDisplayDate(dateInput: string | Date | undefined | null, includeDayName = false): string {
+  if (!dateInput) return '';
+  let d: Date;
+  if (typeof dateInput === 'string') {
+    if (dateInput.includes('T')) {
+      d = new Date(dateInput);
+    } else {
+      const parts = dateInput.split('-').map(Number);
+      if (parts.length === 3) {
+        d = new Date(parts[0], parts[1] - 1, parts[2]);
+      } else {
+        d = new Date(dateInput);
+      }
+    }
+  } else {
+    d = dateInput;
+  }
+  if (isNaN(d.getTime())) return String(dateInput);
+  const day = d.getDate().toString().padStart(2, '0');
+  const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const month = monthNames[d.getMonth()];
+  const year = d.getFullYear();
+  const dateStr = `${day} ${month} ${year}`;
+  if (includeDayName) {
+    const dayName = DAYS_OF_WEEK[d.getDay()];
+    return `${dateStr} (${dayName})`;
+  }
+  return dateStr;
 }
 
 // Format date to YYYY-MM-DD

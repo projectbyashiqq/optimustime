@@ -21,6 +21,7 @@ import {
   X,
   Share2
 } from 'lucide-react';
+import { formatDisplayDate } from '../utils/timeUtils';
 
 export const KnowledgeHubView: React.FC = () => {
   const { 
@@ -303,7 +304,7 @@ export const KnowledgeHubView: React.FC = () => {
                       {/* Date Badge */}
                       <span className="font-mono text-xs font-bold text-theme-text bg-theme-card-hover px-2 py-0.5 rounded border border-theme-border flex items-center gap-1">
                         <Calendar className="w-3 h-3 text-theme-muted" />
-                        {new Date(item.updatedAt || item.createdAt).toLocaleDateString()}
+                        {formatDisplayDate(new Date(item.updatedAt || item.createdAt))}
                       </span>
 
                       {/* Tags */}

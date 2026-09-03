@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
 import { Task, PriorityLevel, RecurrenceType } from '../types';
+import { formatDisplayDate } from '../utils/timeUtils';
 import { 
   Repeat, 
   Clock, 
@@ -237,7 +238,7 @@ export const RecurringManagerModal: React.FC<RecurringManagerModalProps> = ({
                         {task.selectedDays && task.selectedDays.length > 0 && (
                           <span> ({task.selectedDays.join(', ')})</span>
                         )}
-                        <span> • Started on {task.taskDate}</span>
+                        <span> • Started on {formatDisplayDate(task.taskDate)}</span>
                       </span>
                     </div>
 

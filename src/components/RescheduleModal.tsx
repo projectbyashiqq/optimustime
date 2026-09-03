@@ -11,7 +11,8 @@ import {
   parse12HourToMinutes,
   getDayOfWeekFromDate,
   isTaskScheduledForDate,
-  getTimePeriodForTime
+  getTimePeriodForTime,
+  formatDisplayDate
 } from '../utils/timeUtils';
 import { useApp } from '../context/AppContext';
 import { 
@@ -153,11 +154,11 @@ export const RescheduleModal: React.FC<RescheduleModalProps> = ({
     );
 
     let dayLabel = `+${days} Days`;
-    let subLabel = `${dayOfWeek.slice(0, 3)}, ${dateStr}`;
+    let subLabel = `${dayOfWeek.slice(0, 3)}, ${formatDisplayDate(dateStr)}`;
     
     if (dateStr === task.taskDate && days === 0) {
       dayLabel = dateStr === todayStr ? 'Today (Current)' : `Task Date (${dayOfWeek.slice(0, 3)})`;
-      subLabel = `${dateStr} (Current)`;
+      subLabel = `${formatDisplayDate(dateStr)} (Current)`;
     } else if (dateStr === todayStr) {
       dayLabel = 'Today';
       subLabel = `Remaining (${dayOfWeek.slice(0, 3)})`;
@@ -166,10 +167,10 @@ export const RescheduleModal: React.FC<RescheduleModalProps> = ({
       subLabel = `Full Day (${dayOfWeek.slice(0, 3)})`;
     } else if (days === 1) {
       dayLabel = `Next Day (+1d)`;
-      subLabel = `${dayOfWeek.slice(0, 3)}, ${dateStr.slice(5)}`;
+      subLabel = `${dayOfWeek.slice(0, 3)}, ${formatDisplayDate(dateStr)}`;
     } else if (days === 7) {
       dayLabel = `+1 Week (+7d)`;
-      subLabel = `${dayOfWeek.slice(0, 3)}, ${dateStr.slice(5)}`;
+      subLabel = `${dayOfWeek.slice(0, 3)}, ${formatDisplayDate(dateStr)}`;
     }
 
     return {
@@ -499,7 +500,7 @@ export const RescheduleModal: React.FC<RescheduleModalProps> = ({
                     : 'bg-theme-card text-theme-muted hover:text-theme-text border-theme-border'
                 }`}
               >
-                {task.taskDate === todayStr ? 'Today (Task Date)' : `Task Date (${task.taskDate})`}
+                {task.taskDate === todayStr ? `Today (${formatDisplayDate(task.taskDate)})` : `Task Date (${formatDisplayDate(task.taskDate)})`}
               </button>
             )}
 
@@ -574,7 +575,7 @@ export const RescheduleModal: React.FC<RescheduleModalProps> = ({
             }`}
           >
             <CalendarDays className="w-4 h-4" />
-            <span>7-Day Schedule Matrix (from {anchorDate})</span>
+            <span>7-Day Schedule Matrix (from {formatDisplayDate(anchorDate)})</span>
           </button>
           <button
             onClick={() => setViewMode('scanner')}
@@ -646,7 +647,7 @@ export const RescheduleModal: React.FC<RescheduleModalProps> = ({
                     <div className="flex items-center gap-2">
                       <span className="text-xs font-black uppercase tracking-wider text-theme-text flex items-center gap-1.5">
                         <Clock className="w-3.5 h-3.5 text-blue-500" />
-                        Shift Timeline Matrix ({anchorDate})
+                        Shift Timeline Matrix ({formatDisplayDate(anchorDate)})
                       </span>
                     </div>
                     <div className="flex items-center gap-2.5 text-[10px] font-bold text-theme-muted flex-wrap">
@@ -749,7 +750,7 @@ export const RescheduleModal: React.FC<RescheduleModalProps> = ({
                         ↓ {task.endTime}
                       </div>
                       <div className="text-[11px] font-bold text-red-600/90 dark:text-red-400/90 font-mono">
-                        ({task.taskDate === todayStr ? 'Today' : task.taskDate})
+                        ({task.taskDate === todayStr ? `Today (${formatDisplayDate(task.taskDate)})` : formatDisplayDate(task.taskDate)})
                       </div>
                       {(() => {
                         const curPeriod = getTimePeriodForTime(task.startTime, timePeriodSettings);

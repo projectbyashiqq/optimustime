@@ -19,7 +19,8 @@ import {
   isTaskInSleepWindow,
   isTimeInSleepWindow,
   findNextAvailableSlot,
-  getTimePeriodForTime
+  getTimePeriodForTime,
+  formatDisplayDate
 } from '../utils/timeUtils';
 import { 
   Play, 
@@ -389,23 +390,21 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
                 dateInputRef.current?.focus();
               }
             }}
-            className="flex items-center gap-1.5 bg-theme-card-hover hover:bg-theme-card hover:border-blue-500 px-2 py-1 rounded-xl border border-theme-border shrink-0 cursor-pointer transition-all shadow-2xs group active:scale-98"
+            className="flex items-center gap-1.5 bg-theme-card-hover hover:bg-theme-card hover:border-blue-500 px-2.5 py-1 rounded-xl border border-theme-border shrink-0 cursor-pointer transition-all shadow-2xs group active:scale-98 relative"
             title="Click anywhere to open full calendar"
           >
             <Calendar className="w-3.5 h-3.5 text-blue-500 shrink-0 group-hover:scale-110 transition-transform" />
+            <span className="font-bold text-xs text-theme-text font-mono tracking-tight">
+              {formatDisplayDate(selectedDate)}
+            </span>
             <input
               ref={dateInputRef}
               type="date"
               value={selectedDate}
               onChange={(e) => setSelectedDate(e.target.value)}
-              onClick={(e) => {
-                try {
-                  (e.target as HTMLInputElement).showPicker?.();
-                } catch {}
-              }}
-              className="font-bold text-xs text-theme-text bg-transparent focus:outline-none cursor-pointer"
+              className="absolute inset-0 opacity-0 pointer-events-none w-full h-full"
             />
-            <span className="text-[9px] font-bold px-1 py-0.2 rounded bg-theme-card text-theme-muted border border-theme-border font-mono group-hover:text-theme-text group-hover:border-blue-400/50">
+            <span className="text-[11px] font-bold px-1.5 py-0.2 rounded bg-theme-card text-theme-muted border border-theme-border font-mono group-hover:text-theme-text group-hover:border-blue-400/50">
               {dayOfWeek.slice(0, 3)}
             </span>
           </div>
@@ -716,7 +715,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
 
                             <div className="flex items-center justify-between pt-1 border-t border-theme-border text-xs">
                               <span className="font-mono text-theme-muted font-semibold text-[11px]">
-                                {t.taskDate} • {t.appointedMinutes}m
+                                {formatDisplayDate(t.taskDate)} • {t.appointedMinutes}m
                               </span>
 
                               <div className="flex items-center gap-1.5">
@@ -725,7 +724,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
                                   <button
                                     onClick={() => handleSafeMoveTaskToDate(t, selectedDate)}
                                     className="px-2 py-1 rounded-lg bg-theme-card-hover hover:bg-theme-border text-[11px] font-bold text-blue-600 dark:text-blue-400 transition-colors"
-                                    title={`Move to ${selectedDate} (automatically scheduled after work & break)`}
+                                    title={`Move to ${formatDisplayDate(selectedDate)} (automatically scheduled after work & break)`}
                                   >
                                     Move to Today
                                   </button>

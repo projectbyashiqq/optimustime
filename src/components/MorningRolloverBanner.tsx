@@ -14,7 +14,7 @@ import {
   Sparkles,
   ArrowRight
 } from 'lucide-react';
-import { getDayOfWeekFromDate, toISODateString, getTimePeriodForTime } from '../utils/timeUtils';
+import { getDayOfWeekFromDate, toISODateString, getTimePeriodForTime, formatDisplayDate } from '../utils/timeUtils';
 import { useApp } from '../context/AppContext';
 
 interface MorningRolloverBannerProps {
@@ -110,7 +110,7 @@ export const MorningRolloverBanner: React.FC<MorningRolloverBannerProps> = ({
               bgColor: '#eff6ff'
             };
 
-            const dateLabel = isYesterday ? 'Yesterday' : task.taskDate;
+            const dateLabel = isYesterday ? `Yesterday (${formatDisplayDate(task.taskDate)})` : formatDisplayDate(task.taskDate);
 
             return (
               <div

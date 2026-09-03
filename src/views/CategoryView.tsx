@@ -46,7 +46,8 @@ import {
   findSimultaneousTasks,
   getDayOfWeekFromDate,
   getTaskTitleClasses,
-  isTaskInSleepWindow
+  isTaskInSleepWindow,
+  formatDisplayDate
 } from '../utils/timeUtils';
 import { RescheduleModal } from '../components/RescheduleModal';
 
@@ -291,7 +292,7 @@ export const CategoryView: React.FC<CategoryViewProps> = ({ onOpenTaskModal }) =
           {/* Date */}
           <span className="font-mono text-[10px] text-theme-muted hidden sm:inline-flex items-center gap-0.5 shrink-0 bg-theme-card-hover px-1.5 py-0.5 rounded border border-theme-border">
             <Calendar className="w-2.5 h-2.5 text-blue-500" />
-            <span>{task.taskDate} ({getDayOfWeekFromDate(task.taskDate).slice(0, 3)})</span>
+            <span>{formatDisplayDate(task.taskDate)} ({getDayOfWeekFromDate(task.taskDate).slice(0, 3)})</span>
           </span>
 
           {/* Subcategory Badge */}
@@ -506,7 +507,7 @@ export const CategoryView: React.FC<CategoryViewProps> = ({ onOpenTaskModal }) =
 
                 <span className="text-theme-muted flex items-center gap-1 font-mono font-semibold bg-theme-card-hover px-2 py-0.5 rounded-lg border border-theme-border">
                   <Calendar className="w-3.5 h-3.5 text-blue-500" />
-                  {task.taskDate} ({getDayOfWeekFromDate(task.taskDate).slice(0, 3)})
+                  {formatDisplayDate(task.taskDate)} ({getDayOfWeekFromDate(task.taskDate).slice(0, 3)})
                 </span>
 
                 <span className="font-mono text-theme-text font-bold bg-theme-card-hover px-2 py-0.5 rounded-lg border border-theme-border">
