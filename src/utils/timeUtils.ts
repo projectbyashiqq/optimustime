@@ -68,6 +68,16 @@ export function formatMinutesTo12Hour(totalMinutes: number): string {
   return `${paddedHours}:${paddedMinutes} ${period}`;
 }
 
+// Convert minute count into human readable duration string (e.g. "2h 15m", "45m", "15h")
+export function formatDurationHuman(mins: number): string {
+  const cleanMins = Math.round(mins);
+  const h = Math.floor(cleanMins / 60);
+  const m = cleanMins % 60;
+  if (h === 0) return `${m}m`;
+  if (m === 0) return `${h}h`;
+  return `${h}h ${m.toString().padStart(2, '0')}m`;
+}
+
 // Add minutes to a 12-hour AM/PM string
 export function addMinutesToTime(timeStr: string, minutesToAdd: number): string {
   const currentMin = parse12HourToMinutes(timeStr);

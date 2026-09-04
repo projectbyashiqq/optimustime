@@ -12,7 +12,8 @@ import {
   PlanProjectFolder,
   DefaultTaskSettings,
   NamedTimePeriod,
-  TimePeriodSettings
+  TimePeriodSettings,
+  SplitScheduleSession
 } from '../types';
 
 export const DEFAULT_NAMED_TIME_PERIODS: NamedTimePeriod[] = [
@@ -97,18 +98,51 @@ export const DEFAULT_SECURITY: SecuritySettings = {
   autoLockMinutes: 30,
   username: 'Master Admin'
 };
+export const DEFAULT_SPLIT_SESSIONS: SplitScheduleSession[] = [
+  {
+    id: 'split-1',
+    name: 'Session 1 (Night Focus)',
+    type: 'work',
+    startTime: '12:01 AM',
+    endTime: '02:15 AM',
+    note: 'Late night deep uninterrupted focus',
+    emoji: '⚡',
+    color: '#3b82f6'
+  },
+  {
+    id: 'split-2',
+    name: 'Sleep Window',
+    type: 'sleep',
+    startTime: '02:15 AM',
+    endTime: '09:00 AM',
+    note: '4.5 Ultradian 90m Restorative Cycles',
+    emoji: '🌙',
+    color: '#6366f1'
+  },
+  {
+    id: 'split-3',
+    name: 'Session 2 (Main Continuum)',
+    type: 'work',
+    startTime: '09:00 AM',
+    endTime: '11:59 PM',
+    note: 'Waking execution + meals & buffers',
+    emoji: '☀️',
+    color: '#10b981'
+  }
+];
 
 export const DEFAULT_CAPACITY: CapacitySettings = {
-  maxWorkHours: 14,
-  sleepHours: 7,
-  bufferHours: 3,
-  dayStartTime: '06:00 AM',
-  dayEndTime: '11:00 PM',
-  sleepStartTime: '11:00 PM',
-  sleepEndTime: '06:00 AM',
+  maxWorkHours: 15,
+  sleepHours: 6.75,
+  bufferHours: 2.25,
+  dayStartTime: '12:01 AM',
+  dayEndTime: '11:59 PM',
+  sleepStartTime: '02:15 AM',
+  sleepEndTime: '09:00 AM',
   defaultBufferMinutes: 15,
   autoSleepScheduleEnabled: false,
-  isManualMode: true
+  isManualMode: true,
+  splitScheduleSessions: DEFAULT_SPLIT_SESSIONS
 };
 
 export const DEFAULT_TASK_PRESETS: DefaultTaskSettings = {

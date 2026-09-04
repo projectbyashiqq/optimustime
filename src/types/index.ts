@@ -197,6 +197,17 @@ export interface Category {
   isSystem?: boolean;
 }
 
+export interface SplitScheduleSession {
+  id: string;
+  name: string;
+  type: 'work' | 'sleep' | 'buffer' | 'custom';
+  startTime: string;
+  endTime: string;
+  note?: string;
+  emoji?: string;
+  color?: string;
+}
+
 export interface CapacitySettings {
   maxWorkHours: number; // Work Time Target (Hours) - Default: 14
   sleepHours: number; // Estimated Sleep Time (Hours) - Default: 7
@@ -208,6 +219,7 @@ export interface CapacitySettings {
   defaultBufferMinutes: number; // Automated Buffer Time between tasks (Default: 15 min)
   autoSleepScheduleEnabled?: boolean; // When true, 24-hour tracker auto-schedules sleep; when false, no automatic sleep blocks
   isManualMode?: boolean; // When true, capacity and shift windows are managed completely manually without auto-balance forced overrides
+  splitScheduleSessions?: SplitScheduleSession[]; // Customizable split schedule sessions (e.g. night-owl split routine)
 }
 
 export interface NamedTimePeriod {
