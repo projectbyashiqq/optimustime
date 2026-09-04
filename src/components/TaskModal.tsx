@@ -25,7 +25,9 @@ import {
   formatMinutesTo12Hour,
   calculateFirstRecurringDate,
   getTimePeriodForTime,
-  formatDisplayDate
+  formatDisplayDate,
+  taskCrossesMidnight,
+  getTaskEndDate
 } from '../utils/timeUtils';
 import { ConflictModal } from './ConflictModal';
 import { TimePicker } from './TimePicker';
@@ -531,6 +533,8 @@ export const TaskModal: React.FC<TaskModalProps> = ({
         baseDate: taskDate
       });
     }
+    const crosses = taskCrossesMidnight(startTime, endTime);
+    const calculatedEndDate = crosses ? getTaskEndDate(effectiveTaskDate, startTime, endTime) : effectiveTaskDate;
     const effectiveDayOfWeek = getDayOfWeekFromDate(effectiveTaskDate);
 
     const payload = {
@@ -538,6 +542,8 @@ export const TaskModal: React.FC<TaskModalProps> = ({
       title: title.trim(),
       description: description.trim(),
       taskDate: effectiveTaskDate,
+      endDate: calculatedEndDate,
+      crossesMidnight: crosses,
       dayOfWeek: effectiveDayOfWeek,
       priority,
       category: effectiveCategory,
@@ -605,13 +611,16 @@ export const TaskModal: React.FC<TaskModalProps> = ({
     cascadeShiftDownstream(taskDate, newCalculatedStartTime, appointedMinutes + autoBuffer, taskToEdit?.id);
     setShowConflictModal(false);
     setStartTime(newCalculatedStartTime);
-    setEndTime(newEnd);
+    const crosses = taskCrossesMidnight(newCalculatedStartTime, newEnd);
+    const calculatedEndDate = crosses ? getTaskEndDate(taskDate, newCalculatedStartTime, newEnd) : taskDate;
 
     const payload = {
       projectCode: projectCode.trim() || generateProjectCode(),
       title: title.trim(),
       description: description.trim(),
       taskDate,
+      endDate: calculatedEndDate,
+      crossesMidnight: crosses,
       dayOfWeek,
       priority,
       category,
@@ -654,13 +663,16 @@ export const TaskModal: React.FC<TaskModalProps> = ({
   // Resolve conflict by enabling Simultaneous mode
   const handleResolveWithSimultaneous = () => {
     setIsSimultaneous(true);
-    setShowConflictModal(false);
+    const crosses = taskCrossesMidnight(startTime, endTime);
+    const calculatedEndDate = crosses ? getTaskEndDate(taskDate, startTime, endTime) : taskDate;
 
     const payload = {
       projectCode: projectCode.trim() || generateProjectCode(),
       title: title.trim(),
       description: description.trim(),
       taskDate,
+      endDate: calculatedEndDate,
+      crossesMidnight: crosses,
       dayOfWeek,
       priority,
       category,
@@ -705,13 +717,16 @@ export const TaskModal: React.FC<TaskModalProps> = ({
     const chosenEnd = addMinutesToTime(chosenStart, appointedMinutes);
     setShowConflictModal(false);
     setStartTime(chosenStart);
-    setEndTime(chosenEnd);
+    const crosses = taskCrossesMidnight(chosenStart, chosenEnd);
+    const calculatedEndDate = crosses ? getTaskEndDate(taskDate, chosenStart, chosenEnd) : taskDate;
 
     const payload = {
       projectCode: projectCode.trim() || generateProjectCode(),
       title: title.trim(),
       description: description.trim(),
       taskDate,
+      endDate: calculatedEndDate,
+      crossesMidnight: crosses,
       dayOfWeek,
       priority,
       category,
@@ -1165,11 +1180,19 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                   </div>
 
                   {/* Contiguous Block Footprint Pill */}
-                  <div className="pt-2 border-t border-theme-border/40 flex items-center justify-between text-[11px] font-mono text-theme-muted">
+                  <div className="pt-2 border-t border-theme-border/40 flex items-center justify-between text-[11px] font-mono text-theme-muted flex-wrap gap-1">
                     <span>Contiguous Time-Box Block:</span>
-                    <span className="font-bold text-theme-text">
-                      {startTime} → {addMinutesToTime(startTime, appointedMinutes + bufferMinutes)} ({appointedMinutes}m work + {bufferMinutes}m buffer = {appointedMinutes + bufferMinutes}m)
-                    </span>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="font-bold text-theme-text">
+                        {startTime} → {addMinutesToTime(startTime, appointedMinutes + bufferMinutes)} ({appointedMinutes}m work + {bufferMinutes}m buffer = {appointedMinutes + bufferMinutes}m)
+                      </span>
+                      {taskCrossesMidnight(startTime, endTime) && (
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-purple-100 dark:bg-purple-950/80 text-purple-700 dark:text-purple-300 border border-purple-300 dark:border-purple-800 flex items-center gap-1 font-mono">
+                          <Moon className="w-3 h-3" />
+                          <span>Spans into {formatDisplayDate(getTaskEndDate(taskDate, startTime, endTime))}</span>
+                        </span>
+                      )}
+                    </div>
                   </div>
                 </div>
 
@@ -2021,6 +2044,12 @@ export const TaskModal: React.FC<TaskModalProps> = ({
               <span className="font-mono text-theme-text font-bold">
                 {formatDisplayDate(taskDate)} @ {startTime} → {endTime}
               </span>
+              {taskCrossesMidnight(startTime, endTime) && (
+                <span className="font-mono text-[10px] font-bold text-purple-700 dark:text-purple-300 bg-purple-100 dark:bg-purple-950/80 px-2 py-0.5 rounded-full border border-purple-300 dark:border-purple-800 flex items-center gap-1">
+                  <Moon className="w-2.5 h-2.5" />
+                  <span>Spans to Next Day</span>
+                </span>
+              )}
               {isMasterRecurringSeriesAdmin && (
                 <span className="font-mono text-[10px] font-bold text-blue-600 dark:text-blue-400 bg-blue-500/15 px-2 py-0.5 rounded-full border border-blue-500/25">
                   👑 Master Series

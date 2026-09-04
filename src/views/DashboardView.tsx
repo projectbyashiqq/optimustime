@@ -20,7 +20,10 @@ import {
   isTimeInSleepWindow,
   findNextAvailableSlot,
   getTimePeriodForTime,
-  formatDisplayDate
+  formatDisplayDate,
+  taskCrossesMidnight,
+  getTaskEndDate,
+  getTaskIntervalForDate
 } from '../utils/timeUtils';
 import { 
   Play, 
@@ -1104,6 +1107,17 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
                                       {task.startTime} - {task.endTime}
                                     </span>
 
+                                    {/* Cross-Midnight 2-Date Continuity Badge */}
+                                    {taskCrossesMidnight(task.startTime, task.endTime) && (
+                                      <span 
+                                        className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-full border border-purple-300 dark:border-purple-800 bg-purple-50/80 dark:bg-purple-950/40 text-purple-700 dark:text-purple-300 flex items-center gap-1 shrink-0"
+                                        title={`Spans midnight across 2 calendar days (${task.taskDate} → ${getTaskEndDate(task.taskDate, task.startTime, task.endTime)})`}
+                                      >
+                                        <span>🌙</span>
+                                        <span>{task.taskDate === selectedDate ? `Spans into Tomorrow (ends ${task.endTime})` : `Continuation from Yesterday (started ${task.startTime})`}</span>
+                                      </span>
+                                    )}
+
                                     {/* Tertiary Tier: Project Code */}
                                     <span className="text-[11px] font-mono font-bold text-theme-muted hover:text-blue-500 transition-colors">
                                       {task.projectCode}
@@ -1711,6 +1725,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
                   }> = [];
                   const pastGaps: TimeGap[] = [];
 
+                  const [sYear, sMonth, sDay] = selectedDate.split('-').map(Number);
+                  const tomorrowDateObj = new Date(sYear, sMonth - 1, sDay + 1);
+                  const tomorrowDateStr = toISODateString(tomorrowDateObj);
+
                   const wakingStartMin = parse12HourToMinutes(wakingStart);
                   let wakingEndMin = parse12HourToMinutes(wakingEnd);
                   if (wakingEndMin <= wakingStartMin) wakingEndMin += 1440;
@@ -1877,32 +1895,42 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
                           )}
 
                           {/* Action Buttons */}
-                          <div className="flex items-center justify-end gap-2 pt-2 border-t border-emerald-500/20 flex-wrap">
-                            <button
-                              onClick={() => onOpenTaskModal(undefined, selectedDate, firstSuggestion.startTime)}
-                              className="px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white text-xs font-black shadow-md shadow-emerald-500/20 transition-transform active:scale-95 flex items-center gap-1.5 cursor-pointer"
-                              title={`Plan task starting at ${firstSuggestion.startTime}`}
-                            >
-                              <Plus className="w-3.5 h-3.5 stroke-[3]" />
-                              <span>Schedule at {firstSuggestion.startTime}</span>
-                            </button>
+                          {(() => {
+                            const isFirstAfterMidnight = wakingEndMin > 1440 && parse12HourToMinutes(firstSuggestion.startTime) < wakingStartMin;
+                            const targetFirstDate = isFirstAfterMidnight ? tomorrowDateStr : selectedDate;
 
-                            <button
-                              onClick={() => openBufferNoteModal({
-                                date: selectedDate,
-                                startTime: firstSuggestion.startTime,
-                                endTime: firstSuggestion.endTime,
-                                durationMinutes: firstSuggestion.availableMin,
-                                activityTag: firstSuggestion.availableMin < 10 ? 'Break / Rest' : 'Deep Focus Buffer',
-                                notes: firstSuggestion.availableMin < 10 ? 'Quick noise work / micro-break' : 'Dedicated focus buffer'
-                              })}
-                              className="px-3 py-1.5 rounded-xl bg-theme-card hover:bg-theme-card-hover border border-theme-border text-theme-text text-xs font-bold transition-colors flex items-center gap-1.5 cursor-pointer"
-                              title="Log buffer note"
-                            >
-                              <Coffee className="w-3.5 h-3.5 text-amber-500" />
-                              <span>Log Buffer</span>
-                            </button>
-                          </div>
+                            return (
+                              <div className="flex items-center justify-end gap-2 pt-2 border-t border-emerald-500/20 flex-wrap">
+                                <button
+                                  onClick={() => onOpenTaskModal(undefined, targetFirstDate, firstSuggestion.startTime)}
+                                  className="px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white text-xs font-black shadow-md shadow-emerald-500/20 transition-transform active:scale-95 flex items-center gap-1.5 cursor-pointer"
+                                  title={`Plan task on ${formatDisplayDate(targetFirstDate)} starting at ${firstSuggestion.startTime}`}
+                                >
+                                  <Plus className="w-3.5 h-3.5 stroke-[3]" />
+                                  <span>
+                                    Schedule at {firstSuggestion.startTime}
+                                    {isFirstAfterMidnight ? ` (${formatDisplayDate(tomorrowDateStr)})` : ''}
+                                  </span>
+                                </button>
+
+                                <button
+                                  onClick={() => openBufferNoteModal({
+                                    date: targetFirstDate,
+                                    startTime: firstSuggestion.startTime,
+                                    endTime: firstSuggestion.endTime,
+                                    durationMinutes: firstSuggestion.availableMin,
+                                    activityTag: firstSuggestion.availableMin < 10 ? 'Break / Rest' : 'Deep Focus Buffer',
+                                    notes: firstSuggestion.availableMin < 10 ? 'Quick noise work / micro-break' : 'Dedicated focus buffer'
+                                  })}
+                                  className="px-3 py-1.5 rounded-xl bg-theme-card hover:bg-theme-card-hover border border-theme-border text-theme-text text-xs font-bold transition-colors flex items-center gap-1.5 cursor-pointer"
+                                  title={`Log buffer note on ${formatDisplayDate(targetFirstDate)}`}
+                                >
+                                  <Coffee className="w-3.5 h-3.5 text-amber-500" />
+                                  <span>Log Buffer</span>
+                                </button>
+                              </div>
+                            );
+                          })()}
                         </div>
                       )}
 
@@ -1910,6 +1938,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
                       {upcomingGaps.map((item, idx) => {
                         const gap = item.gap;
                         const isLess10 = gap.durationMinutes < 10;
+                        const isAfterMidnight = wakingEndMin > 1440 && parse12HourToMinutes(gap.startTime) < wakingStartMin;
+                        const targetGapDate = isAfterMidnight ? tomorrowDateStr : selectedDate;
 
                         return (
                           <div
@@ -1920,6 +1950,12 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
                               <span className="font-mono text-xs font-bold text-blue-700 dark:text-blue-300 flex items-center gap-1.5 flex-wrap">
                                 <Clock className="w-3.5 h-3.5" />
                                 <span>{gap.startTime} - {gap.endTime}</span>
+                                {isAfterMidnight && (
+                                  <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-purple-100 dark:bg-purple-950 text-purple-700 dark:text-purple-300 border border-purple-300 dark:border-purple-800 flex items-center gap-1 font-mono">
+                                    <span>🌙</span>
+                                    <span>Next Day ({formatDisplayDate(tomorrowDateStr)})</span>
+                                  </span>
+                                )}
                                 {(() => {
                                   const period = getTimePeriodForTime(gap.startTime, timePeriodSettings);
                                   if (!period) return null;
@@ -1949,6 +1985,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
                                 </span>
                                 <span className="text-[10px] font-mono text-theme-muted">
                                   {gap.startTime} → {gap.endTime}
+                                  {isAfterMidnight ? ` (${formatDisplayDate(tomorrowDateStr)})` : ''}
                                 </span>
                               </div>
                             </div>
@@ -1969,8 +2006,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
                             {/* Actions */}
                             <div className="flex items-center justify-end gap-1.5 pt-1.5 border-t border-theme-border/40">
                               <button
-                                onClick={() => onOpenTaskModal(undefined, selectedDate, gap.startTime)}
+                                onClick={() => onOpenTaskModal(undefined, targetGapDate, gap.startTime)}
                                 className="px-3 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold shadow-xs transition-transform active:scale-95 flex items-center gap-1 cursor-pointer"
+                                title={`Plan task on ${formatDisplayDate(targetGapDate)} starting at ${gap.startTime}`}
                               >
                                 <Plus className="w-3.5 h-3.5 stroke-[3]" />
                                 <span>Schedule Task</span>
@@ -1978,14 +2016,14 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
 
                               <button
                                 onClick={() => openBufferNoteModal({
-                                  date: selectedDate,
+                                  date: targetGapDate,
                                   startTime: gap.startTime,
                                   endTime: gap.endTime,
                                   durationMinutes: gap.durationMinutes,
                                   activityTag: isLess10 ? 'Break / Rest' : 'Deep Focus Buffer'
                                 })}
                                 className="p-1.5 rounded-xl bg-theme-card hover:bg-theme-card-hover border border-theme-border text-theme-muted hover:text-amber-500 text-xs transition-colors cursor-pointer"
-                                title="Pre-log planned buffer note"
+                                title={`Pre-log planned buffer note on ${formatDisplayDate(targetGapDate)}`}
                               >
                                 <Coffee className="w-3.5 h-3.5" />
                               </button>

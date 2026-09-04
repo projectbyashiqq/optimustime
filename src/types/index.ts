@@ -62,6 +62,8 @@ export interface Task {
   appointedMinutes: number;
   startTime: string; // "09:00 AM" or "All Day"
   endTime: string; // "10:30 AM" or "All Day"
+  endDate?: string; // YYYY-MM-DD when task spans across midnight to next calendar day
+  crossesMidnight?: boolean; // True when endTime < startTime (e.g. 11:00 PM -> 01:00 AM)
   isAllDay?: boolean;
   status: TaskStatus;
   bufferMinutes: number; // 15 or 5

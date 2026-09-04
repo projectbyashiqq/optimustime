@@ -482,8 +482,102 @@ export function calculateFirstRecurringDate(params: {
   return startFromDateStr;
 }
 
+/**
+ * Checks if a task interval crosses midnight (e.g. 11:00 PM to 01:00 AM).
+ */
+export function taskCrossesMidnight(startTime?: string, endTime?: string): boolean {
+  if (!startTime || !endTime || startTime === 'All Day' || endTime === 'All Day') return false;
+  const s = parse12HourToMinutes(startTime);
+  const e = parse12HourToMinutes(endTime);
+  return e < s;
+}
+
+/**
+ * Calculates the calendar end date for a task. If it crosses midnight, returns next day (YYYY-MM-DD).
+ */
+export function getTaskEndDate(taskDate: string, startTime?: string, endTime?: string): string {
+  if (!taskDate) return '';
+  if (taskCrossesMidnight(startTime, endTime)) {
+    const [y, m, d] = taskDate.split('-').map(Number);
+    const nextDay = new Date(y, m - 1, d + 1);
+    return toISODateString(nextDay);
+  }
+  return taskDate;
+}
+
+/**
+ * For a task that crosses midnight, gets its effective sub-interval for a specific calendar date.
+ * E.g. For a 11:00 PM - 01:00 AM task:
+ * - On taskDate (Day 1): startTime = "11:00 PM", endTime = "01:00 AM", isContinuation = false
+ * - On endDate (Day 2): startTime = "12:00 AM", endTime = "01:00 AM", isContinuation = true
+ */
+export function getTaskIntervalForDate(
+  task: { 
+    taskDate: string; 
+    startTime?: string; 
+    endTime?: string; 
+    crossesMidnight?: boolean; 
+    endDate?: string;
+    recurrence?: string;
+    selectedDays?: string[];
+    excludedDates?: string[];
+  },
+  targetDateStr: string
+): { startTime: string; endTime: string; isContinuation: boolean; durationMinutes: number } {
+  const s = task.startTime || '09:00 AM';
+  const e = task.endTime || '10:00 AM';
+  const crosses = task.crossesMidnight ?? taskCrossesMidnight(s, e);
+
+  if (!crosses) {
+    const sMin = parse12HourToMinutes(s);
+    let eMin = parse12HourToMinutes(e);
+    if (eMin < sMin) eMin += 1440;
+    return {
+      startTime: s,
+      endTime: e,
+      isContinuation: false,
+      durationMinutes: eMin - sMin
+    };
+  }
+
+  const effectiveEndDate = task.endDate || getTaskEndDate(task.taskDate, s, e);
+
+  // Check if targetDateStr is Day 2 (Continuation day)
+  const [ty, tm, td] = targetDateStr.split('-').map(Number);
+  const yesterdayDate = new Date(ty, tm - 1, td - 1);
+  const yesterdayStr = toISODateString(yesterdayDate);
+
+  const isContinuationDay = 
+    (targetDateStr === effectiveEndDate && targetDateStr !== task.taskDate) ||
+    task.taskDate === yesterdayStr ||
+    (task.recurrence && task.recurrence !== 'None' && isTaskScheduledForDate({ ...task, crossesMidnight: false }, yesterdayStr));
+
+  if (isContinuationDay && targetDateStr !== task.taskDate) {
+    const eMin = parse12HourToMinutes(e);
+    return {
+      startTime: '12:00 AM',
+      endTime: e,
+      isContinuation: true,
+      durationMinutes: eMin
+    };
+  }
+
+  // Otherwise targetDate is Day 1 (the start day, e.g. Friday)
+  const sMin = parse12HourToMinutes(s);
+  return {
+    startTime: s,
+    endTime: e,
+    isContinuation: false,
+    durationMinutes: 1440 - sMin
+  };
+}
+
 export function isTaskScheduledForDate(task: {
   taskDate: string;
+  startTime?: string;
+  endTime?: string;
+  endDate?: string;
+  crossesMidnight?: boolean;
   recurrence?: string;
   selectedDays?: string[];
   excludedDates?: string[];
@@ -497,9 +591,15 @@ export function isTaskScheduledForDate(task: {
 
   const recurrence = task.recurrence || 'None';
 
-  // If NOT recurring, strict date match
+  // Check midnight crossing continuity: Does this task start on targetDateStr, or continue into targetDateStr?
+  const crosses = task.crossesMidnight ?? (task.startTime && task.endTime ? taskCrossesMidnight(task.startTime, task.endTime) : false);
+  const effectiveEndDate = task.endDate || (crosses && task.startTime && task.endTime ? getTaskEndDate(task.taskDate, task.startTime, task.endTime) : task.taskDate);
+  const isStartDate = task.taskDate === targetDateStr;
+  const isEndDate = crosses && effectiveEndDate === targetDateStr;
+
+  // If NOT recurring: strict date match on start date OR continuation end date
   if (recurrence === 'None') {
-    return task.taskDate === targetDateStr;
+    return isStartDate || isEndDate;
   }
 
   // A recurring task only applies on or after its first scheduled taskDate (anchor start date)
@@ -516,27 +616,57 @@ export function isTaskScheduledForDate(task: {
 
   if (recurrence === 'Selected Days') {
     if (!task.selectedDays || task.selectedDays.length === 0) return false;
-    return task.selectedDays.some(d => {
+    const matchesToday = task.selectedDays.some(d => {
       const lower = d.trim().toLowerCase();
       return lower === targetDayShort.toLowerCase() ||
              lower === targetDayFull.toLowerCase() ||
              lower.startsWith(targetDayShort.toLowerCase());
     });
+    if (matchesToday) return true;
+
+    // If task crosses midnight, check if yesterday was a matching selected day
+    if (crosses) {
+      const yesterdayObj = new Date(tYear, tMonth - 1, tDay - 1);
+      const yestDayShort = SHORT_DAYS[yesterdayObj.getDay()];
+      const yestDayFull = DAYS_OF_WEEK[yesterdayObj.getDay()];
+      return task.selectedDays.some(d => {
+        const lower = d.trim().toLowerCase();
+        return lower === yestDayShort.toLowerCase() ||
+               lower === yestDayFull.toLowerCase() ||
+               lower.startsWith(yestDayShort.toLowerCase());
+      });
+    }
+    return false;
   }
 
   const [sYear, sMonth, sDay] = task.taskDate.split('-').map(Number);
   const sourceDateObj = new Date(sYear, sMonth - 1, sDay);
 
   if (recurrence === 'Weekly') {
-    return targetDateObj.getDay() === sourceDateObj.getDay();
+    if (targetDateObj.getDay() === sourceDateObj.getDay()) return true;
+    if (crosses) {
+      const yesterdayObj = new Date(tYear, tMonth - 1, tDay - 1);
+      if (yesterdayObj.getDay() === sourceDateObj.getDay()) return true;
+    }
+    return false;
   }
 
   if (recurrence === 'Monthly') {
-    return tDay === sDay;
+    if (tDay === sDay) return true;
+    if (crosses) {
+      const yesterdayObj = new Date(tYear, tMonth - 1, tDay - 1);
+      if (yesterdayObj.getDate() === sDay) return true;
+    }
+    return false;
   }
 
   if (recurrence === 'Yearly') {
-    return tMonth === sMonth && tDay === sDay;
+    if (tMonth === sMonth && tDay === sDay) return true;
+    if (crosses) {
+      const yesterdayObj = new Date(tYear, tMonth - 1, tDay - 1);
+      if (yesterdayObj.getMonth() === sMonth && yesterdayObj.getDate() === sDay) return true;
+    }
+    return false;
   }
 
   return false;

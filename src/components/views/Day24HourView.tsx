@@ -9,7 +9,9 @@ import {
   toISODateString,
   addMinutesToTime,
   isTaskInSleepWindow,
-  getTimePeriodForTime
+  getTimePeriodForTime,
+  getTaskIntervalForDate,
+  taskCrossesMidnight
 } from '../../utils/timeUtils';
 import { 
   Play, 
@@ -69,10 +71,14 @@ export const Day24HourView: React.FC<Day24HourViewProps> = ({
   // Height per hour in pixels
   const HOUR_HEIGHT = 64; // 64px per hour = ~1536px total 24h height
 
-  // Filter tasks for selected date
+  // Filter tasks for selected date with multi-date continuity support
   const dayTasks = useMemo(() => {
     return tasks.filter(t => isTaskScheduledForDate(t, selectedDate) && t.status !== 'Terminated')
-      .sort((a, b) => parse12HourToMinutes(a.startTime) - parse12HourToMinutes(b.startTime));
+      .sort((a, b) => {
+        const intA = getTaskIntervalForDate(a, selectedDate);
+        const intB = getTaskIntervalForDate(b, selectedDate);
+        return parse12HourToMinutes(intA.startTime) - parse12HourToMinutes(intB.startTime);
+      });
   }, [tasks, selectedDate]);
 
   // Capacity boundaries in minutes
@@ -291,6 +297,11 @@ export const Day24HourView: React.FC<Day24HourViewProps> = ({
 
           {/* Post-Task Break Buffer Intervals Rendered on 24H Timeline */}
           {dayTasks.map((task) => {
+            const crosses = taskCrossesMidnight(task.startTime, task.endTime);
+            const interval = getTaskIntervalForDate(task, selectedDate);
+            // If task crosses midnight, its post-task buffer belongs on completion day (Day 2), not Day 1!
+            if (crosses && !interval.isContinuation) return null;
+
             const endM = parse12HourToMinutes(task.endTime);
             const bufMin = task.bufferMinutes !== undefined ? task.bufferMinutes : (capacitySettings.defaultBufferMinutes ?? 0);
             if (bufMin <= 0) return null;
@@ -334,9 +345,10 @@ export const Day24HourView: React.FC<Day24HourViewProps> = ({
 
           {/* Scheduled Tasks Rendered Accurately as Time Blocks */}
           {dayTasks.map((task) => {
-            const startM = parse12HourToMinutes(task.startTime);
-            const endM = parse12HourToMinutes(task.endTime);
-            const durationM = Math.max(15, task.appointedMinutes || (endM - startM));
+            const crosses = taskCrossesMidnight(task.startTime, task.endTime);
+            const interval = getTaskIntervalForDate(task, selectedDate);
+            const startM = parse12HourToMinutes(interval.startTime);
+            const durationM = Math.max(15, interval.durationMinutes);
             
             const topPx = (startM / 60) * HOUR_HEIGHT;
             const heightPx = Math.max(28, (durationM / 60) * HOUR_HEIGHT - 2);
@@ -413,6 +425,17 @@ export const Day24HourView: React.FC<Day24HourViewProps> = ({
                       );
                     })()}
 
+                    {crosses && (
+                      <span className={`text-[9px] font-bold px-1.5 py-0.2 rounded-full border flex items-center gap-0.5 shrink-0 ${
+                        interval.isContinuation
+                          ? 'bg-indigo-500/15 text-indigo-700 dark:text-indigo-300 border-indigo-300 dark:border-indigo-800'
+                          : 'bg-purple-500/15 text-purple-700 dark:text-purple-300 border-purple-300 dark:border-purple-800'
+                      }`}>
+                        <Moon className="w-2.5 h-2.5" />
+                        <span>{interval.isContinuation ? `Continuation from ${task.startTime}` : `Spans into Tomorrow (ends ${task.endTime})`}</span>
+                      </span>
+                    )}
+
                     <span className={`text-[11px] font-bold truncate ${
                       isWorking ? 'text-white' :
                       isDone ? 'line-through text-theme-muted' : 
@@ -422,7 +445,11 @@ export const Day24HourView: React.FC<Day24HourViewProps> = ({
                     </span>
 
                     <span className={`text-[10px] font-mono font-bold shrink-0 ${isWorking ? 'text-white/80' : 'text-theme-muted'}`}>
-                      • {task.startTime} - {task.endTime} ({task.appointedMinutes}m)
+                      • {crosses 
+                          ? (interval.isContinuation 
+                              ? `${interval.startTime} - ${interval.endTime} (from ${task.startTime})`
+                              : `${interval.startTime} - Midnight (total ${task.appointedMinutes}m)`)
+                          : `${task.startTime} - ${task.endTime} (${task.appointedMinutes}m)`}
                     </span>
                   </div>
 

@@ -71,7 +71,10 @@ import {
   getCurrentRoundedTime12Hour,
   getNextRecurrenceDate,
   isTaskAutoIncompleteExpired,
-  calculateFirstRecurringDate
+  calculateFirstRecurringDate,
+  taskCrossesMidnight,
+  getTaskEndDate,
+  getTaskIntervalForDate
 } from '../utils/timeUtils';
 import { 
   pushStateToCloud, 
@@ -1123,12 +1126,49 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     endTime: string, 
     ignoreTaskId?: string
   ): Task[] => {
+    if (!startTime || !endTime || startTime === 'All Day' || endTime === 'All Day') return [];
+
+    const candidateCrosses = taskCrossesMidnight(startTime, endTime);
+    const candStartMin = parse12HourToMinutes(startTime);
+    const candEndMin = candidateCrosses ? 1440 : parse12HourToMinutes(endTime);
+
+    // Calculate tomorrow date for cross-midnight candidate checking
+    const [y, m, d] = date.split('-').map(Number);
+    const tomorrowStr = toISODateString(new Date(y, m - 1, d + 1));
+    const candTomorrowEndMin = candidateCrosses ? parse12HourToMinutes(endTime) : 0;
+
     return tasks.filter(t => {
       if (t.id === ignoreTaskId) return false;
-      if (!isTaskScheduledForDate(t, date)) return false;
       if (t.status === 'Terminated' || t.status === 'Done') return false;
-      if (t.startTime === 'All Day' || startTime === 'All Day') return false; // Full-day tasks don't conflict with hour slots
-      return checkOverlap(startTime, endTime, t.startTime, t.endTime);
+      if (t.startTime === 'All Day' || !t.startTime || !t.endTime) return false;
+
+      // 1. Check overlap on date (Day 1)
+      if (isTaskScheduledForDate(t, date)) {
+        const intOnDate = getTaskIntervalForDate(t, date);
+        const tStartMin = parse12HourToMinutes(intOnDate.startTime);
+        const tEndMin = intOnDate.isContinuation 
+          ? parse12HourToMinutes(intOnDate.endTime) 
+          : (taskCrossesMidnight(t.startTime, t.endTime) ? 1440 : parse12HourToMinutes(intOnDate.endTime));
+
+        if (Math.max(candStartMin, tStartMin) < Math.min(candEndMin, tEndMin)) {
+          return true;
+        }
+      }
+
+      // 2. If candidate task crosses midnight, also check overlap on tomorrowStr (Day 2)
+      if (candidateCrosses && isTaskScheduledForDate(t, tomorrowStr)) {
+        const intTomorrow = getTaskIntervalForDate(t, tomorrowStr);
+        const tStartMin = parse12HourToMinutes(intTomorrow.startTime);
+        const tEndMin = intTomorrow.isContinuation 
+          ? parse12HourToMinutes(intTomorrow.endTime) 
+          : (taskCrossesMidnight(t.startTime, t.endTime) ? 1440 : parse12HourToMinutes(intTomorrow.endTime));
+
+        if (Math.max(0, tStartMin) < Math.min(candTomorrowEndMin, tEndMin)) {
+          return true;
+        }
+      }
+
+      return false;
     });
   }, [tasks]);
 
@@ -1247,7 +1287,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       totalActualMinutes: 0,
       notes: taskData.notes || '',
       links: taskData.links || [],
-      subtasks: taskData.subtasks || []
+      subtasks: taskData.subtasks || [],
+      crossesMidnight: taskData.crossesMidnight ?? taskCrossesMidnight(startTime, endTime),
+      endDate: taskData.endDate || (taskCrossesMidnight(startTime, endTime) ? getTaskEndDate(date, startTime, endTime) : date)
     };
 
     setTasks(prev => [newTask, ...prev]);
@@ -1317,7 +1359,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         ];
       }
 
-      return prev.map(t => t.id === updated.id ? updated : t);
+      const crosses = updated.crossesMidnight ?? taskCrossesMidnight(updated.startTime, updated.endTime);
+      const effectiveEndDate = updated.endDate || (crosses ? getTaskEndDate(updated.taskDate, updated.startTime, updated.endTime) : updated.taskDate);
+      const normalizedUpdated: Task = {
+        ...updated,
+        crossesMidnight: crosses,
+        endDate: effectiveEndDate
+      };
+
+      return prev.map(t => t.id === updated.id ? normalizedUpdated : t);
     });
   }, []);
 
@@ -1532,7 +1582,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         links: updatedLinks,
         subtasks: updatedSubtasks,
         status: updatedStatus,
-        excludedDates: updatedExclusions
+        excludedDates: updatedExclusions,
+        crossesMidnight: taskCrossesMidnight(updatedStartTime, updatedEndTime),
+        endDate: getTaskEndDate(updatedTaskDate, updatedStartTime, updatedEndTime)
       };
 
       return prev.map(t => {
