@@ -118,7 +118,14 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
   const [nowTime, setNowTime] = useState<Date>(() => getBangladeshNow());
   const [showPastGaps, setShowPastGaps] = useState(false);
   const [gapDateFilter, setGapDateFilter] = useState<'all' | 'today' | 'tomorrow' | 'deep_focus' | 'sprint' | 'quick'>('all');
-  const [slotDecomposition, setSlotDecomposition] = useState<boolean>(true);
+  const [slotDecomposition, setSlotDecomposition] = useState<boolean>(() => {
+    try {
+      const saved = localStorage.getItem('optimustime_slot_decomposition');
+      return saved !== null ? JSON.parse(saved) : false;
+    } catch {
+      return false;
+    }
+  });
 
   // Live timer tick every second strictly anchored to Bangladesh Standard Time (BST • Asia/Dhaka)
   useEffect(() => {
@@ -1714,7 +1721,15 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
                   <div className="flex items-center gap-1.5 shrink-0">
                     <button
                       type="button"
-                      onClick={() => setSlotDecomposition(!slotDecomposition)}
+                      onClick={() => {
+                        setSlotDecomposition(prev => {
+                          const next = !prev;
+                          try {
+                            localStorage.setItem('optimustime_slot_decomposition', JSON.stringify(next));
+                          } catch {}
+                          return next;
+                        });
+                      }}
                       className={`px-3 py-1.5 rounded-full text-xs font-semibold transition-all border flex items-center gap-1.5 cursor-pointer shadow-2xs ${
                         slotDecomposition
                           ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900 border-transparent shadow-xs'
