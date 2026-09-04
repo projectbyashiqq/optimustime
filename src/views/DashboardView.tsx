@@ -95,7 +95,6 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
     deleteBufferNote,
     activeBufferPrompt,
     setActiveBufferPrompt,
-    openEmergencyModal,
     setActiveTab,
     timePeriodSettings
   } = useApp();
@@ -554,16 +553,6 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
           >
             <Plus className="w-3 h-3 stroke-[3]" />
             <Coffee className="w-3.5 h-3.5" />
-          </button>
-
-          {/* + Emergency Sign Button */}
-          <button
-            onClick={() => openEmergencyModal({ date: selectedDate })}
-            className="flex items-center gap-1 px-2.5 py-1.5 bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-700 hover:to-rose-700 text-white rounded-xl shadow-sm shadow-red-500/25 transition-all transform active:scale-95 shrink-0 whitespace-nowrap"
-            title="🚨 Emergency BUFFER (Loadshedding, Illness, Crisis) & Reschedule Day"
-          >
-            <Plus className="w-3 h-3 stroke-[3]" />
-            <ShieldAlert className="w-3.5 h-3.5 stroke-[2.5]" />
           </button>
         </div>
 

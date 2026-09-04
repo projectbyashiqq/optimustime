@@ -41,7 +41,6 @@ import {
   Coffee,
   Zap,
   AlertTriangle,
-  ShieldAlert,
   Timer,
   Sliders,
   Activity,
@@ -70,9 +69,6 @@ export const AdminSettingsView: React.FC = () => {
     updateBufferCategory,
     deleteBufferCategory,
     resetBufferCategories,
-    emergencyCategories,
-    deleteEmergencyCategory,
-    resetEmergencyCategories,
     tasks,
     planProjects,
     exportStateJson,
@@ -624,7 +620,7 @@ export const AdminSettingsView: React.FC = () => {
   };
 
   // Smart Visibility Checker for Search & Tab Navigation
-  const isCardVisible = (cardId: 'capacity' | 'priorities' | 'taskDefaults' | 'dayZones' | 'categories' | 'bufferStatus' | 'emergencyBuffer' | 'security' | 'cloudSync' | 'backupHub') => {
+  const isCardVisible = (cardId: 'capacity' | 'priorities' | 'taskDefaults' | 'dayZones' | 'categories' | 'bufferStatus' | 'security' | 'cloudSync' | 'backupHub') => {
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase().trim();
       const keywordsMap: Record<string, string[]> = {
@@ -634,7 +630,6 @@ export const AdminSettingsView: React.FC = () => {
         dayZones: ['day zones', 'time period', 'morning', 'night', 'lunch', '24-hour clock', 'clock', 'nomenclature', 'periods'],
         categories: ['category', 'subcategory', 'tags', 'color', 'entities', 'crud', 'manage'],
         bufferStatus: ['buffer status', 'free time', 'activity menu', 'coffee', 'exercise', 'nap', 'reading', 'meditation'],
-        emergencyBuffer: ['emergency', 'crisis', 'loadshedding', 'illness', 'buffer', 'hazard', 'power outage'],
         security: ['security', 'password', 'pin', 'gate', 'lock', 'username', 'admin', 'protect', 'access'],
         cloudSync: ['cloud', 'supabase', 'database', 'sync', 'realtime', 'sql', 'multi-device', 'anon key', 'url', 'vercel'],
         backupHub: ['backup', 'restore', 'export', 'excel', 'json', 'recovery', 'vault', 'xlsx', 'snapshot', 'rollback']
@@ -646,7 +641,7 @@ export const AdminSettingsView: React.FC = () => {
     if (activeTab === 'all') return true;
     if (activeTab === 'capacity') return cardId === 'capacity';
     if (activeTab === 'tasks') return ['priorities', 'taskDefaults', 'dayZones'].includes(cardId);
-    if (activeTab === 'categories') return ['categories', 'bufferStatus', 'emergencyBuffer'].includes(cardId);
+    if (activeTab === 'categories') return ['categories', 'bufferStatus'].includes(cardId);
     if (activeTab === 'security') return ['security', 'cloudSync', 'backupHub'].includes(cardId);
     return true;
   };
@@ -1952,60 +1947,6 @@ export const AdminSettingsView: React.FC = () => {
         </div>
         )}
 
-        {/* Emergency Buffer Presets & Categories Management */}
-        {isCardVisible('emergencyBuffer') && (
-        <div className="glass-panel p-5 rounded-2xl border border-theme-border space-y-4 shadow-xs">
-          <div className="flex items-center justify-between border-b border-theme-border pb-3">
-            <div>
-              <h3 className="text-sm font-bold text-theme-text uppercase tracking-wider flex items-center gap-2">
-                <ShieldAlert className="w-4 h-4 text-red-500" />
-                <span>Emergency Buffer Presets & Categories ({emergencyCategories.length})</span>
-              </h3>
-              <p className="text-xs text-theme-muted mt-0.5">
-                Customize emergency event types, icons, and default durations shown in the Emergency BUFFER menu.
-              </p>
-            </div>
-            <button
-              onClick={resetEmergencyCategories}
-              className="text-xs font-bold text-theme-muted hover:text-red-600 flex items-center gap-1"
-              title="Reset emergency presets to system defaults"
-            >
-              <RotateCcw className="w-3.5 h-3.5" />
-              <span>Restore Defaults</span>
-            </button>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5 max-h-80 overflow-y-auto pr-1">
-            {emergencyCategories.map((eCat) => (
-              <div
-                key={eCat.id}
-                className="p-3 rounded-xl bg-theme-card-hover border border-theme-border flex items-start justify-between gap-2 group"
-              >
-                <div className="flex items-start gap-2.5 min-w-0">
-                  <span className="text-xl shrink-0 p-1.5 rounded-lg bg-theme-card border border-theme-border/60">
-                    {eCat.emoji}
-                  </span>
-                  <div className="min-w-0">
-                    <div className="text-xs font-bold text-theme-text truncate">{eCat.name}</div>
-                    <div className="text-[11px] text-theme-muted font-mono">{eCat.defaultDuration} mins default</div>
-                  </div>
-                </div>
-
-                {!eCat.isSystem && (
-                  <button
-                    onClick={() => deleteEmergencyCategory(eCat.id)}
-                    className="p-1 text-theme-muted hover:text-red-500 opacity-60 group-hover:opacity-100 transition-opacity"
-                    title="Delete emergency preset"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
-                )}
-              </div>
-            ))}
-          </div>
-        </div>
-        )}
-
         {/* Security & Access Protection Shield */}
         {isCardVisible('security') && (
         <div className="glass-panel p-5 rounded-2xl border border-theme-border space-y-4 shadow-xs">
@@ -2432,7 +2373,7 @@ export const AdminSettingsView: React.FC = () => {
         )}
 
         {/* Empty State for Search Filter */}
-        {searchQuery && !(['capacity', 'priorities', 'taskDefaults', 'dayZones', 'categories', 'bufferStatus', 'emergencyBuffer', 'security', 'cloudSync', 'backupHub'] as const).some(isCardVisible) && (
+        {searchQuery && !(['capacity', 'priorities', 'taskDefaults', 'dayZones', 'categories', 'bufferStatus', 'security', 'cloudSync', 'backupHub'] as const).some(isCardVisible) && (
           <div className="lg:col-span-2 p-12 text-center rounded-2xl border border-dashed border-theme-border bg-theme-card/50 space-y-2 animate-fade-in">
             <Search className="w-8 h-8 text-theme-muted mx-auto opacity-50" />
             <h4 className="text-sm font-bold text-theme-text">No Settings Found for &ldquo;{searchQuery}&rdquo;</h4>

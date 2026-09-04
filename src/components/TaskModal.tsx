@@ -1617,7 +1617,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                       </span>
                     </div>
                     <p className="text-[11px] text-theme-muted mt-1 leading-snug">
-                      Guarantees this event cannot be replaced, rescheduled, auto-shifted by cascading downstream delays, or displaced by emergency buffers.
+                      Guarantees this event cannot be replaced, rescheduled, or auto-shifted by cascading downstream delays.
                     </p>
                   </div>
                 </label>

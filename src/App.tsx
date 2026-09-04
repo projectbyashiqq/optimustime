@@ -7,7 +7,6 @@ import { TaskModal } from './components/TaskModal';
 import { BufferNoteModal } from './components/BufferNoteModal';
 import { RecurringDeleteModal } from './components/RecurringDeleteModal';
 import { RecurringManagerModal } from './components/RecurringManagerModal';
-import { EmergencyBufferModal } from './components/EmergencyBufferModal';
 import { BackupRestoreModal } from './components/BackupRestoreModal';
 import { DashboardView } from './views/DashboardView';
 import { TimeTracker24View } from './views/TimeTracker24View';
@@ -120,9 +119,6 @@ export const AppContent: React.FC = () => {
 
       {/* Buffer Status & Free-Time Note Modal */}
       <BufferNoteModal />
-
-      {/* Emergency Buffer & Cascading Day Reschedule Modal */}
-      <EmergencyBufferModal />
 
       {/* Recurring Task Deletion Choice Modal */}
       <RecurringDeleteModal />
