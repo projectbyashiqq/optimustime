@@ -1699,29 +1699,19 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
 
             return (
               <div className="glass-panel p-5 rounded-3xl border border-slate-200/80 dark:border-white/10 bg-white/70 dark:bg-slate-900/70 backdrop-blur-2xl shadow-sm space-y-4">
-                {/* Header Ribbon */}
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-1 border-b border-theme-border/40">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-2xl bg-gradient-to-b from-amber-500/15 to-orange-500/10 dark:from-amber-400/20 dark:to-orange-500/10 border border-amber-500/25 dark:border-amber-400/20 text-amber-600 dark:text-amber-400 flex items-center justify-center shadow-inner shadow-amber-500/10 shrink-0">
-                      <Sparkles className="w-5 h-5 stroke-[2]" />
+                {/* Header Ribbon - Pure Cupertino Cleanliness */}
+                <div className="flex items-center justify-between gap-3 pb-1 border-b border-theme-border/40">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-8 h-8 rounded-xl bg-gradient-to-b from-amber-500/15 to-orange-500/10 dark:from-amber-400/20 dark:to-orange-500/10 border border-amber-500/25 dark:border-amber-400/20 text-amber-600 dark:text-amber-400 flex items-center justify-center shadow-inner shadow-amber-500/10 shrink-0">
+                      <Sparkles className="w-4 h-4 stroke-[2]" />
                     </div>
-                    <div>
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <h3 className="text-sm font-bold text-theme-text tracking-tight font-display">
-                          Dynamic Gap Finder
-                        </h3>
-                        <span className="text-[10px] font-mono font-bold px-2.5 py-0.5 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border border-emerald-500/20 rounded-full">
-                          {scientificSlots.length} Slots Guaranteed
-                        </span>
-                      </div>
-                      <p className="text-[11px] text-theme-muted font-medium mt-0.5">
-                        Ultradian Rhythm Decomposition & Circadian Capacity Analysis
-                      </p>
-                    </div>
+                    <h3 className="text-sm font-bold text-theme-text tracking-tight font-display">
+                      Dynamic Gap Finder
+                    </h3>
                   </div>
 
                   {/* Mode & Decompose Switcher */}
-                  <div className="flex items-center gap-1.5 shrink-0 self-start sm:self-auto">
+                  <div className="flex items-center gap-1.5 shrink-0">
                     <button
                       type="button"
                       onClick={() => setSlotDecomposition(!slotDecomposition)}
@@ -1861,15 +1851,12 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
                   </div>
                 )}
 
-                {/* Quick Filter Tabs (Apple Segmented Control) */}
-                <div className="p-1 rounded-2xl bg-black/[0.04] dark:bg-white/[0.06] border border-black/[0.04] dark:border-white/[0.08] flex items-center gap-1 overflow-x-auto no-scrollbar scroll-smooth">
+                {/* Clean 3-Way Segmented Control (Zero Overflow / Zero Clipping) */}
+                <div className="p-1 rounded-2xl bg-black/[0.04] dark:bg-white/[0.06] border border-black/[0.04] dark:border-white/[0.08] grid grid-cols-3 gap-1">
                   {[
-                    { id: 'all', label: 'All Slots', count: scientificSlots.length, icon: null },
-                    { id: 'today', label: 'Today', count: todaySlots.length, icon: null },
-                    { id: 'tomorrow', label: 'Tomorrow', count: tomorrowSlots.length, icon: null },
-                    { id: 'deep_focus', label: 'Deep Focus', count: deepFocusSlots.length, icon: '🧠' },
-                    { id: 'sprint', label: 'Sprints', count: sprintSlots.length, icon: '⚡' },
-                    { id: 'quick', label: 'Quick', count: quickSlots.length, icon: '☕' },
+                    { id: 'all', label: 'All Slots', count: scientificSlots.length },
+                    { id: 'today', label: 'Today', count: todaySlots.length },
+                    { id: 'tomorrow', label: 'Tomorrow', count: tomorrowSlots.length },
                   ].map(tab => {
                     const isActive = gapDateFilter === tab.id;
                     return (
@@ -1877,13 +1864,12 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
                         key={tab.id}
                         type="button"
                         onClick={() => setGapDateFilter(tab.id as any)}
-                        className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all whitespace-nowrap cursor-pointer flex items-center gap-1.5 ${
+                        className={`py-1.5 px-2 rounded-xl text-xs font-semibold transition-all text-center cursor-pointer flex items-center justify-center gap-1.5 ${
                           isActive
-                            ? 'bg-white dark:bg-slate-800 text-slate-900 dark:text-white shadow-xs scale-[1.02]'
+                            ? 'bg-white dark:bg-slate-800 text-slate-900 dark:text-white shadow-xs font-display'
                             : 'text-theme-muted hover:text-theme-text hover:bg-black/[0.02] dark:hover:bg-white/[0.04]'
                         }`}
                       >
-                        {tab.icon && <span>{tab.icon}</span>}
                         <span>{tab.label}</span>
                         <span className={`text-[10px] font-mono ${isActive ? 'opacity-90 font-bold' : 'opacity-60'}`}>
                           ({tab.count})
