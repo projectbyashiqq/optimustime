@@ -75,7 +75,8 @@ import {
   taskCrossesMidnight,
   getTaskEndDate,
   getTaskIntervalForDate,
-  sanitizeSimultaneousTasks
+  sanitizeSimultaneousTasks,
+  isNoTimeTask
 } from '../utils/timeUtils';
 import { 
   pushStateToCloud, 
@@ -1127,7 +1128,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     endTime: string, 
     ignoreTaskId?: string
   ): Task[] => {
-    if (!startTime || !endTime || startTime === 'All Day' || endTime === 'All Day') return [];
+    if (!startTime || !endTime || startTime === 'All Day' || endTime === 'All Day' || startTime === 'Anytime' || endTime === 'Anytime') return [];
 
     const candidateCrosses = taskCrossesMidnight(startTime, endTime);
     const candStartMin = parse12HourToMinutes(startTime);
@@ -1141,7 +1142,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return tasks.filter(t => {
       if (t.id === ignoreTaskId) return false;
       if (t.status === 'Terminated' || t.status === 'Done') return false;
-      if (t.startTime === 'All Day' || !t.startTime || !t.endTime) return false;
+      if (t.startTime === 'All Day' || !t.startTime || !t.endTime || isNoTimeTask(t)) return false;
 
       // 1. Check overlap on date (Day 1)
       if (isTaskScheduledForDate(t, date)) {
@@ -1242,13 +1243,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const addTask = useCallback((taskData: Omit<Task, 'id' | 'projectCode' | 'dateAdded' | 'executionLogs' | 'totalActualMinutes'> & { id?: string; projectCode?: string }): Task => {
     const defaultMins = prioritySettings[taskData.priority]?.defaultMinutes ?? 60;
     const appointedMinutes = taskData.appointedMinutes || defaultMins;
-    const startTime = taskData.startTime || getCurrentRoundedTime12Hour(15);
-    const endTime = taskData.endTime || addMinutesToTime(startTime, appointedMinutes);
+    const hasNoTime = Boolean(
+      taskData.hasNoTime ||
+      taskData.startTime === 'Anytime' ||
+      taskData.startTime === 'Free Time' ||
+      (taskData.priority === 'P5' && (taskData.hasNoTime !== false && !taskData.startTime))
+    );
+    const startTime = hasNoTime ? 'Anytime' : (taskData.startTime || getCurrentRoundedTime12Hour(15));
+    const endTime = hasNoTime ? 'Anytime' : (taskData.endTime || addMinutesToTime(startTime, appointedMinutes));
     let date = taskData.taskDate || toISODateString(new Date());
 
     // If recurring, calculate the exact first valid occurrence date
     const recurrence = taskData.recurrence || 'None';
-    if (recurrence !== 'None') {
+    if (recurrence !== 'None' && !hasNoTime) {
       date = calculateFirstRecurringDate({
         recurrence,
         selectedDays: taskData.selectedDays,
@@ -1289,9 +1296,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       notes: taskData.notes || '',
       links: taskData.links || [],
       subtasks: taskData.subtasks || [],
-      crossesMidnight: taskData.crossesMidnight ?? taskCrossesMidnight(startTime, endTime),
-      endDate: taskData.endDate || (taskCrossesMidnight(startTime, endTime) ? getTaskEndDate(date, startTime, endTime) : date),
-      isSimultaneous: taskData.isSimultaneous || false,
+      crossesMidnight: hasNoTime ? false : (taskData.crossesMidnight ?? taskCrossesMidnight(startTime, endTime)),
+      endDate: hasNoTime ? date : (taskData.endDate || (taskCrossesMidnight(startTime, endTime) ? getTaskEndDate(date, startTime, endTime) : date)),
+      hasNoTime,
+      isSimultaneous: hasNoTime ? true : (taskData.isSimultaneous || false),
       simultaneousWithIds: taskData.simultaneousWithIds || []
     };
 
@@ -1364,10 +1372,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
       const crosses = updated.crossesMidnight ?? taskCrossesMidnight(updated.startTime, updated.endTime);
       const effectiveEndDate = updated.endDate || (crosses ? getTaskEndDate(updated.taskDate, updated.startTime, updated.endTime) : updated.taskDate);
+      const hasNoTime = Boolean(
+        updated.hasNoTime ||
+        updated.startTime === 'Anytime' ||
+        updated.startTime === 'Free Time'
+      );
       const normalizedUpdated: Task = {
         ...updated,
-        crossesMidnight: crosses,
-        endDate: effectiveEndDate
+        hasNoTime,
+        isSimultaneous: hasNoTime ? true : Boolean(updated.isSimultaneous),
+        crossesMidnight: hasNoTime ? false : (updated.crossesMidnight ?? taskCrossesMidnight(updated.startTime, updated.endTime)),
+        endDate: hasNoTime ? updated.taskDate : effectiveEndDate
       };
 
       return sanitizeSimultaneousTasks(prev.map(t => t.id === updated.id ? normalizedUpdated : t));

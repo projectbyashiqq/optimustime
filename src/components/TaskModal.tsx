@@ -30,7 +30,8 @@ import {
   getTaskEndDate,
   getBangladeshNow,
   parse12HourToMinutes,
-  computeNextFreeRawTimes
+  computeNextFreeRawTimes,
+  isNoTimeTask
 } from '../utils/timeUtils';
 import { ConflictModal } from './ConflictModal';
 import { TimePicker } from './TimePicker';
@@ -128,9 +129,8 @@ export const TaskModal: React.FC<TaskModalProps> = ({
   const [description, setDescription] = useState(taskToEdit?.description || '');
   const [taskDate, setTaskDate] = useState(taskToEdit?.taskDate || initialDate || toISODateString(new Date()));
   const taskDateInputRef = useRef<HTMLInputElement>(null);
-  const [priority, setPriority] = useState<PriorityLevel>(
-    taskToEdit?.priority || taskDefaults.defaultPriority || 'P1'
-  );
+  const defaultPriorityCandidate = taskToEdit?.priority || taskDefaults.defaultPriority || 'P1';
+  const [priority, setPriority] = useState<PriorityLevel>(defaultPriorityCandidate);
   const [category, setCategory] = useState(
     taskToEdit?.category || initialCategory || taskDefaults.defaultCategory || 'Unknown'
   );
@@ -149,9 +149,23 @@ export const TaskModal: React.FC<TaskModalProps> = ({
     taskToEdit?.isMandatorySchedule ?? (taskDefaults.defaultIsMandatory || false)
   );
   
-  // Simultaneous execution option (Co-working / Parallel Slot)
+  // Free Time / Anytime Mode (P5 Noise default or explicit No-Time mode)
+  const [hasNoTime, setHasNoTime] = useState<boolean>(
+    Boolean(
+      taskToEdit?.hasNoTime ||
+      taskToEdit?.startTime === 'Anytime' ||
+      taskToEdit?.startTime === 'Free Time' ||
+      (!taskToEdit && defaultPriorityCandidate === 'P5')
+    )
+  );
+
+  // Simultaneous execution option (Co-working / Parallel Slot - always true by default for Free Time / P5)
   const [isSimultaneous, setIsSimultaneous] = useState<boolean>(
-    Boolean(taskToEdit?.isSimultaneous || (taskToEdit?.simultaneousWithIds && taskToEdit.simultaneousWithIds.length > 0))
+    Boolean(
+      taskToEdit?.isSimultaneous || 
+      (taskToEdit?.simultaneousWithIds && taskToEdit.simultaneousWithIds.length > 0) ||
+      (!taskToEdit && defaultPriorityCandidate === 'P5')
+    )
   );
 
   // Plan / Project Folder Grouping
@@ -159,9 +173,11 @@ export const TaskModal: React.FC<TaskModalProps> = ({
     taskToEdit?.planProjectId || initialPlanProjectId
   );
   
-  const defaultMin = prioritySettings[taskToEdit?.priority || taskDefaults.defaultPriority || 'P1']?.defaultMinutes ?? 90;
+  const defaultMin = prioritySettings[defaultPriorityCandidate]?.defaultMinutes ?? 90;
   const [appointedMinutes, setAppointedMinutes] = useState<number>(
-    taskToEdit?.appointedMinutes ?? (taskDefaults.defaultAppointedMinutes || defaultMin)
+    taskToEdit?.appointedMinutes ?? (
+      (!taskToEdit && defaultPriorityCandidate === 'P5') ? 0 : (taskDefaults.defaultAppointedMinutes || defaultMin)
+    )
   );
   const [bufferMinutes, setBufferMinutes] = useState<number>(
     taskToEdit?.bufferMinutes !== undefined 
@@ -330,12 +346,12 @@ export const TaskModal: React.FC<TaskModalProps> = ({
     return detectConflicts(taskDate, startTime, endTime, taskToEdit?.id);
   }, [taskDate, startTime, endTime, taskToEdit?.id, detectConflicts]);
 
-  // If time or date changes such that there are no overlapping tasks, auto-turn off simultaneous flag
+  // If time or date changes such that there are no overlapping tasks, auto-turn off simultaneous flag (unless in Free Time mode)
   useEffect(() => {
-    if (isSimultaneous && liveOverlaps.length === 0) {
+    if (isSimultaneous && !hasNoTime && liveOverlaps.length === 0) {
       setIsSimultaneous(false);
     }
-  }, [liveOverlaps.length, isSimultaneous]);
+  }, [liveOverlaps.length, isSimultaneous, hasNoTime]);
 
   // Sleep / Night Window Conflict Calculation & Warning
   const sleepWindowWarning = useMemo(() => {
@@ -362,9 +378,18 @@ export const TaskModal: React.FC<TaskModalProps> = ({
     setPriority(newPriority);
     setHasConfirmedPriority(true);
     setValidationError(null);
-    const newMinutes = prioritySettings[newPriority]?.defaultMinutes ?? 60;
-    setAppointedMinutes(newMinutes);
-    setEndTime(addMinutesToTime(startTime, newMinutes));
+    if (newPriority === 'P5') {
+      setHasNoTime(true);
+      setAppointedMinutes(0);
+      setIsSimultaneous(true);
+    } else {
+      if (hasNoTime) {
+        setHasNoTime(false);
+      }
+      const newMinutes = prioritySettings[newPriority]?.defaultMinutes ?? 60;
+      setAppointedMinutes(newMinutes);
+      setEndTime(addMinutesToTime(startTime, newMinutes));
+    }
   };
 
   // Quick-fill all auto presets
@@ -521,8 +546,8 @@ export const TaskModal: React.FC<TaskModalProps> = ({
     }
     setValidationError(null);
 
-    // 🚨 HUGE WARNING INTERCEPTOR: Block saving entry before current time without explicit permission
-    if (!bypassPastWarning && !hasConfirmedPastTime && pastTimeCheck.isPast) {
+    // 🚨 HUGE WARNING INTERCEPTOR: Block saving entry before current time without explicit permission (bypassed if hasNoTime)
+    if (!hasNoTime && !bypassPastWarning && !hasConfirmedPastTime && pastTimeCheck.isPast) {
       setShowPastTimeModal(true);
       return;
     }
@@ -530,7 +555,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
     // Auto-choose Unknown if category is not selected
     const effectiveCategory = (category && category.trim()) ? category.trim() : 'Unknown';
 
-    if (!forceNoConflictCheck && !isSimultaneous) {
+    if (!forceNoConflictCheck && !isSimultaneous && !hasNoTime) {
       const conflicts = detectConflicts(taskDate, startTime, endTime, taskToEdit?.id);
       if (conflicts.length > 0) {
         setConflictingTasks(conflicts);
@@ -541,7 +566,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
 
     // Ensure 1st schedule date for recurring task is accurate
     let effectiveTaskDate = taskDate;
-    if (recurrence && recurrence !== 'None') {
+    if (recurrence && recurrence !== 'None' && !hasNoTime) {
       effectiveTaskDate = calculateFirstRecurringDate({
         recurrence,
         selectedDays: recurrence === 'Selected Days' ? selectedDays : [],
@@ -549,12 +574,12 @@ export const TaskModal: React.FC<TaskModalProps> = ({
         baseDate: taskDate
       });
     }
-    const crosses = taskCrossesMidnight(startTime, endTime);
-    const calculatedEndDate = crosses ? getTaskEndDate(effectiveTaskDate, startTime, endTime) : effectiveTaskDate;
+    const crosses = hasNoTime ? false : taskCrossesMidnight(startTime, endTime);
+    const calculatedEndDate = hasNoTime ? effectiveTaskDate : (crosses ? getTaskEndDate(effectiveTaskDate, startTime, endTime) : effectiveTaskDate);
     const effectiveDayOfWeek = getDayOfWeekFromDate(effectiveTaskDate);
 
-    const actualSimultaneous = Boolean(isSimultaneous && liveOverlaps.length > 0);
-    const actualSimultaneousIds = actualSimultaneous ? liveOverlaps.map(t => t.id) : [];
+    const actualSimultaneous = hasNoTime ? true : Boolean(isSimultaneous && liveOverlaps.length > 0);
+    const actualSimultaneousIds = actualSimultaneous ? (hasNoTime ? [] : liveOverlaps.map(t => t.id)) : [];
 
     const payload = {
       projectCode: projectCode.trim() || generateProjectCode(),
@@ -567,16 +592,17 @@ export const TaskModal: React.FC<TaskModalProps> = ({
       priority,
       category: effectiveCategory,
       subCategory,
-      appointedMinutes,
-      startTime,
-      endTime,
+      appointedMinutes: hasNoTime ? 0 : appointedMinutes,
+      startTime: hasNoTime ? 'Anytime' : startTime,
+      endTime: hasNoTime ? 'Anytime' : endTime,
       status,
-      bufferMinutes,
+      bufferMinutes: hasNoTime ? 0 : bufferMinutes,
       recurrence,
       selectedDays: recurrence === 'Selected Days' ? selectedDays : [],
-      isMandatorySchedule,
+      isMandatorySchedule: hasNoTime ? false : isMandatorySchedule,
       isSimultaneous: actualSimultaneous,
       simultaneousWithIds: actualSimultaneousIds,
+      hasNoTime,
       planProjectId: planProjectId || undefined,
       notes,
       links,
@@ -1350,6 +1376,38 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                   {/* Date & Start Time Container (Apple Master Level Precision) */}
                   <div className="p-3 sm:p-4 rounded-2xl bg-theme-card-hover/80 dark:bg-theme-card/50 border border-theme-border shadow-2xs space-y-3">
                     
+                    {/* Header: Mode Selector (Fixed Clock vs Free Time / Anytime) */}
+                    <div className="flex items-center justify-between pb-2 border-b border-theme-border/50">
+                      <div className="flex items-center gap-1.5 text-xs font-black text-theme-text font-display">
+                        <Clock className="w-3.5 h-3.5 text-blue-500" />
+                        <span>Execution Scheduling</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const next = !hasNoTime;
+                          setHasNoTime(next);
+                          if (next) {
+                            setAppointedMinutes(0);
+                            setIsSimultaneous(true);
+                          } else {
+                            const newMin = prioritySettings[priority]?.defaultMinutes || 30;
+                            setAppointedMinutes(newMin);
+                            setEndTime(addMinutesToTime(startTime, newMin));
+                          }
+                        }}
+                        className={`px-2.5 py-1 rounded-full text-[10px] font-black border transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs ${
+                          hasNoTime
+                            ? 'bg-amber-500/20 text-amber-600 dark:text-amber-400 border-amber-500/40 ring-1 ring-amber-500/30'
+                            : 'bg-theme-card text-theme-muted hover:text-theme-text border-theme-border'
+                        }`}
+                        title="Toggle between fixed clock time and anytime free time"
+                      >
+                        <span>{hasNoTime ? '⚡ Free Time Mode (Anytime)' : '⏰ Fixed Clock Slot'}</span>
+                        {priority === 'P5' && <span className="text-[9px] opacity-75 font-mono">(P5 Noise)</span>}
+                      </button>
+                    </div>
+
                     {/* Top Row: Date & Start Time (Balanced 50/50 Grid) */}
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4 items-start">
                       
@@ -1378,7 +1436,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                                 setTaskDate(targetDate);
                                 setRolloverNotice(null);
                                 if (validationError) setValidationError(null);
-                                if (!taskToEdit) {
+                                if (!taskToEdit && !hasNoTime) {
                                   const free = computeNextFreeRawTimes(targetDate, Math.min(30, appointedMinutes), tasks, bufferNotes, undefined, effectiveDefaultBuffer, capacitySettings);
                                   if (free.length > 0) {
                                     setStartTime(free[0]);
@@ -1404,7 +1462,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                                 setTaskDate(targetDate);
                                 setRolloverNotice(null);
                                 if (validationError) setValidationError(null);
-                                if (!taskToEdit) {
+                                if (!taskToEdit && !hasNoTime) {
                                   const free = computeNextFreeRawTimes(targetDate, Math.min(30, appointedMinutes), tasks, bufferNotes, undefined, effectiveDefaultBuffer, capacitySettings);
                                   if (free.length > 0) {
                                     setStartTime(free[0]);
@@ -1431,7 +1489,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                             const newD = e.target.value;
                             setTaskDate(newD);
                             if (validationError) setValidationError(null);
-                            if (!taskToEdit && newD) {
+                            if (!taskToEdit && newD && !hasNoTime) {
                               const free = computeNextFreeRawTimes(newD, Math.min(30, appointedMinutes), tasks, bufferNotes, undefined, effectiveDefaultBuffer, capacitySettings);
                               if (free.length > 0) {
                                 setStartTime(free[0]);
@@ -1448,140 +1506,201 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                         />
                       </div>
 
-                      {/* Right: Start Time */}
-                      <div className="space-y-1.5">
-                        <div className="flex items-center justify-between">
-                          <label className="text-[11px] font-bold text-theme-text flex items-center gap-1.5">
-                            <Clock className="w-3.5 h-3.5 text-blue-500" />
-                            <span>Start Time</span>
-                          </label>
-
-                          {/* 1-Click AM / PM Quick Switcher */}
-                          {(() => {
-                            const isStart12 = startTime.trim().startsWith('12:') || startTime.trim().toUpperCase().startsWith('12PM') || startTime.trim().toUpperCase().startsWith('12AM');
-                            const isAmActive = startTime.toUpperCase().includes('AM');
-                            const isPmActive = startTime.toUpperCase().includes('PM');
-                            return (
-                              <div className="flex items-center p-0.5 bg-theme-card rounded-full border border-theme-border text-[10px] font-black shadow-inner">
-                                <button
-                                  type="button"
-                                  onClick={() => handleTogglePeriod('AM')}
-                                  className={`px-2.5 py-0.5 rounded-full transition-all flex items-center gap-1 cursor-pointer ${
-                                    isAmActive
-                                      ? isStart12 ? 'bg-indigo-600 text-white shadow-xs' : 'bg-amber-500 text-white shadow-xs'
-                                      : 'text-theme-muted hover:text-theme-text'
-                                  }`}
-                                  title={isStart12 ? '12:00 AM • Night & New Date (Midnight)' : 'Switch to Morning (AM)'}
-                                >
-                                  {isStart12 ? <Moon className="w-2.5 h-2.5" /> : <Sun className="w-2.5 h-2.5" />}
-                                  <span>AM</span>
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => handleTogglePeriod('PM')}
-                                  className={`px-2.5 py-0.5 rounded-full transition-all flex items-center gap-1 cursor-pointer ${
-                                    isPmActive
-                                      ? isStart12 ? 'bg-amber-500 text-white shadow-xs' : 'bg-indigo-600 text-white shadow-xs'
-                                      : 'text-theme-muted hover:text-theme-text'
-                                  }`}
-                                  title={isStart12 ? '12:00 PM • Day Time (Midday / Lunch)' : 'Switch to Afternoon / Evening (PM)'}
-                                >
-                                  {isStart12 ? <Sun className="w-2.5 h-2.5" /> : <Moon className="w-2.5 h-2.5" />}
-                                  <span>PM</span>
-                                </button>
-                              </div>
-                            );
-                          })()}
-                        </div>
-
-                        <TimePicker
-                          value={startTime}
-                          onChange={handleStartTimeChange}
-                        />
-                      </div>
-
-                    </div>
-
-                    {/* Bottom Full-Width Strip: Next Free Time Slots (Apple Complication Styling) */}
-                    {freeRawTimeSuggestions.length > 0 && (
-                      <div className="pt-2.5 border-t border-theme-border/60 space-y-2">
-                        <div className="flex items-center justify-between text-[11px]">
-                          <div className="flex items-center gap-1.5 font-bold text-theme-text font-display">
-                            <div className="w-4 h-4 rounded-md bg-amber-500/15 flex items-center justify-center text-amber-500 shrink-0">
-                              <Sparkles className="w-2.5 h-2.5" />
-                            </div>
-                            <span>Next Free Slots</span>
-                            <span className="text-[10px] font-normal text-theme-muted">
-                              • {taskDate === toISODateString(getBangladeshNow()) ? 'Today' : formatDisplayDate(taskDate)}
+                      {/* Right: Start Time OR Free Time Slot Badge */}
+                      {hasNoTime ? (
+                        <div className="space-y-1.5">
+                          <div className="flex items-center justify-between">
+                            <label className="text-[11px] font-bold text-theme-text flex items-center gap-1.5">
+                              <Sparkles className="w-3.5 h-3.5 text-amber-500" />
+                              <span>Temporal Slot</span>
+                            </label>
+                            <span className="text-[9px] px-2 py-0.5 rounded-full font-black bg-amber-500/20 text-amber-600 dark:text-amber-400 border border-amber-500/30">
+                              ⚡ Free Time • Anytime
                             </span>
                           </div>
 
-                          <div className="flex items-center gap-2">
+                          <div className="w-full h-[38px] px-3 rounded-xl bg-gradient-to-r from-amber-500/10 via-orange-500/10 to-amber-500/5 border border-amber-500/30 flex items-center justify-between shadow-2xs">
+                            <div className="flex items-center gap-2 min-w-0">
+                              <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse shrink-0" />
+                              <span className="text-xs font-bold text-amber-600 dark:text-amber-400 truncate">
+                                Floating / Anytime (No fixed clock)
+                              </span>
+                            </div>
                             <button
                               type="button"
                               onClick={() => {
-                                const best = freeRawTimeSuggestions[0];
-                                if (best) {
-                                  setStartTime(best);
-                                  setEndTime(addMinutesToTime(best, appointedMinutes));
-                                  if (validationError) setValidationError(null);
-                                }
+                                setHasNoTime(false);
+                                const newMin = prioritySettings[priority]?.defaultMinutes || 30;
+                                setAppointedMinutes(newMin);
+                                setEndTime(addMinutesToTime(startTime, newMin));
                               }}
-                              className="text-[10px] font-bold text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-1 cursor-pointer"
-                              title="Auto-fit to earliest available free slot"
+                              className="text-[10px] font-bold text-blue-600 dark:text-blue-400 hover:underline cursor-pointer shrink-0 ml-2"
                             >
-                              <RotateCcw className="w-2.5 h-2.5" />
-                              <span>Auto-Fit First</span>
+                              Set Time
                             </button>
-                            <span className="text-[9px] font-mono text-theme-muted/70 hidden sm:inline">1-tap select</span>
                           </div>
                         </div>
+                      ) : (
+                        <div className="space-y-1.5">
+                          <div className="flex items-center justify-between">
+                            <label className="text-[11px] font-bold text-theme-text flex items-center gap-1.5">
+                              <Clock className="w-3.5 h-3.5 text-blue-500" />
+                              <span>Start Time</span>
+                            </label>
 
-                        {/* 3 to 5 Clickable Free Slots Pills */}
-                        <div className="flex items-center gap-2 flex-wrap">
-                          {freeRawTimeSuggestions.slice(0, 5).map((timeStr, idx) => {
-                            const isSelected = startTime === timeStr;
-                            const mins = parse12HourToMinutes(timeStr);
-                            const isLate = mins < 360 || mins >= 1380;
-                            const endStr = addMinutesToTime(timeStr, appointedMinutes);
-
-                            return (
-                              <button
-                                key={idx}
-                                type="button"
-                                onClick={() => {
-                                  setStartTime(timeStr);
-                                  setEndTime(endStr);
-                                  if (validationError) setValidationError(null);
-                                }}
-                                className={`group px-3 py-1.5 rounded-xl text-xs font-mono font-bold transition-all border cursor-pointer active:scale-95 flex items-center gap-2 shadow-2xs ${
-                                  isSelected
-                                    ? 'bg-blue-600 text-white border-blue-500 shadow-sm shadow-blue-600/30 ring-2 ring-blue-400/40 scale-[1.02]'
-                                    : 'bg-theme-card hover:bg-theme-card-hover text-theme-text border-theme-border/80 hover:border-blue-400/50'
-                                }`}
-                                title={`Schedule at ${timeStr} (${timeStr} - ${endStr})`}
-                              >
-                                <div className="flex items-center gap-1">
-                                  {isLate ? (
-                                    <Moon className={`w-3 h-3 ${isSelected ? 'text-blue-200' : 'text-indigo-400'}`} />
-                                  ) : (
-                                    <Sun className={`w-3 h-3 ${isSelected ? 'text-amber-200' : 'text-amber-500'}`} />
-                                  )}
-                                  <span>{timeStr}</span>
+                            {/* 1-Click AM / PM Quick Switcher */}
+                            {(() => {
+                              const isStart12 = startTime.trim().startsWith('12:') || startTime.trim().toUpperCase().startsWith('12PM') || startTime.trim().toUpperCase().startsWith('12AM');
+                              const isAmActive = startTime.toUpperCase().includes('AM');
+                              const isPmActive = startTime.toUpperCase().includes('PM');
+                              return (
+                                <div className="flex items-center p-0.5 bg-theme-card rounded-full border border-theme-border text-[10px] font-black shadow-inner">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleTogglePeriod('AM')}
+                                    className={`px-2.5 py-0.5 rounded-full transition-all flex items-center gap-1 cursor-pointer ${
+                                      isAmActive
+                                        ? isStart12 ? 'bg-indigo-600 text-white shadow-xs' : 'bg-amber-500 text-white shadow-xs'
+                                        : 'text-theme-muted hover:text-theme-text'
+                                    }`}
+                                    title={isStart12 ? '12:00 AM • Night & New Date (Midnight)' : 'Switch to Morning (AM)'}
+                                  >
+                                    {isStart12 ? <Moon className="w-2.5 h-2.5" /> : <Sun className="w-2.5 h-2.5" />}
+                                    <span>AM</span>
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleTogglePeriod('PM')}
+                                    className={`px-2.5 py-0.5 rounded-full transition-all flex items-center gap-1 cursor-pointer ${
+                                      isPmActive
+                                        ? isStart12 ? 'bg-amber-500 text-white shadow-xs' : 'bg-indigo-600 text-white shadow-xs'
+                                        : 'text-theme-muted hover:text-theme-text'
+                                    }`}
+                                    title={isStart12 ? '12:00 PM • Day Time (Midday / Lunch)' : 'Switch to Afternoon / Evening (PM)'}
+                                  >
+                                    {isStart12 ? <Sun className="w-2.5 h-2.5" /> : <Moon className="w-2.5 h-2.5" />}
+                                    <span>PM</span>
+                                  </button>
                                 </div>
-                                <span className={`text-[10px] font-sans font-medium px-1.5 py-0.2 rounded-md transition-colors ${
-                                  isSelected
-                                    ? 'bg-white/20 text-white'
-                                    : 'bg-theme-border/50 text-theme-muted group-hover:text-theme-text'
-                                }`}>
-                                  ~{appointedMinutes}m
+                              );
+                            })()}
+                          </div>
+
+                          <TimePicker
+                            value={startTime}
+                            onChange={handleStartTimeChange}
+                          />
+                        </div>
+                      )}
+
+                    </div>
+
+                    {/* Bottom Strip: Free Time Info OR Next Free Time Slots */}
+                    {hasNoTime ? (
+                      <div className="pt-2.5 border-t border-theme-border/60">
+                        <div className="p-3 rounded-xl bg-amber-500/10 dark:bg-amber-950/20 border border-amber-500/25 flex items-center justify-between gap-3 text-xs">
+                          <div className="flex items-center gap-2.5 text-amber-800 dark:text-amber-300 min-w-0">
+                            <div className="w-7 h-7 rounded-xl bg-amber-500/20 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0 font-bold text-sm shadow-xs">
+                              ⚡
+                            </div>
+                            <div className="min-w-0">
+                              <div className="font-bold text-xs flex items-center gap-1.5 flex-wrap">
+                                <span>P5 Noise / Free Time Active</span>
+                                <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-amber-500/20 text-amber-700 dark:text-amber-300 font-mono font-bold">
+                                  Always Simultaneous
                                 </span>
-                              </button>
-                            );
-                          })}
+                              </div>
+                              <div className="text-[10px] text-theme-muted truncate">
+                                No calendar block • Runs in parallel • Sinks to the bottom on task views
+                              </div>
+                            </div>
+                          </div>
+                          <span className="px-2.5 py-1 rounded-lg bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 text-[10px] font-mono font-black border border-emerald-500/20 shrink-0">
+                            ✓ Co-Running
+                          </span>
                         </div>
                       </div>
+                    ) : (
+                      freeRawTimeSuggestions.length > 0 && (
+                        <div className="pt-2.5 border-t border-theme-border/60 space-y-2">
+                          <div className="flex items-center justify-between text-[11px]">
+                            <div className="flex items-center gap-1.5 font-bold text-theme-text font-display">
+                              <div className="w-4 h-4 rounded-md bg-amber-500/15 flex items-center justify-center text-amber-500 shrink-0">
+                                <Sparkles className="w-2.5 h-2.5" />
+                              </div>
+                              <span>Next Free Slots</span>
+                              <span className="text-[10px] font-normal text-theme-muted">
+                                • {taskDate === toISODateString(getBangladeshNow()) ? 'Today' : formatDisplayDate(taskDate)}
+                              </span>
+                            </div>
+
+                            <div className="flex items-center gap-2">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const best = freeRawTimeSuggestions[0];
+                                  if (best) {
+                                    setStartTime(best);
+                                    setEndTime(addMinutesToTime(best, appointedMinutes));
+                                    if (validationError) setValidationError(null);
+                                  }
+                                }}
+                                className="text-[10px] font-bold text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-1 cursor-pointer"
+                                title="Auto-fit to earliest available free slot"
+                              >
+                                <RotateCcw className="w-2.5 h-2.5" />
+                                <span>Auto-Fit First</span>
+                              </button>
+                              <span className="text-[9px] font-mono text-theme-muted/70 hidden sm:inline">1-tap select</span>
+                            </div>
+                          </div>
+
+                          {/* 3 to 5 Clickable Free Slots Pills */}
+                          <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+                            {freeRawTimeSuggestions.map((slotTime, idx) => {
+                              const isSlotSelected = startTime === slotTime;
+                              const slotMin = parse12HourToMinutes(slotTime);
+                              const isNight = slotMin < 300 || slotMin >= 1200;
+
+                              return (
+                                <button
+                                  key={idx}
+                                  type="button"
+                                  onClick={() => {
+                                    setStartTime(slotTime);
+                                    setEndTime(addMinutesToTime(slotTime, appointedMinutes));
+                                    if (validationError) setValidationError(null);
+                                  }}
+                                  className={`py-2 px-2 rounded-xl text-center border transition-all flex flex-col items-center justify-center gap-0.5 cursor-pointer shadow-2xs group ${
+                                    isSlotSelected
+                                      ? 'bg-blue-600 text-white border-blue-600 font-black shadow-md ring-2 ring-blue-400/40 scale-[1.02]'
+                                      : 'bg-theme-card hover:bg-theme-card-hover text-theme-text border-theme-border hover:border-blue-400'
+                                  }`}
+                                  title={`Click to set Start Time to ${slotTime}`}
+                                >
+                                  <div className="flex items-center gap-1">
+                                    {isNight ? (
+                                      <Moon className={`w-3 h-3 ${isSlotSelected ? 'text-blue-200' : 'text-indigo-400'}`} />
+                                    ) : (
+                                      <Sun className={`w-3 h-3 ${isSlotSelected ? 'text-amber-200' : 'text-amber-500'}`} />
+                                    )}
+                                    <span className="font-mono text-[11px] font-black tracking-tight">
+                                      {slotTime}
+                                    </span>
+                                  </div>
+                                  <span className={`text-[9px] font-mono ${
+                                    isSlotSelected ? 'text-blue-100' : 'text-theme-muted group-hover:text-blue-500'
+                                  }`}>
+                                    ~{appointedMinutes}m
+                                  </span>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )
                     )}
+
                   </div>
                 </div>
 
@@ -1622,8 +1741,9 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                     <input
                       type="checkbox"
                       checked={isSimultaneous}
+                      disabled={hasNoTime}
                       onChange={(e) => setIsSimultaneous(e.target.checked)}
-                      className="w-4 h-4 rounded border-purple-400 text-purple-600 focus:ring-purple-500 mt-0.5 cursor-pointer"
+                      className="w-4 h-4 rounded border-purple-400 text-purple-600 focus:ring-purple-500 mt-0.5 cursor-pointer disabled:opacity-60"
                     />
                     <div className="min-w-0">
                       <div className="flex items-center gap-1.5">
@@ -1631,9 +1751,16 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                         <span className="text-xs font-black text-theme-text font-display">
                           Run Simultaneously
                         </span>
+                        {hasNoTime && (
+                          <span className="text-[9px] px-1.5 py-0.2 rounded bg-purple-500/20 text-purple-600 dark:text-purple-400 font-mono font-bold">
+                            Default (Free Time)
+                          </span>
+                        )}
                       </div>
                       <p className="text-[10px] text-theme-muted mt-0.5 leading-snug">
-                        Allows parallel co-working alongside overlapping events.
+                        {hasNoTime 
+                          ? 'Free time tasks always run in parallel without blocking calendar capacity.' 
+                          : 'Allows parallel co-working alongside overlapping events.'}
                       </p>
                     </div>
                   </label>

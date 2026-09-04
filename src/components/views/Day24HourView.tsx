@@ -12,7 +12,8 @@ import {
   getTimePeriodForTime,
   getTaskIntervalForDate,
   taskCrossesMidnight,
-  getBangladeshNow
+  getBangladeshNow,
+  isNoTimeTask
 } from '../../utils/timeUtils';
 import { 
   Play, 
@@ -81,6 +82,16 @@ export const Day24HourView: React.FC<Day24HourViewProps> = ({
         return parse12HourToMinutes(intA.startTime) - parse12HourToMinutes(intB.startTime);
       });
   }, [tasks, selectedDate]);
+
+  // Timed tasks rendered strictly on the 24-hour vertical timeline
+  const timedDayTasks = useMemo(() => {
+    return dayTasks.filter(t => !isNoTimeTask(t));
+  }, [dayTasks]);
+
+  // Floating / Anytime / Free Time tasks (P5 Noise) rendered at the bottom
+  const anytimeDayTasks = useMemo(() => {
+    return dayTasks.filter(t => isNoTimeTask(t));
+  }, [dayTasks]);
 
   // Capacity boundaries in minutes
   const startCapMin = parse12HourToMinutes(capacitySettings.dayStartTime || '06:00 AM');
@@ -345,7 +356,7 @@ export const Day24HourView: React.FC<Day24HourViewProps> = ({
           })}
 
           {/* Scheduled Tasks Rendered Accurately as Time Blocks */}
-          {dayTasks.map((task) => {
+          {timedDayTasks.map((task) => {
             const crosses = taskCrossesMidnight(task.startTime, task.endTime);
             const interval = getTaskIntervalForDate(task, selectedDate);
             const startM = parse12HourToMinutes(interval.startTime);
@@ -529,6 +540,102 @@ export const Day24HourView: React.FC<Day24HourViewProps> = ({
 
         </div>
       </div>
+
+      {/* Anytime & Free Time Noise Queue (P5 Free Time Floating Tasks) */}
+      {anytimeDayTasks.length > 0 && (
+        <div className="p-4 rounded-2xl bg-theme-card border border-amber-500/30 shadow-xs space-y-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <div className="w-6 h-6 rounded-lg bg-amber-500/20 text-amber-600 dark:text-amber-400 flex items-center justify-center font-bold text-xs">
+                ⚡
+              </div>
+              <h4 className="text-xs font-black uppercase tracking-wider text-theme-text font-display">
+                Anytime & Free Time Queue ({anytimeDayTasks.length})
+              </h4>
+              <span className="text-[10px] px-2 py-0.5 rounded-full font-mono font-bold bg-amber-500/20 text-amber-700 dark:text-amber-300">
+                P5 Noise • Simultaneous
+              </span>
+            </div>
+            <span className="text-[10px] text-theme-muted font-mono hidden sm:inline">
+              Runs in parallel • No fixed slot
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5">
+            {anytimeDayTasks.map(t => {
+              const isDone = t.status === 'Done';
+              const isWorking = t.status === 'Working';
+
+              return (
+                <div
+                  key={t.id}
+                  className={`p-3 rounded-xl border bg-theme-card-hover/60 transition-all flex items-center justify-between gap-2.5 ${
+                    isWorking
+                      ? 'border-blue-500 shadow-md ring-1 ring-blue-500/30'
+                      : isDone
+                        ? 'opacity-60 border-theme-border'
+                        : 'border-theme-border hover:border-amber-400/60'
+                  }`}
+                >
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-1.5 mb-1">
+                      <span className="text-[9px] font-black px-1.5 py-0.2 rounded bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-mono">
+                        {t.priority}
+                      </span>
+                      <span className="text-[10px] font-mono text-theme-muted truncate">
+                        {t.projectCode}
+                      </span>
+                    </div>
+                    <div className={`text-xs font-bold truncate ${isDone ? 'line-through text-theme-muted' : 'text-theme-text'}`}>
+                      {t.title}
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-1 shrink-0">
+                    {!isDone ? (
+                      isWorking ? (
+                        <button
+                          onClick={() => pauseTask(t.id)}
+                          className="p-1.5 rounded-lg bg-amber-500 text-white shadow-xs cursor-pointer"
+                          title="Pause"
+                        >
+                          <Pause className="w-3.5 h-3.5 fill-white" />
+                        </button>
+                      ) : (
+                        <button
+                          onClick={() => startTask(t.id)}
+                          className="p-1.5 rounded-lg bg-blue-600 text-white shadow-xs cursor-pointer"
+                          title="Start"
+                        >
+                          <Play className="w-3.5 h-3.5 fill-white" />
+                        </button>
+                      )
+                    ) : null}
+
+                    <button
+                      onClick={() => completeTask(t.id)}
+                      className={`p-1.5 rounded-lg border cursor-pointer ${
+                        isDone ? 'bg-emerald-500 text-white border-emerald-500' : 'bg-theme-card text-theme-muted hover:text-emerald-500 border-theme-border'
+                      }`}
+                      title={isDone ? 'Completed' : 'Mark Done'}
+                    >
+                      <Check className="w-3.5 h-3.5" />
+                    </button>
+
+                    <button
+                      onClick={() => onOpenTaskModal(t)}
+                      className="p-1.5 rounded-lg bg-theme-card text-theme-muted hover:text-theme-text border border-theme-border cursor-pointer"
+                      title="Edit"
+                    >
+                      <Edit2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
     </div>
   );

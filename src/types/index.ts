@@ -65,6 +65,7 @@ export interface Task {
   endDate?: string; // YYYY-MM-DD when task spans across midnight to next calendar day
   crossesMidnight?: boolean; // True when endTime < startTime (e.g. 11:00 PM -> 01:00 AM)
   isAllDay?: boolean;
+  hasNoTime?: boolean; // When true, task has no fixed time slot (P5 Noise / Free Time / Anytime)
   status: TaskStatus;
   bufferMinutes: number; // 15 or 5
   recurrence: RecurrenceType;

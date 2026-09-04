@@ -84,8 +84,27 @@ export function formatDurationHuman(mins: number): string {
 
 // Add minutes to a 12-hour AM/PM string
 export function addMinutesToTime(timeStr: string, minutesToAdd: number): string {
+  if (timeStr === 'Anytime' || timeStr === 'Free Time' || timeStr === 'All Day') return timeStr;
   const currentMin = parse12HourToMinutes(timeStr);
   return formatMinutesTo12Hour(currentMin + minutesToAdd);
+}
+
+/**
+ * Detects if a task has no fixed time slot (P5 Noise / Free Time / Anytime floating task).
+ */
+export function isNoTimeTask(task?: {
+  hasNoTime?: boolean;
+  startTime?: string;
+  isAllDay?: boolean;
+  priority?: string;
+} | null): boolean {
+  if (!task) return false;
+  return Boolean(
+    task.hasNoTime ||
+    task.startTime === 'Anytime' ||
+    task.startTime === 'Free Time' ||
+    task.startTime === 'No Time'
+  );
 }
 
 export const BANGLADESH_TIMEZONE = 'Asia/Dhaka';
@@ -297,11 +316,11 @@ export function findSimultaneousTasks<T extends { id: string; taskDate: string; 
   targetTask: T,
   allTasks: T[]
 ): T[] {
-  if (!targetTask.startTime || !targetTask.endTime || targetTask.startTime === 'All Day') return [];
+  if (!targetTask.startTime || !targetTask.endTime || targetTask.startTime === 'All Day' || isNoTimeTask(targetTask as any)) return [];
   return allTasks.filter(other => {
     if (other.id === targetTask.id) return false;
     if (other.status === 'Terminated' || other.status === 'Done') return false;
-    if (other.startTime === 'All Day' || !other.startTime || !other.endTime) return false;
+    if (other.startTime === 'All Day' || !other.startTime || !other.endTime || isNoTimeTask(other as any)) return false;
 
     // Check if both occur on the same target date (considering recurrence or same taskDate)
     const onSameDate = other.taskDate === targetTask.taskDate || isTaskScheduledForDate(other, targetTask.taskDate);
@@ -775,6 +794,15 @@ export function getTaskIntervalForDate(
   },
   targetDateStr: string
 ): { startTime: string; endTime: string; isContinuation: boolean; durationMinutes: number } {
+  if (isNoTimeTask(task as any)) {
+    return {
+      startTime: 'Anytime',
+      endTime: 'Anytime',
+      isContinuation: false,
+      durationMinutes: 0
+    };
+  }
+
   const s = task.startTime || '09:00 AM';
   const e = task.endTime || '10:00 AM';
   const crosses = task.crossesMidnight ?? taskCrossesMidnight(s, e);
@@ -2842,7 +2870,7 @@ export function computeNextFreeRawTimes(
   for (const t of tasks) {
     if (t.id === ignoreTaskId) continue;
     if (t.status === 'Terminated' || t.status === 'Reschedule') continue;
-    if (!t.startTime || !t.endTime || t.startTime === 'All Day') continue;
+    if (!t.startTime || !t.endTime || t.startTime === 'All Day' || isNoTimeTask(t as any)) continue;
     if (!isTaskScheduledForDate(t, dateStr)) continue;
 
     const s = parse12HourToMinutes(t.startTime);

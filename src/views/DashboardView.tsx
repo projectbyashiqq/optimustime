@@ -28,7 +28,8 @@ import {
   formatBangladeshTime,
   BANGLADESH_TIMEZONE,
   getScientificDynamicGapSlots,
-  ScientificGapSlot
+  ScientificGapSlot,
+  isNoTimeTask
 } from '../utils/timeUtils';
 import { 
   Play, 
@@ -391,7 +392,14 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
       return aIncomplete ? 1 : -1;
     }
 
-    // 2. Priority-Based Mode: Strictly order by Priority (P1 -> P2 -> P3 -> P4 -> P5), then by time
+    // 2. Free Time / Anytime tasks (P5 Noise with no fixed time) sink to the end of active tasks
+    const aNoTime = isNoTimeTask(a);
+    const bNoTime = isNoTimeTask(b);
+    if (aNoTime !== bNoTime) {
+      return aNoTime ? 1 : -1;
+    }
+
+    // 3. Priority-Based Mode: Strictly order by Priority (P1 -> P2 -> P3 -> P4 -> P5), then by time
     if (dashboardMode === 'priority') {
       const pWeight: Record<PriorityLevel, number> = { P1: 1, P2: 2, P3: 3, P4: 4, P5: 5 };
       if (pWeight[a.priority] !== pWeight[b.priority]) {
@@ -400,7 +408,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
       return parse12HourToMinutes(a.startTime) - parse12HourToMinutes(b.startTime);
     }
 
-    // 3. Time-Based Mode (Default): Strictly order chronologically by startTime
+    // 4. Time-Based Mode (Default): Strictly order chronologically by startTime
     return parse12HourToMinutes(a.startTime) - parse12HourToMinutes(b.startTime);
   });
 
@@ -1060,9 +1068,21 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
                       const isInSleep = isTaskInSleepWindow(task, capacitySettings);
 
                       const isFirstIncomplete = isIncomplete && (idx === 0 || arr[idx - 1].status !== 'Incomplete');
+                      const isNoTime = isNoTimeTask(task);
+                      const isFirstNoTime = isNoTime && !isIncomplete && (idx === 0 || !isNoTimeTask(arr[idx - 1]) || arr[idx - 1].status === 'Incomplete');
 
                       return (
                         <React.Fragment key={task.id}>
+                          {isFirstNoTime && (
+                            <div className="pt-5 pb-2 flex items-center gap-2">
+                              <div className="h-px bg-amber-300/60 dark:bg-amber-800/60 flex-1" />
+                              <span className="text-[11px] font-black uppercase tracking-wider text-amber-700 dark:text-amber-400 font-display flex items-center gap-1.5 px-3.5 py-1 bg-amber-100/70 dark:bg-amber-950/60 rounded-full border border-amber-300 dark:border-amber-800/60 shadow-sm">
+                                <Zap className="w-3.5 h-3.5 text-amber-500" />
+                                <span>Anytime & Noise Queue (P5 Free Time • Simultaneous)</span>
+                              </span>
+                              <div className="h-px bg-amber-300/60 dark:bg-amber-800/60 flex-1" />
+                            </div>
+                          )}
                           {isFirstIncomplete && (
                             <div className="pt-4 pb-1.5 flex items-center gap-2">
                               <div className="h-px bg-red-300/60 dark:bg-red-900/60 flex-1" />
@@ -1122,16 +1142,23 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
                                       {task.title}
                                     </h4>
                                     <span className="font-mono text-xs font-bold px-2 py-0.5 rounded-md border shadow-2xs text-theme-muted bg-theme-card-hover/80 border-theme-border">
-                                      ~{task.appointedMinutes}m
+                                      {isNoTime ? (task.appointedMinutes > 0 ? `~${task.appointedMinutes}m (Free)` : '⚡ Free Time') : `~${task.appointedMinutes}m`}
                                     </span>
                                   </div>
 
                                   {/* Secondary Tier (Temporal) & Tertiary Tier (Muted Context) */}
                                   <div className="flex items-center gap-2 flex-wrap">
                                     {/* Secondary Tier: Time Window */}
-                                    <span className="font-mono text-xs font-bold px-2 py-0.5 rounded border text-theme-text bg-theme-card-hover border-theme-border">
-                                      {task.startTime} - {task.endTime}
-                                    </span>
+                                    {isNoTime ? (
+                                      <span className="font-mono text-xs font-bold px-2 py-0.5 rounded border text-amber-600 dark:text-amber-400 bg-amber-500/10 border-amber-500/30 flex items-center gap-1">
+                                        <span>⚡</span>
+                                        <span>Anytime • Free Time Slot</span>
+                                      </span>
+                                    ) : (
+                                      <span className="font-mono text-xs font-bold px-2 py-0.5 rounded border text-theme-text bg-theme-card-hover border-theme-border">
+                                        {task.startTime} - {task.endTime}
+                                      </span>
+                                    )}
 
                                     {/* Cross-Midnight 2-Date Continuity Badge */}
                                     {taskCrossesMidnight(task.startTime, task.endTime) && (
