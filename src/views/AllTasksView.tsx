@@ -48,7 +48,6 @@ import {
 } from 'lucide-react';
 import { exportTasksToExcelWorkbook, exportTasksToDetailedCSV } from '../utils/excelExporter';
 import { RescheduleModal } from '../components/RescheduleModal';
-import { RecurringManagerModal } from '../components/RecurringManagerModal';
 import { TableView } from '../components/views/TableView';
 import { TimelineView } from '../components/views/TimelineView';
 import { Day24HourView } from '../components/views/Day24HourView';
@@ -79,7 +78,8 @@ export const AllTasksView: React.FC<AllTasksViewProps> = ({ onOpenTaskModal }) =
     deleteTask,
     requestDeleteTask,
     searchQuery,
-    setSearchQuery 
+    setSearchQuery,
+    openRecurringHub
   } = useApp();
 
   const [isExportMenuOpen, setIsExportMenuOpen] = useState(false);
@@ -93,7 +93,6 @@ export const AllTasksView: React.FC<AllTasksViewProps> = ({ onOpenTaskModal }) =
   const [selectedCalendarDate, setSelectedCalendarDate] = useState<string>(toISODateString(new Date()));
   const [showCompletedArchive, setShowCompletedArchive] = useState(true);
   const [reschedulingTask, setReschedulingTask] = useState<Task | null>(null);
-  const [isRecurringHubOpen, setIsRecurringHubOpen] = useState(false);
   const [nowTime, setNowTime] = useState<Date>(new Date());
 
   const handleStatusChange = (task: Task, newStatus: TaskStatus) => {
@@ -1099,7 +1098,7 @@ export const AllTasksView: React.FC<AllTasksViewProps> = ({ onOpenTaskModal }) =
           </div>
 
           <button
-            onClick={() => setIsRecurringHubOpen(true)}
+            onClick={openRecurringHub}
             className="flex items-center gap-1.5 px-3 py-2 bg-indigo-50 dark:bg-indigo-950/60 hover:bg-indigo-100 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 rounded-xl text-xs font-bold transition-all shadow-sm"
             title="Manage All Recurring Tasks"
           >
@@ -1545,15 +1544,6 @@ export const AllTasksView: React.FC<AllTasksViewProps> = ({ onOpenTaskModal }) =
           capacitySettings={capacitySettings}
           onConfirmReschedule={handleConfirmReschedule}
           onClose={() => setReschedulingTask(null)}
-        />
-      )}
-
-      {/* Recurring Tasks & Schedules Hub Modal */}
-      {isRecurringHubOpen && (
-        <RecurringManagerModal
-          isOpen={isRecurringHubOpen}
-          onClose={() => setIsRecurringHubOpen(false)}
-          onOpenTaskModal={onOpenTaskModal}
         />
       )}
 

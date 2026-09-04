@@ -199,14 +199,7 @@ export function detectSignalVsNoise(params: {
   };
 }
 
-/**
- * Synthesizes a daily life review: accomplishments, noise leaks, circadian balance, and key recommendations.
- */
-export function generateDailyLifeSynthesis(
-  dateStr: string,
-  slices: DaySlice24[],
-  metrics: DayBreakdown24Metrics
-): {
+export interface DailyLifeSynthesis {
   headline: string;
   verdict: 'FLOW_MASTERY' | 'STRONG_FOCUS' | 'MODERATE_NOISE' | 'HIGH_LEAKAGE';
   verdictColor: string;
@@ -214,7 +207,16 @@ export function generateDailyLifeSynthesis(
   noiseLeaks: string[];
   reflectionSummary: string;
   recommendation: string;
-} {
+}
+
+/**
+ * Synthesizes a daily life review: accomplishments, noise leaks, circadian balance, and key recommendations.
+ */
+export function generateDailyLifeSynthesis(
+  dateStr: string,
+  slices: DaySlice24[],
+  metrics: DayBreakdown24Metrics
+): DailyLifeSynthesis {
   const signalSlices = slices.filter(s => s.signalNoise === 'signal' && s.type !== 'sleep');
   const noiseSlices = slices.filter(s => s.signalNoise === 'noise');
 

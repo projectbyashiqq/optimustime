@@ -20,7 +20,7 @@ import { LoginGate } from './components/LoginGate';
 import { Task } from './types';
 
 export const AppContent: React.FC = () => {
-  const { activeTab, isAuthenticated } = useApp();
+  const { activeTab, isAuthenticated, isRecurringHubOpen, closeRecurringHub } = useApp();
 
   // If user is locked out / unauthenticated, display Login Gate
   if (!isAuthenticated) {
@@ -35,7 +35,6 @@ export const AppContent: React.FC = () => {
   const [modalInitialProjectCode, setModalInitialProjectCode] = useState<string | undefined>(undefined);
   const [modalInitialCategory, setModalInitialCategory] = useState<string | undefined>(undefined);
   const [modalInitialPlanProjectId, setModalInitialPlanProjectId] = useState<string | undefined>(undefined);
-  const [isRecurringManagerOpen, setIsRecurringManagerOpen] = useState(false);
 
   const handleOpenTaskModal = (
     task?: Task, 
@@ -126,11 +125,11 @@ export const AppContent: React.FC = () => {
       {/* 100% System Backup & Data Recovery Hub Modal */}
       <BackupRestoreModal />
 
-      {/* Recurring Tasks & Schedules Manager Hub Modal */}
-      {isRecurringManagerOpen && (
+      {/* Recurring Tasks & Schedules Manager Hub Modal (God Admin) */}
+      {isRecurringHubOpen && (
         <RecurringManagerModal
-          isOpen={isRecurringManagerOpen}
-          onClose={() => setIsRecurringManagerOpen(false)}
+          isOpen={isRecurringHubOpen}
+          onClose={closeRecurringHub}
           onOpenTaskModal={handleOpenTaskModal}
         />
       )}

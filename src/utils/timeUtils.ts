@@ -623,7 +623,8 @@ export function findAllAvailableSlotsOnDate(
   ignoreTaskId?: string,
   sleepStartTime = '11:00 PM',
   sleepEndTime = '06:00 AM',
-  currentTaskSlot?: CurrentTaskSlotInfo
+  currentTaskSlot?: CurrentTaskSlotInfo,
+  defaultBufferMinutes = 0
 ): AvailableSlotResult[] {
   const now = new Date();
   const todayStr = toISODateString(now);
@@ -656,7 +657,7 @@ export function findAllAvailableSlotsOnDate(
       const aStart = parse12HourToMinutes(activeWorkingTask.startTime);
       if (aEnd < aStart) aEnd += 1440;
       if (dayEndMin > 1440 && aStart < dayStartMin) aEnd += 1440;
-      const aEndWithBuf = aEnd + (activeWorkingTask.bufferMinutes !== undefined ? activeWorkingTask.bufferMinutes : 15);
+      const aEndWithBuf = aEnd + (activeWorkingTask.bufferMinutes !== undefined ? activeWorkingTask.bufferMinutes : defaultBufferMinutes);
       effectiveEarliest = Math.max(effectiveEarliest, aEndWithBuf);
     }
   }
@@ -715,7 +716,7 @@ export function findAllAvailableSlotsOnDate(
       s += 1440;
       e += 1440;
     }
-    const buf = t.bufferMinutes !== undefined ? t.bufferMinutes : 15;
+    const buf = t.bufferMinutes !== undefined ? t.bufferMinutes : defaultBufferMinutes;
     return { start: s, end: e + buf };
   }).sort((a, b) => a.start - b.start);
 
@@ -843,7 +844,8 @@ export function findAvailableSlotOnDate(
   earliestAllowedMinutes?: number,
   ignoreTaskId?: string,
   sleepStartTime = '11:00 PM',
-  sleepEndTime = '06:00 AM'
+  sleepEndTime = '06:00 AM',
+  defaultBufferMinutes = 0
 ): AvailableSlotResult | null {
   const slots = findAllAvailableSlotsOnDate(
     dateStr,
@@ -855,7 +857,9 @@ export function findAvailableSlotOnDate(
     1,
     ignoreTaskId,
     sleepStartTime,
-    sleepEndTime
+    sleepEndTime,
+    undefined,
+    defaultBufferMinutes
   );
   return slots.length > 0 ? slots[0] : null;
 }
@@ -2082,7 +2086,7 @@ export function findNextAvailableSlot(
   ignoreTaskId?: string,
   startDateStr?: string,
   preferPm = false,
-  bufferGap = 15,
+  bufferGap = 0,
   currentTaskSlot?: CurrentTaskSlotInfo
 ): SuggestedNextSlotResult | null {
   const now = new Date();

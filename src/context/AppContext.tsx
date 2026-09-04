@@ -124,6 +124,18 @@ interface AppContextType {
   deleteRecurringSeries: (taskId: string) => void;
   pauseRecurringSeries: (taskId: string) => void;
   resumeRecurringSeries: (taskId: string) => void;
+  isRecurringHubOpen: boolean;
+  openRecurringHub: () => void;
+  closeRecurringHub: () => void;
+  updateRecurringSeriesEntirely: (
+    seriesId: string, 
+    updates: Partial<Task>, 
+    options?: { syncSnapshots?: boolean; clearExclusions?: boolean; propagateScope?: 'all' | 'future' }
+  ) => void;
+  shiftRecurringSeriesTime: (seriesId: string, shiftMinutes: number) => void;
+  duplicateRecurringSeries: (seriesId: string) => Task | null;
+  bulkPauseRecurringSeries: () => void;
+  bulkResumeRecurringSeries: () => void;
   requestDeleteTask: (task: Task, date?: string) => void;
   recurringDeletePrompt: { isOpen: boolean; task?: Task; date?: string } | null;
   closeRecurringDeletePrompt: () => void;
@@ -1220,11 +1232,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       startTime,
       endTime,
       status: taskData.status || 'Pending',
-      bufferMinutes: 15,
+      bufferMinutes: taskData.bufferMinutes !== undefined
+        ? taskData.bufferMinutes
+        : (defaultTaskSettings.defaultBufferMinutes ?? capacitySettings.defaultBufferMinutes ?? 0),
       recurrence: taskData.recurrence || 'None',
       selectedDays: taskData.selectedDays || [],
       isMandatorySchedule: taskData.isMandatorySchedule || false,
       planProjectId: taskData.planProjectId,
+      rescheduleCount: 0,
+      originallyAddedAt: new Date().toISOString(),
+      originalScheduledDate: date,
+      originalScheduledStartTime: startTime,
       executionLogs: [],
       totalActualMinutes: 0,
       notes: taskData.notes || '',
@@ -1438,6 +1456,216 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return t;
     }));
   }, [logLifeEvent]);
+
+  // God Admin Recurring Hub Controls
+  const [isRecurringHubOpen, setIsRecurringHubOpen] = useState(false);
+  const openRecurringHub = useCallback(() => setIsRecurringHubOpen(true), []);
+  const closeRecurringHub = useCallback(() => setIsRecurringHubOpen(false), []);
+
+  // Update Recurring Series Entirely (Supreme God Admin)
+  const updateRecurringSeriesEntirely = useCallback((
+    seriesId: string, 
+    updates: Partial<Task>, 
+    options?: { syncSnapshots?: boolean; clearExclusions?: boolean; propagateScope?: 'all' | 'future' }
+  ) => {
+    const todayStr = toISODateString(new Date());
+    const clearExclusions = options?.clearExclusions ?? false;
+    const syncSnapshots = options?.syncSnapshots ?? true;
+    const propagateScope = options?.propagateScope ?? 'all';
+
+    setTasks(prev => {
+      const target = prev.find(t => t.id === seriesId);
+      if (!target) return prev;
+
+      const updatedTitle = updates.title !== undefined ? updates.title.trim() : target.title;
+      const updatedDescription = updates.description !== undefined ? updates.description : target.description;
+      const updatedPriority = updates.priority || target.priority;
+      const updatedCategory = updates.category || target.category;
+      const updatedSubCategory = updates.subCategory !== undefined ? updates.subCategory : target.subCategory;
+      const updatedStartTime = updates.startTime || target.startTime;
+      const updatedEndTime = updates.endTime || target.endTime;
+      const updatedAppointedMinutes = updates.appointedMinutes !== undefined ? updates.appointedMinutes : target.appointedMinutes;
+      const updatedBufferMinutes = updates.bufferMinutes !== undefined ? updates.bufferMinutes : target.bufferMinutes;
+      const updatedRecurrence = updates.recurrence || target.recurrence;
+      const updatedSelectedDays = updates.selectedDays !== undefined ? updates.selectedDays : target.selectedDays;
+      const updatedIsMandatory = updates.isMandatorySchedule !== undefined ? updates.isMandatorySchedule : target.isMandatorySchedule;
+      const updatedPlanProjectId = updates.planProjectId !== undefined ? updates.planProjectId : target.planProjectId;
+      const updatedNotes = updates.notes !== undefined ? updates.notes : target.notes;
+      const updatedLinks = updates.links !== undefined ? updates.links : target.links;
+      const updatedSubtasks = updates.subtasks !== undefined ? updates.subtasks : target.subtasks;
+      const updatedStatus = updates.status || target.status;
+
+      let updatedExclusions = target.excludedDates || [];
+      if (clearExclusions) {
+        updatedExclusions = [];
+      }
+
+      const updatedMaster: Task = {
+        ...target,
+        title: updatedTitle,
+        description: updatedDescription,
+        priority: updatedPriority,
+        category: updatedCategory,
+        subCategory: updatedSubCategory,
+        startTime: updatedStartTime,
+        endTime: updatedEndTime,
+        appointedMinutes: updatedAppointedMinutes,
+        bufferMinutes: updatedBufferMinutes,
+        recurrence: updatedRecurrence,
+        selectedDays: updatedSelectedDays,
+        isMandatorySchedule: updatedIsMandatory,
+        planProjectId: updatedPlanProjectId,
+        notes: updatedNotes,
+        links: updatedLinks,
+        subtasks: updatedSubtasks,
+        status: updatedStatus,
+        excludedDates: updatedExclusions
+      };
+
+      return prev.map(t => {
+        if (t.id === seriesId) {
+          return updatedMaster;
+        }
+
+        if (syncSnapshots && t.id.startsWith(`snap-${seriesId}-`)) {
+          if (propagateScope === 'future' && t.taskDate < todayStr) {
+            return t;
+          }
+          return {
+            ...t,
+            title: updatedTitle,
+            description: updatedDescription,
+            priority: updatedPriority,
+            category: updatedCategory,
+            subCategory: updatedSubCategory,
+            startTime: updatedStartTime,
+            endTime: updatedEndTime,
+            appointedMinutes: updatedAppointedMinutes,
+            bufferMinutes: updatedBufferMinutes,
+            isMandatorySchedule: updatedIsMandatory,
+            planProjectId: updatedPlanProjectId,
+            notes: updatedNotes,
+            links: updatedLinks,
+            subtasks: updatedSubtasks
+          };
+        }
+
+        return t;
+      });
+    });
+
+    logLifeEvent({
+      eventType: 'TASK_SERIES_UPDATED',
+      taskId: seriesId,
+      taskTitle: updates.title,
+      message: `👑 God Admin: Updated recurring series "${updates.title || seriesId}" entirely across the system`,
+      details: {
+        newStartTime: updates.startTime,
+        newEndTime: updates.endTime,
+        appointedMinutes: updates.appointedMinutes,
+        priority: updates.priority,
+        category: updates.category
+      }
+    });
+
+    playNotificationChime('success');
+  }, [logLifeEvent]);
+
+  // Batch Time-Shift for Recurring Series
+  const shiftRecurringSeriesTime = useCallback((seriesId: string, shiftMinutes: number) => {
+    setTasks(prev => {
+      const target = prev.find(t => t.id === seriesId);
+      if (!target) return prev;
+
+      const newStart = addMinutesToTime(target.startTime, shiftMinutes);
+      const duration = target.appointedMinutes || diffTimeInMinutes(target.startTime, target.endTime);
+      const newEnd = addMinutesToTime(newStart, duration);
+
+      logLifeEvent({
+        eventType: 'TASK_SERIES_UPDATED',
+        taskId: target.id,
+        taskTitle: target.title,
+        projectCode: target.projectCode,
+        message: `⚡ God Admin: Shifted recurring series "${target.title}" by ${shiftMinutes > 0 ? `+${shiftMinutes}m` : `${shiftMinutes}m`} (${target.startTime} → ${newStart})`,
+        details: {
+          previousStartTime: target.startTime,
+          newStartTime: newStart,
+          previousEndTime: target.endTime,
+          newEndTime: newEnd
+        }
+      });
+
+      return prev.map(t => {
+        if (t.id === seriesId) {
+          return {
+            ...t,
+            startTime: newStart,
+            endTime: newEnd
+          };
+        }
+        return t;
+      });
+    });
+
+    playNotificationChime('success');
+  }, [logLifeEvent]);
+
+  // Duplicate Recurring Series
+  const duplicateRecurringSeries = useCallback((seriesId: string) => {
+    let clonedTask: Task | null = null;
+
+    setTasks(prev => {
+      const target = prev.find(t => t.id === seriesId);
+      if (!target) return prev;
+
+      const newCode = generateProjectCode();
+      clonedTask = {
+        ...target,
+        id: `rec-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+        projectCode: newCode,
+        title: `${target.title} (Copy)`,
+        dateAdded: new Date().toISOString(),
+        excludedDates: [],
+        executionLogs: [],
+        totalActualMinutes: 0,
+        status: 'Pending'
+      };
+
+      logLifeEvent({
+        eventType: 'TASK_CREATED',
+        taskId: clonedTask.id,
+        taskTitle: clonedTask.title,
+        projectCode: clonedTask.projectCode,
+        message: `📋 Duplicated recurring series "${target.title}" to new series (${clonedTask.projectCode})`
+      });
+
+      return [clonedTask, ...prev];
+    });
+
+    playNotificationChime('success');
+    return clonedTask;
+  }, [logLifeEvent]);
+
+  // Bulk Pause / Resume All Recurring Series
+  const bulkPauseRecurringSeries = useCallback(() => {
+    setTasks(prev => prev.map(t => {
+      if (t.recurrence && t.recurrence !== 'None' && t.status !== 'Hold') {
+        return { ...t, status: 'Hold' as TaskStatus };
+      }
+      return t;
+    }));
+    playNotificationChime('alert');
+  }, []);
+
+  const bulkResumeRecurringSeries = useCallback(() => {
+    setTasks(prev => prev.map(t => {
+      if (t.recurrence && t.recurrence !== 'None' && t.status === 'Hold') {
+        return { ...t, status: 'Pending' as TaskStatus };
+      }
+      return t;
+    }));
+    playNotificationChime('success');
+  }, []);
 
   // Execution Trackers: Start Task (With Exact Current Time Alignment & Early/Late Detection)
   const startTask = useCallback((taskId: string) => {
@@ -1927,7 +2155,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           status: 'Pending' as TaskStatus,
           recurrence: 'None',
           selectedDays: [],
-          dateAdded: new Date().toISOString()
+          dateAdded: new Date().toISOString(),
+          rescheduleCount: (target.rescheduleCount || 0) + 1,
+          lastRescheduledAt: new Date().toISOString(),
+          originallyAddedAt: target.originallyAddedAt || target.dateAdded || new Date().toISOString(),
+          originalScheduledDate: target.originalScheduledDate || target.taskDate,
+          originalScheduledStartTime: target.originalScheduledStartTime || target.startTime,
+          bufferMinutes: target.bufferMinutes !== undefined
+            ? target.bufferMinutes
+            : (defaultTaskSettings.defaultBufferMinutes ?? capacitySettings.defaultBufferMinutes ?? 0)
         };
 
         logLifeEvent({
@@ -1978,7 +2214,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             dayOfWeek: getDayOfWeekFromDate(newDate),
             startTime: newStartTime,
             endTime: newEndTime,
-            status: 'Pending' as TaskStatus
+            status: 'Pending' as TaskStatus,
+            rescheduleCount: (t.rescheduleCount || 0) + 1,
+            lastRescheduledAt: new Date().toISOString(),
+            originallyAddedAt: t.originallyAddedAt || t.dateAdded || new Date().toISOString(),
+            originalScheduledDate: t.originalScheduledDate || t.taskDate,
+            originalScheduledStartTime: t.originalScheduledStartTime || t.startTime,
+            bufferMinutes: t.bufferMinutes !== undefined
+              ? t.bufferMinutes
+              : (defaultTaskSettings.defaultBufferMinutes ?? capacitySettings.defaultBufferMinutes ?? 0)
           };
         }
         return t;
@@ -2675,6 +2919,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         deleteRecurringSeries,
         pauseRecurringSeries,
         resumeRecurringSeries,
+        isRecurringHubOpen,
+        openRecurringHub,
+        closeRecurringHub,
+        updateRecurringSeriesEntirely,
+        shiftRecurringSeriesTime,
+        duplicateRecurringSeries,
+        bulkPauseRecurringSeries,
+        bulkResumeRecurringSeries,
         requestDeleteTask,
         recurringDeletePrompt,
         closeRecurringDeletePrompt,

@@ -98,6 +98,12 @@ export interface Task {
   // Mandatory / Fixed Schedule Flag (Non-reschedulable, irreplaceable & protected from auto-shifts)
   isMandatorySchedule?: boolean;
 
+  // Reschedule & Creation Analytics
+  rescheduleCount?: number; // Total number of times this task was rescheduled
+  lastRescheduledAt?: string; // ISO timestamp of the most recent reschedule
+  originallyAddedAt?: string; // ISO timestamp when task was first added to system
+  originalScheduledDate?: string; // Initial taskDate when first created
+
   // Plan / Project Folder Association
   planProjectId?: string;
 
@@ -337,6 +343,7 @@ export type LifeEventType =
   | 'TASK_DELETED'
   | 'TASK_INSTANCE_EXCLUDED'
   | 'TASK_SERIES_DELETED'
+  | 'TASK_SERIES_UPDATED'
   | 'PLAN_PROJECT_CREATED'
   | 'PLAN_PROJECT_UPDATED'
   | 'PLAN_PROJECT_DELETED'

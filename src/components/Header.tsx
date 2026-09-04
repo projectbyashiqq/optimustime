@@ -15,7 +15,8 @@ import {
   Lock,
   Cloud,
   CloudOff,
-  RefreshCw
+  RefreshCw,
+  Repeat
 } from 'lucide-react';
 import { ThemeName } from '../types';
 
@@ -38,6 +39,7 @@ export const Header: React.FC<HeaderProps> = ({ onOpenNewTaskModal }) => {
     cloudSyncConfig,
     cloudSyncStatus,
     syncNow,
+    openRecurringHub,
     setActiveTab
   } = useApp();
 
@@ -228,6 +230,19 @@ export const Header: React.FC<HeaderProps> = ({ onOpenNewTaskModal }) => {
                   : cloudSyncStatus === 'error'
                   ? 'Error'
                   : 'Local'}
+              </span>
+            </button>
+
+            {/* Recurring Hub God Admin Button */}
+            <button
+              onClick={openRecurringHub}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-theme-border bg-theme-card-hover hover:bg-theme-border text-theme-muted hover:text-theme-text text-xs font-semibold transition-all cursor-pointer shrink-0"
+              title="Recurring Tasks & Schedules Hub (God Admin)"
+            >
+              <Repeat className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
+              <span className="hidden lg:inline text-[11px]">Recurring</span>
+              <span className="text-[9px] font-mono font-black px-1.5 py-0.2 rounded-full bg-indigo-100 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300">
+                {tasks.filter(t => t.recurrence && t.recurrence !== 'None').length}
               </span>
             </button>
 

@@ -59,7 +59,6 @@ import {
   Sunrise
 } from 'lucide-react';
 import { RescheduleModal } from '../components/RescheduleModal';
-import { RecurringManagerModal } from '../components/RecurringManagerModal';
 import { MorningRolloverBanner } from '../components/MorningRolloverBanner';
 import { ListTodo, CalendarDays, Grid3X3, Table as TableIcon } from 'lucide-react';
 
@@ -96,7 +95,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
     activeBufferPrompt,
     setActiveBufferPrompt,
     setActiveTab,
-    timePeriodSettings
+    timePeriodSettings,
+    defaultTaskSettings,
+    openRecurringHub
   } = useApp();
 
   const [dashboardMode, setDashboardMode] = useState<DashboardMode>('time');
@@ -105,7 +106,6 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
   const [showPriorityBacklog, setShowPriorityBacklog] = useState(false);
   const [showCompletedSection, setShowCompletedSection] = useState(true);
   const [reschedulingTask, setReschedulingTask] = useState<Task | null>(null);
-  const [isRecurringHubOpen, setIsRecurringHubOpen] = useState(false);
   const [nowTime, setNowTime] = useState<Date>(new Date());
   const [showPastGaps, setShowPastGaps] = useState(false);
 
@@ -165,7 +165,15 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
         dayOfWeek: getDayOfWeekFromDate(newDate),
         startTime: newStartTime,
         endTime: newEndTime,
-        status: 'Pending'
+        status: 'Pending',
+        rescheduleCount: (taskToReschedule.rescheduleCount || 0) + 1,
+        lastRescheduledAt: new Date().toISOString(),
+        originallyAddedAt: taskToReschedule.originallyAddedAt || taskToReschedule.dateAdded || new Date().toISOString(),
+        originalScheduledDate: taskToReschedule.originalScheduledDate || taskToReschedule.taskDate,
+        originalScheduledStartTime: taskToReschedule.originalScheduledStartTime || taskToReschedule.startTime,
+        bufferMinutes: taskToReschedule.bufferMinutes !== undefined
+          ? taskToReschedule.bufferMinutes
+          : (capacitySettings.defaultBufferMinutes ?? defaultTaskSettings?.defaultBufferMinutes ?? 0)
       });
     }
     setReschedulingTask(null);
@@ -534,7 +542,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
 
           {/* Recurring Hub Button */}
           <button
-            onClick={() => setIsRecurringHubOpen(true)}
+            onClick={openRecurringHub}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap shrink-0 bg-theme-card-hover text-theme-muted hover:text-theme-text border border-theme-border transition-colors"
             title="Manage All Recurring Tasks & Schedules"
           >
@@ -1106,6 +1114,17 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
                                        {task.category}
                                        {task.subCategory ? ` / ${task.subCategory}` : ''}
                                      </span>
+
+                                    {/* Rescheduled Tracker Badge */}
+                                    {Boolean(task.rescheduleCount && task.rescheduleCount > 0) && (
+                                      <span 
+                                        className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-full border border-purple-300 dark:border-purple-800 bg-purple-50/80 dark:bg-purple-950/40 text-purple-700 dark:text-purple-300 flex items-center gap-1 shrink-0"
+                                        title={`Rescheduled ${task.rescheduleCount}x • Originally added: ${formatDisplayDate(task.originallyAddedAt || task.dateAdded)}`}
+                                      >
+                                        <RotateCcw className="w-2.5 h-2.5" />
+                                        <span>Rescheduled {task.rescheduleCount}x</span>
+                                      </span>
+                                    )}
 
                                     {/* Tertiary Context: Day Zone (Subtle) */}
                                     {timePeriodSettings?.isEnabled && (() => {
@@ -2129,15 +2148,6 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
           capacitySettings={capacitySettings}
           onConfirmReschedule={handleConfirmReschedule}
           onClose={() => setReschedulingTask(null)}
-        />
-      )}
-
-      {/* Recurring Tasks & Schedules Hub Modal */}
-      {isRecurringHubOpen && (
-        <RecurringManagerModal
-          isOpen={isRecurringHubOpen}
-          onClose={() => setIsRecurringHubOpen(false)}
-          onOpenTaskModal={onOpenTaskModal}
         />
       )}
 
