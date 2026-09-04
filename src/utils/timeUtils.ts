@@ -919,7 +919,8 @@ export function findAllAvailableSlotsOnDate(
   sleepStartTime = '11:00 PM',
   sleepEndTime = '06:00 AM',
   currentTaskSlot?: CurrentTaskSlotInfo,
-  defaultBufferMinutes = 0
+  defaultBufferMinutes = 0,
+  preferredTimeStr?: string
 ): AvailableSlotResult[] {
   const now = new Date();
   const todayStr = toISODateString(now);
@@ -1074,8 +1075,13 @@ export function findAllAvailableSlotsOnDate(
       return false;
     }
 
-    // Do not suggest the exact same unchanged start time back to the user
+    // Do not suggest the exact same unchanged start time back to the user on the SAME date
     if (currentTaskSlot && dateStr === currentTaskSlot.date && startStr === currentTaskSlot.startTime) {
+      return false;
+    }
+
+    // Avoid duplicate start times in results
+    if (results.some(r => r.startTime === startStr)) {
       return false;
     }
 
@@ -1131,18 +1137,59 @@ export function findAllAvailableSlotsOnDate(
     return true;
   };
 
-  for (const gap of gaps) {
-    if (results.length >= maxSlotsPerDay) break;
-    tryAddCandidateSlot(gap.start);
+  // Collect candidate slot starting minutes across all gaps
+  const candidateStarts = new Set<number>();
+  const step = Math.max(15, Math.min(30, durationMinutes >= 90 ? 45 : 30));
 
-    // If gap is large enough, add intermediate step slots (e.g. +30m or +60m)
-    const step = Math.max(30, durationMinutes >= 90 ? 60 : 30);
+  for (const gap of gaps) {
+    candidateStarts.add(gap.start);
     let nextStart = gap.start + step;
-    while (nextStart + durationMinutes <= gap.end && results.length < maxSlotsPerDay) {
-      tryAddCandidateSlot(nextStart);
+    while (nextStart + durationMinutes <= gap.end) {
+      candidateStarts.add(nextStart);
       nextStart += step;
     }
   }
+
+  // If a preferred core time was provided, explicitly anchor around it inside the gaps
+  if (preferredTimeStr) {
+    let prefMin = parse12HourToMinutes(preferredTimeStr);
+    if (dayEndMin > 1440 && prefMin < dayStartMin) prefMin += 1440;
+
+    const proximityOffsets = [0, -15, 15, -30, 30, -45, 45, -60, 60, -90, 90, -120, 120, -150, 150, -180, 180, -240, 240];
+    for (const off of proximityOffsets) {
+      const targetMin = prefMin + off;
+      for (const gap of gaps) {
+        if (targetMin >= gap.start && targetMin + durationMinutes <= gap.end) {
+          candidateStarts.add(targetMin);
+        }
+      }
+    }
+  }
+
+  // Sort candidate starts:
+  // If preferredTimeStr is provided: sort by proximity to the task's CORE TIME so that core time and adjacent slots are chosen first!
+  let sortedCandidates = Array.from(candidateStarts);
+  if (preferredTimeStr) {
+    let prefMin = parse12HourToMinutes(preferredTimeStr);
+    if (dayEndMin > 1440 && prefMin < dayStartMin) prefMin += 1440;
+    sortedCandidates.sort((a, b) => Math.abs(a - prefMin) - Math.abs(b - prefMin));
+  } else {
+    sortedCandidates.sort((a, b) => a - b);
+  }
+
+  for (const cand of sortedCandidates) {
+    if (results.length >= maxSlotsPerDay) break;
+    tryAddCandidateSlot(cand);
+  }
+
+  // Final presentation sort: chronological order
+  results.sort((a, b) => {
+    let aMin = parse12HourToMinutes(a.startTime);
+    let bMin = parse12HourToMinutes(b.startTime);
+    if (dayEndMin > 1440 && aMin < dayStartMin) aMin += 1440;
+    if (dayEndMin > 1440 && bMin < dayStartMin) bMin += 1440;
+    return aMin - bMin;
+  });
 
   return results;
 }
@@ -1161,7 +1208,8 @@ export function findAvailableSlotOnDate(
   ignoreTaskId?: string,
   sleepStartTime = '11:00 PM',
   sleepEndTime = '06:00 AM',
-  defaultBufferMinutes = 0
+  defaultBufferMinutes = 0,
+  preferredTimeStr?: string
 ): AvailableSlotResult | null {
   const slots = findAllAvailableSlotsOnDate(
     dateStr,
@@ -1175,7 +1223,8 @@ export function findAvailableSlotOnDate(
     sleepStartTime,
     sleepEndTime,
     undefined,
-    defaultBufferMinutes
+    defaultBufferMinutes,
+    preferredTimeStr
   );
   return slots.length > 0 ? slots[0] : null;
 }
@@ -2406,7 +2455,8 @@ export function findNextAvailableSlot(
   startDateStr?: string,
   preferPm = false,
   bufferGap = 0,
-  currentTaskSlot?: CurrentTaskSlotInfo
+  currentTaskSlot?: CurrentTaskSlotInfo,
+  preferredTimeStr?: string
 ): SuggestedNextSlotResult | null {
   const now = new Date();
   const todayStr = toISODateString(now);
@@ -2556,29 +2606,61 @@ export function findNextAvailableSlot(
       return true;
     };
 
-    // Look for first gap that fits taskDurationMinutes outside sleep window
-    let cursor = earliestAllowed;
     let foundSlot: { start: number; end: number } | null = null;
 
-    for (const block of merged) {
-      if (block.start > cursor) {
-        const gapStart = Math.max(cursor, earliestAllowed);
-        const gapEnd = Math.min(block.start, wakingEndMin);
-        if (gapEnd - gapStart >= taskDurationMinutes) {
-          if (isValidCandidate(gapStart)) {
-            foundSlot = { start: gapStart, end: gapStart + taskDurationMinutes };
-            break;
+    // 1. If preferred core time is provided, prioritize matching the task's CORE TIME first!
+    if (preferredTimeStr) {
+      let prefMin = parse12HourToMinutes(preferredTimeStr);
+      if (wakingEndMin > 1440 && prefMin < wakingStartMin) prefMin += 1440;
+
+      // Check if exact core time fits on this date without collision
+      if (prefMin >= earliestAllowed && prefMin + taskDurationMinutes <= wakingEndMin && isValidCandidate(prefMin)) {
+        const hasCollision = merged.some(b => Math.max(prefMin, b.start) < Math.min(prefMin + taskDurationMinutes, b.end));
+        if (!hasCollision) {
+          foundSlot = { start: prefMin, end: prefMin + taskDurationMinutes };
+        }
+      }
+
+      // If exact core time is occupied on this date, check closest nearby offsets (e.g. +15, -15, +30, -30...)
+      if (!foundSlot) {
+        const proximityOffsets = [15, -15, 30, -30, 45, -45, 60, -60, 90, -90, 120, -120];
+        for (const off of proximityOffsets) {
+          const tMin = prefMin + off;
+          if (tMin >= earliestAllowed && tMin + taskDurationMinutes <= wakingEndMin && isValidCandidate(tMin)) {
+            const hasCollision = merged.some(b => Math.max(tMin, b.start) < Math.min(tMin + taskDurationMinutes, b.end));
+            if (!hasCollision) {
+              foundSlot = { start: tMin, end: tMin + taskDurationMinutes };
+              break;
+            }
           }
         }
       }
-      cursor = Math.max(cursor, block.end);
     }
 
-    if (!foundSlot && cursor < wakingEndMin) {
-      const gapStart = Math.max(cursor, earliestAllowed);
-      if (wakingEndMin - gapStart >= taskDurationMinutes) {
-        if (isValidCandidate(gapStart)) {
-          foundSlot = { start: gapStart, end: gapStart + taskDurationMinutes };
+    // 2. If core time or nearby offsets were not available, search remaining gaps sequentially
+    if (!foundSlot) {
+      let cursor = earliestAllowed;
+
+      for (const block of merged) {
+        if (block.start > cursor) {
+          const gapStart = Math.max(cursor, earliestAllowed);
+          const gapEnd = Math.min(block.start, wakingEndMin);
+          if (gapEnd - gapStart >= taskDurationMinutes) {
+            if (isValidCandidate(gapStart)) {
+              foundSlot = { start: gapStart, end: gapStart + taskDurationMinutes };
+              break;
+            }
+          }
+        }
+        cursor = Math.max(cursor, block.end);
+      }
+
+      if (!foundSlot && cursor < wakingEndMin) {
+        const gapStart = Math.max(cursor, earliestAllowed);
+        if (wakingEndMin - gapStart >= taskDurationMinutes) {
+          if (isValidCandidate(gapStart)) {
+            foundSlot = { start: gapStart, end: gapStart + taskDurationMinutes };
+          }
         }
       }
     }
@@ -2607,6 +2689,21 @@ export function findNextAvailableSlot(
         calculatedEndDate = toISODateString(new Date(sy, sm - 1, sd + 1));
       }
 
+      let reason = 'Earliest upcoming conflict-free slot.';
+      if (preferredTimeStr && startStr === preferredTimeStr) {
+        reason = isNextDay 
+          ? `Preserves your core routine time (${preferredTimeStr}) on ${slotDateStr}.` 
+          : `Matches your core routine time (${preferredTimeStr}).`;
+      } else if (preferredTimeStr && isNextDay) {
+        reason = `Closest available slot to your core time (${preferredTimeStr}) on ${slotDateStr}.`;
+      } else if (isNextDay) {
+        reason = actualOffset === 1 
+          ? `🌅 Next Day Slot on ${slotDayOfWeek} (${slotDateStr})` 
+          : `📅 In ${actualOffset} Days on ${slotDayOfWeek}`;
+      } else {
+        reason = '⚡ Earliest Available Free Slot Today';
+      }
+
       return {
         date: slotDateStr,
         dayOfWeek: slotDayOfWeek,
@@ -2616,9 +2713,7 @@ export function findNextAvailableSlot(
         period,
         isNextDay,
         daysOffset: actualOffset,
-        reason: isNextDay 
-          ? `🌅 Next Day Slot on ${slotDayOfWeek} (${slotDateStr})` 
-          : '⚡ Earliest Available Free Slot Today',
+        reason,
         crossesMidnight: crosses,
         endDate: calculatedEndDate,
         isAfterMidnight: daysToAdd > 0
@@ -3085,4 +3180,380 @@ export function getTimePeriodName(
 ): string | null {
   const match = getTimePeriodForTime(timeStr, periodsOrSettings);
   return match ? match.name : null;
+}
+
+export type UltradianFocusType = 'deep_focus_90' | 'sprint_45' | 'standard_30' | 'micro_15' | 'full_gap';
+
+export interface ScientificGapSlot {
+  slotId: string;
+  date: string;
+  dateLabel: string;
+  dayOfWeek: string;
+  isToday: boolean;
+  isTomorrow: boolean;
+  startTime: string;
+  endTime: string;
+  durationMinutes: number;
+  circadianPeriod: CircadianPeriodName;
+  circadianLabel: string;
+  circadianEmoji: string;
+  ultradianType: UltradianFocusType;
+  ultradianLabel: string;
+  ultradianEmoji: string;
+  isSimultaneous?: boolean;
+  simultaneousTaskTitle?: string;
+  isImmediate?: boolean;
+  isLateNight?: boolean;
+  absoluteEpochMinutes?: number;
+  parentGapWindow?: { startTime: string; endTime: string; durationMinutes: number };
+  period?: { name: string; emoji?: string } | null;
+}
+
+/**
+ * Scientifically calculates at least 10 high-value, actionable available slots across the calendar.
+ * Utilizes a Continuous Absolute Timeline Engine with Ultradian Rhythm Decomposition (90m, 45m, 30m, 15m),
+ * Circadian Phase mapping, and Multi-Day Lookahead to guarantee >= 10 slots without duplicate start times.
+ */
+export function getScientificDynamicGapSlots(params: {
+  selectedDate: string;
+  tasks: Array<{
+    id: string;
+    taskDate: string;
+    startTime: string;
+    endTime: string;
+    status: string;
+    bufferMinutes?: number;
+    actualEndTime?: string;
+    completedBeforeTimeOccurred?: boolean;
+    totalActualMinutes?: number;
+    recurrence?: string;
+    selectedDays?: string[];
+    excludedDates?: string[];
+    title?: string;
+    isSimultaneous?: boolean;
+    simultaneousWithIds?: string[];
+  }>;
+  bufferNotes: Array<{ id?: string; date?: string; startTime: string; endTime: string }>;
+  capacitySettings: CapacitySettings;
+  timePeriodSettings?: TimePeriodSettings;
+  minSlots?: number;
+  currentMinutes?: number;
+  referenceDate?: Date;
+  decomposeUltradian?: boolean;
+}): ScientificGapSlot[] {
+  const minSlots = params.minSlots ?? 10;
+  const decompose = params.decomposeUltradian !== false;
+  const now = params.referenceDate || getBangladeshNow();
+  const todayStr = toISODateString(now);
+
+  const wakingStart = params.capacitySettings?.dayStartTime || '06:00 AM';
+  const wakingEnd = params.capacitySettings?.dayEndTime || '11:00 PM';
+  const sleepStart = params.capacitySettings?.sleepStartTime || wakingEnd;
+  const sleepEnd = params.capacitySettings?.sleepEndTime || wakingStart;
+
+  const wakingStartMin = parse12HourToMinutes(wakingStart);
+  let wakingEndMin = parse12HourToMinutes(wakingEnd);
+  if (wakingEndMin <= wakingStartMin) wakingEndMin += 1440;
+
+  const currentMinutesFromMidnight = params.currentMinutes !== undefined 
+    ? params.currentMinutes 
+    : (now.getHours() * 60 + now.getMinutes());
+
+  // Active running task detection for immediate planning
+  const activeRunningTask = params.tasks.find(t => 
+    t.status === 'Working' && isTaskScheduledForDate(t, todayStr)
+  );
+
+  let earliestPlanningTodayMin = currentMinutesFromMidnight + 5;
+  if (activeRunningTask && activeRunningTask.startTime && activeRunningTask.endTime) {
+    const rStart = parse12HourToMinutes(activeRunningTask.startTime);
+    let rEnd = parse12HourToMinutes(activeRunningTask.endTime);
+    if (rEnd < rStart) rEnd += 1440;
+    const rBuf = activeRunningTask.bufferMinutes !== undefined ? activeRunningTask.bufferMinutes : (params.capacitySettings.defaultBufferMinutes ?? 0);
+    earliestPlanningTodayMin = Math.max(currentMinutesFromMidnight + 5, rEnd + rBuf);
+  }
+
+  // Helper to compute raw schedule gaps on any date
+  const getGapsForDate = (dateStr: string): TimeGap[] => {
+    const dTasks = params.tasks.filter(t => isTaskScheduledForDate(t, dateStr));
+    const dTasksForGaps = dTasks.map(t => {
+      const simList = findSimultaneousTasks(t, dTasks);
+      const isSimul = Boolean(
+        t.isSimultaneous ||
+        (t.simultaneousWithIds && t.simultaneousWithIds.length > 0) ||
+        simList.length > 0
+      );
+      return {
+        ...t,
+        isSimultaneous: isSimul,
+        simultaneousWithIds: isSimul ? (t.simultaneousWithIds?.length ? t.simultaneousWithIds : ['simultaneous-active']) : []
+      };
+    });
+    const dBuffers = params.bufferNotes.filter(n => n.date === dateStr);
+    return findScheduleGaps(
+      dTasksForGaps,
+      wakingStart,
+      wakingEnd,
+      dBuffers,
+      params.capacitySettings.defaultBufferMinutes ?? 0,
+      sleepStart,
+      sleepEnd
+    );
+  };
+
+  const [sYear, sMonth, sDay] = params.selectedDate.split('-').map(Number);
+  const baseDateObj = new Date(sYear, sMonth - 1, sDay);
+
+  const classifyCircadian = (timeStr: string) => {
+    const mins = parse12HourToMinutes(timeStr);
+    const cp = getStandardCircadianPeriod(mins);
+    let label = 'Morning Peak Focus';
+    let emoji = '☀️';
+    if (cp === 'Night') {
+      label = 'Deep Quiet Flow';
+      emoji = '🌙';
+    } else if (cp === 'Morning') {
+      label = 'Peak Cognition & Flow';
+      emoji = '☀️';
+    } else if (cp === 'Afternoon') {
+      label = 'Execution & Strategy';
+      emoji = '🌤️';
+    } else if (cp === 'Evening') {
+      label = 'Reflection & Synthesis';
+      emoji = '🌆';
+    }
+    return { circadianPeriod: cp, circadianLabel: label, circadianEmoji: emoji };
+  };
+
+  const classifyUltradian = (dur: number): { type: UltradianFocusType; label: string; emoji: string } => {
+    if (dur >= 90) return { type: 'deep_focus_90', label: '90m Deep Focus', emoji: '🧠' };
+    if (dur >= 45) return { type: 'sprint_45', label: '45m Power Sprint', emoji: '⚡' };
+    if (dur >= 30) return { type: 'standard_30', label: '30m Standard', emoji: '🎯' };
+    return { type: 'micro_15', label: `${dur}m Micro Win`, emoji: '☕' };
+  };
+
+  const gatheredSlots: ScientificGapSlot[] = [];
+  const claimedEpochIntervals: Array<{ start: number; end: number }> = [];
+
+  // Helper to test if a time interval collides with an already claimed interval on the absolute timeline
+  const isIntervalColliding = (start: number, end: number): boolean => {
+    return claimedEpochIntervals.some(inv => {
+      // Check for overlap: interval starts before inv ends AND ends after inv starts
+      return Math.max(start, inv.start) < Math.min(end, inv.end);
+    });
+  };
+
+  // Process a single calendar day with its day offset relative to baseDateObj
+  const processDateGaps = (dateStr: string, dayOffset: number) => {
+    const rawGaps = getGapsForDate(dateStr);
+    const isDateToday = dateStr === todayStr;
+
+    // Base minute for this calendar day on the continuous timeline
+    const baseDayEpoch = dayOffset * 1440;
+
+    for (const gap of rawGaps) {
+      let gStartMin = parse12HourToMinutes(gap.startTime);
+      let gEndMin = parse12HourToMinutes(gap.endTime);
+      if (gEndMin < gStartMin) gEndMin += 1440;
+
+      // Absolute epoch start & end for this gap
+      let gapEpochStart = baseDayEpoch + gStartMin;
+      let gapEpochEnd = baseDayEpoch + gEndMin;
+
+      // If this gap is for today, skip already elapsed time
+      let isImmediate = false;
+      if (isDateToday) {
+        const earliestPlanningEpoch = 0 * 1440 + earliestPlanningTodayMin;
+        if (gapEpochEnd <= earliestPlanningEpoch) {
+          continue; // Past gap already elapsed
+        }
+        if (gapEpochStart < earliestPlanningEpoch) {
+          gapEpochStart = earliestPlanningEpoch;
+          isImmediate = true;
+        } else if (gapEpochStart === earliestPlanningEpoch) {
+          isImmediate = true;
+        }
+      }
+
+      const availableMinutes = gapEpochEnd - gapEpochStart;
+      if (availableMinutes < 5) continue;
+
+      const parentWindow = {
+        startTime: gap.startTime,
+        endTime: gap.endTime,
+        durationMinutes: gap.durationMinutes
+      };
+
+      if (!decompose || availableMinutes < 60 || gap.isSimultaneousSlot) {
+        // Single unique discrete gap
+        if (!isIntervalColliding(gapEpochStart, gapEpochEnd)) {
+          claimedEpochIntervals.push({ start: gapEpochStart, end: gapEpochEnd });
+
+          // Calculate correct calendar date and time for the slot
+          const slotMinuteInDay = gapEpochStart % 1440;
+          const slotEndMinuteInDay = gapEpochEnd % 1440;
+          const slotDayOffset = Math.floor(gapEpochStart / 1440);
+
+          const slotDateObj = new Date(baseDateObj);
+          slotDateObj.setDate(baseDateObj.getDate() + slotDayOffset);
+          const slotDateStr = toISODateString(slotDateObj);
+
+          const slotIsToday = slotDateStr === todayStr;
+          const tomorrowDateObj = new Date(now);
+          tomorrowDateObj.setDate(now.getDate() + 1);
+          const slotIsTomorrow = slotDateStr === toISODateString(tomorrowDateObj);
+
+          const dateLabel = slotIsToday ? 'Today' : slotIsTomorrow ? 'Tomorrow' : formatDisplayDate(slotDateStr);
+          const dayOfWeek = getDayOfWeekFromDate(slotDateStr);
+
+          const sStartStr = formatMinutesTo12Hour(slotMinuteInDay);
+          const sEndStr = formatMinutesTo12Hour(slotEndMinuteInDay);
+          const circ = classifyCircadian(sStartStr);
+          const ultra = classifyUltradian(availableMinutes);
+          const isLateNight = slotMinuteInDay < 360;
+
+          gatheredSlots.push({
+            slotId: `slot-${slotDateStr}-${gapEpochStart}-${gapEpochEnd}`,
+            date: slotDateStr,
+            dateLabel,
+            dayOfWeek,
+            isToday: slotIsToday,
+            isTomorrow: slotIsTomorrow,
+            startTime: sStartStr,
+            endTime: sEndStr,
+            durationMinutes: availableMinutes,
+            circadianPeriod: circ.circadianPeriod,
+            circadianLabel: circ.circadianLabel,
+            circadianEmoji: circ.circadianEmoji,
+            ultradianType: ultra.type,
+            ultradianLabel: ultra.label,
+            ultradianEmoji: ultra.emoji,
+            isSimultaneous: gap.isSimultaneousSlot,
+            simultaneousTaskTitle: gap.simultaneousTaskTitle,
+            isImmediate,
+            isLateNight,
+            absoluteEpochMinutes: gapEpochStart,
+            parentGapWindow: parentWindow,
+            period: getTimePeriodForTime(sStartStr, params.timePeriodSettings)
+          });
+        }
+      } else {
+        // Progressive Sequential Ultradian Decomposition
+        // Strictly guarantees EVERY slot has a DISTINCT, PROGRESSIVE time window on the continuous timeline!
+        let cursorEpoch = gapEpochStart;
+        let isFirst = true;
+
+        while (cursorEpoch < gapEpochEnd) {
+          const remaining = gapEpochEnd - cursorEpoch;
+          if (remaining < 15) break;
+
+          let slotDur = 90;
+          let uType: UltradianFocusType = 'deep_focus_90';
+          let uLabel = '90m Deep Focus';
+          let uEmoji = '🧠';
+
+          if (remaining >= 105) { // 90m work + 15m buffer
+            slotDur = 90;
+            uType = 'deep_focus_90';
+            uLabel = '90m Deep Focus';
+            uEmoji = '🧠';
+          } else if (remaining >= 60) { // 45m sprint + 15m buffer
+            slotDur = 45;
+            uType = 'sprint_45';
+            uLabel = '45m Power Sprint';
+            uEmoji = '⚡';
+          } else if (remaining >= 35) { // 30m standard + 5m buffer
+            slotDur = 30;
+            uType = 'standard_30';
+            uLabel = '30m Standard';
+            uEmoji = '🎯';
+          } else {
+            slotDur = remaining;
+            uType = 'micro_15';
+            uLabel = `${slotDur}m Micro Win`;
+            uEmoji = '☕';
+          }
+
+          const sEpochStart = cursorEpoch;
+          const sEpochEnd = cursorEpoch + slotDur;
+
+          if (!isIntervalColliding(sEpochStart, sEpochEnd)) {
+            claimedEpochIntervals.push({ start: sEpochStart, end: sEpochEnd });
+
+            // Calculate precise calendar date and 12-hour strings
+            const slotMinuteInDay = sEpochStart % 1440;
+            const slotEndMinuteInDay = sEpochEnd % 1440;
+            const slotDayOffset = Math.floor(sEpochStart / 1440);
+
+            const slotDateObj = new Date(baseDateObj);
+            slotDateObj.setDate(baseDateObj.getDate() + slotDayOffset);
+            const slotDateStr = toISODateString(slotDateObj);
+
+            const slotIsToday = slotDateStr === todayStr;
+            const tomorrowDateObj = new Date(now);
+            tomorrowDateObj.setDate(now.getDate() + 1);
+            const slotIsTomorrow = slotDateStr === toISODateString(tomorrowDateObj);
+
+            const dateLabel = slotIsToday ? 'Today' : slotIsTomorrow ? 'Tomorrow' : formatDisplayDate(slotDateStr);
+            const dayOfWeek = getDayOfWeekFromDate(slotDateStr);
+
+            const sStartStr = formatMinutesTo12Hour(slotMinuteInDay);
+            const sEndStr = formatMinutesTo12Hour(slotEndMinuteInDay);
+            const circ = classifyCircadian(sStartStr);
+            const isLateNight = slotMinuteInDay < 360;
+
+            gatheredSlots.push({
+              slotId: `slot-${slotDateStr}-${sEpochStart}-${sEpochEnd}`,
+              date: slotDateStr,
+              dateLabel,
+              dayOfWeek,
+              isToday: slotIsToday,
+              isTomorrow: slotIsTomorrow,
+              startTime: sStartStr,
+              endTime: sEndStr,
+              durationMinutes: slotDur,
+              circadianPeriod: circ.circadianPeriod,
+              circadianLabel: circ.circadianLabel,
+              circadianEmoji: circ.circadianEmoji,
+              ultradianType: uType,
+              ultradianLabel: uLabel,
+              ultradianEmoji: uEmoji,
+              isImmediate: isFirst && isImmediate,
+              isLateNight,
+              absoluteEpochMinutes: sEpochStart,
+              parentGapWindow: parentWindow,
+              period: getTimePeriodForTime(sStartStr, params.timePeriodSettings)
+            });
+          }
+
+          isFirst = false;
+          // Step forward: slot duration + 15m buffer cushion
+          const cushion = Math.min(15, Math.max(0, gapEpochEnd - sEpochEnd));
+          cursorEpoch = sEpochEnd + cushion;
+        }
+      }
+    }
+  };
+
+  // 1. Process Selected Date (day offset 0)
+  processDateGaps(params.selectedDate, 0);
+
+  // 2. Lookahead sequentially (dayOffset 1..14) to guarantee at least `minSlots` (10 slots)
+  let offset = 1;
+  while (gatheredSlots.length < minSlots && offset <= 14) {
+    const nextDate = new Date(baseDateObj);
+    nextDate.setDate(baseDateObj.getDate() + offset);
+    const nextDateStr = toISODateString(nextDate);
+    processDateGaps(nextDateStr, offset);
+    offset++;
+  }
+
+  // Sort slots strictly chronologically along the absolute continuous timeline
+  gatheredSlots.sort((a, b) => {
+    const aEpoch = a.absoluteEpochMinutes ?? 0;
+    const bEpoch = b.absoluteEpochMinutes ?? 0;
+    return aEpoch - bEpoch;
+  });
+
+  return gatheredSlots;
 }

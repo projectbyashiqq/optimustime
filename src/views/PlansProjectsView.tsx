@@ -84,8 +84,8 @@ export const PlansProjectsView: React.FC<PlansProjectsViewProps> = ({ onOpenTask
   const todayStr = toISODateString(new Date());
 
   const handleConfirmReschedule = (taskToReschedule: Task, newDate: string, newStartTime: string, newEndTime: string, scope: 'single' | 'series' = 'single') => {
-    if (taskToReschedule.recurrence && taskToReschedule.recurrence !== 'None' && scope === 'single') {
-      rescheduleTask(taskToReschedule.id, newDate, newStartTime);
+    if (taskToReschedule.recurrence && taskToReschedule.recurrence !== 'None') {
+      rescheduleTask(taskToReschedule.id, newDate, newStartTime, taskToReschedule.taskDate, scope);
     } else {
       updateTask({
         ...taskToReschedule,
@@ -93,7 +93,13 @@ export const PlansProjectsView: React.FC<PlansProjectsViewProps> = ({ onOpenTask
         dayOfWeek: getDayOfWeekFromDate(newDate),
         startTime: newStartTime,
         endTime: newEndTime,
-        status: 'Pending'
+        status: 'Pending',
+        rescheduleCount: (taskToReschedule.rescheduleCount || 0) + 1,
+        lastRescheduledAt: new Date().toISOString(),
+        originalScheduledDate: newDate,
+        originalScheduledStartTime: newStartTime,
+        originalScheduledEndTime: newEndTime,
+        startDiscrepancyMinutes: 0
       });
     }
     setReschedulingTask(null);

@@ -7,7 +7,8 @@ import {
   diffTimeInMinutes,
   addMinutesToTime,
   toISODateString,
-  getCurrentRoundedTime12Hour
+  getCurrentRoundedTime12Hour,
+  getStandardCircadianPeriod
 } from '../utils/timeUtils';
 import { 
   Sparkles, 
@@ -19,7 +20,10 @@ import {
   Plus, 
   RotateCcw,
   Settings2,
-  Smile
+  Smile,
+  Compass,
+  Zap,
+  Maximize2
 } from 'lucide-react';
 import { TimePicker } from './TimePicker';
 
@@ -27,6 +31,27 @@ const PRESET_EMOJIS = [
   '☕', '🚶', '🥪', '🧘', '📚', '💤', '✨', '🧹', '💬', '🎯', '🎮', '📝',
   '🎨', '🎵', '🏋️', '🌳', '🛠️', '📖', '💡', '💆', '🏊', '🚗', '🍎', '🥤',
   '🎬', '🎧', '🚲', '📞', '🪴', '🐕'
+];
+
+interface LifeDiaryPreset {
+  label: string;
+  emoji: string;
+  defaultNote: string;
+  energy: number;
+  sn: SignalNoiseType;
+}
+
+const SCIENTIFIC_LIFE_PRESETS: LifeDiaryPreset[] = [
+  { label: 'Meal / Nutrition', emoji: '🥗', defaultNote: 'Mindful meal & nutritional recharge', energy: 4, sn: 'signal' },
+  { label: 'Walk & Fresh Air', emoji: '🚶', defaultNote: 'Brisk outdoor walk, posture reset & sunlight', energy: 4, sn: 'signal' },
+  { label: 'Coffee / Tea Break', emoji: '☕', defaultNote: 'Hydration & mental pause between deep focus sessions', energy: 4, sn: 'signal' },
+  { label: 'Prayer & Meditation', emoji: '🧘', defaultNote: 'Spiritual grounding, reflection & calmness', energy: 5, sn: 'signal' },
+  { label: 'Reading & Growth', emoji: '📖', defaultNote: 'Learning, book chapter, or deliberate study', energy: 4, sn: 'signal' },
+  { label: 'Family & Social', emoji: '💬', defaultNote: 'Meaningful connection with family or peers', energy: 4, sn: 'signal' },
+  { label: 'Workspace Reset', emoji: '🧹', defaultNote: 'Tidied desk, cleared physical & mental workspace', energy: 3, sn: 'signal' },
+  { label: 'Ideation & Planning', emoji: '💡', defaultNote: 'Strategic thinking & cognitive daily review', energy: 5, sn: 'signal' },
+  { label: 'Power Rest & Nap', emoji: '💤', defaultNote: 'Circadian recovery nap to eliminate cognitive fatigue', energy: 4, sn: 'signal' },
+  { label: 'Physical Workout', emoji: '🏋️', defaultNote: 'Cardio, stretching, or resistance training', energy: 5, sn: 'signal' }
 ];
 
 export const BufferNoteModal: React.FC = () => {
@@ -296,30 +321,103 @@ export const BufferNoteModal: React.FC = () => {
         <form onSubmit={handleSaveNote} className="p-5 space-y-5 overflow-y-auto flex-1">
           
           {/* Main Question Highlight Card */}
-          <div className="p-4 rounded-2xl bg-gradient-to-r from-amber-50/80 via-sky-50/60 to-emerald-50/80 dark:from-amber-950/30 dark:via-sky-950/20 dark:to-emerald-950/30 border border-amber-200/80 dark:border-amber-900/40 space-y-1.5">
-            <div className="flex items-center gap-2 text-xs font-black uppercase tracking-wider text-amber-800 dark:text-amber-300 font-display">
-              <Sparkles className="w-4 h-4 text-amber-500" />
-              <span>Free-Time Reflection Question</span>
+          <div className="p-4 rounded-2xl bg-gradient-to-r from-amber-50/80 via-sky-50/60 to-emerald-50/80 dark:from-amber-950/30 dark:via-sky-950/20 dark:to-emerald-950/30 border border-amber-200/80 dark:border-amber-900/40 space-y-2">
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2 text-xs font-black uppercase tracking-wider text-amber-800 dark:text-amber-300 font-display">
+                <Sparkles className="w-4 h-4 text-amber-500" />
+                <span>Life Diary Reflection & Buffer Accounting</span>
+              </div>
+
+              {/* Circadian Phase Pill */}
+              <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-amber-500/15 border border-amber-500/30 text-[10px] font-bold text-amber-800 dark:text-amber-200">
+                <Compass className="w-3 h-3 text-amber-600 dark:text-amber-400" />
+                <span>
+                  {getStandardCircadianPeriod(startTime) === 'Night' ? '🌙 Night Cycle' :
+                   getStandardCircadianPeriod(startTime) === 'Morning' ? '☀️ Morning Peak' :
+                   getStandardCircadianPeriod(startTime) === 'Afternoon' ? '🌤️ Afternoon Flow' : '🌆 Evening Review'}
+                </span>
+              </div>
             </div>
+
             <p className="text-sm font-bold text-theme-text leading-snug">
-              "What did you do during this free time or buffer window?"
+              "What did you do during this window? Keep 100% of your day noted & accounted for."
             </p>
+
             {initialData?.relatedTaskTitle && (
-              <p className="text-xs text-theme-muted flex items-center gap-1.5 pt-1">
-                <span className="font-semibold text-blue-600 dark:text-blue-400">Post-Task Buffer:</span>
-                <span>{initialData.relatedTaskTitle}</span>
-              </p>
+              <div className="flex items-center gap-2 pt-1 border-t border-amber-200/50 dark:border-amber-900/30 text-xs">
+                <span className="font-bold text-blue-600 dark:text-blue-400 flex items-center gap-1 shrink-0">
+                  <Zap className="w-3 h-3" />
+                  <span>Post-Task Buffer:</span>
+                </span>
+                <span className="font-semibold text-theme-text truncate">{initialData.relatedTaskTitle}</span>
+              </div>
             )}
+          </div>
+
+          {/* 1-Tap Scientific Life Diary Quick Presets */}
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between">
+              <label className="text-[11px] font-bold text-theme-text uppercase tracking-wider flex items-center gap-1.5">
+                <span>⚡ 1-Tap Life Diary Presets</span>
+                <span className="text-[10px] text-theme-muted font-normal">(Instant scientific logging)</span>
+              </label>
+              <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-semibold font-mono">Zero Unnoted Gaps</span>
+            </div>
+
+            <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-1">
+              {SCIENTIFIC_LIFE_PRESETS.map((preset) => (
+                <button
+                  key={preset.label}
+                  type="button"
+                  onClick={() => {
+                    setActivityTag(preset.label);
+                    if (!notes.trim()) {
+                      setNotes(preset.defaultNote);
+                    }
+                    setEnergyLevel(preset.energy);
+                    setSignalNoise(preset.sn);
+                    setManualOverrideSN(true);
+                  }}
+                  className={`px-3 py-1.5 rounded-xl border text-xs font-semibold whitespace-nowrap transition-all flex items-center gap-1.5 shrink-0 cursor-pointer shadow-2xs active:scale-95 ${
+                    activityTag === preset.label
+                      ? 'bg-amber-500 text-white border-amber-600 shadow-sm'
+                      : 'bg-theme-card hover:bg-theme-card-hover border-theme-border text-theme-text'
+                  }`}
+                  title={preset.defaultNote}
+                >
+                  <span className="text-sm">{preset.emoji}</span>
+                  <span>{preset.label}</span>
+                </button>
+              ))}
+            </div>
           </div>
 
           {/* Time & Duration Controls */}
           <div className="space-y-2">
-            <label className="text-xs font-bold text-theme-text uppercase tracking-wider flex items-center justify-between">
-              <span>Time Window & Duration</span>
-              <span className="font-mono text-xs font-black text-amber-600 dark:text-amber-400 px-2 py-0.5 rounded-lg bg-amber-50 dark:bg-amber-950/60 border border-amber-200 dark:border-amber-800">
-                {durationMinutes} minutes
-              </span>
-            </label>
+            <div className="flex items-center justify-between">
+              <label className="text-xs font-bold text-theme-text uppercase tracking-wider flex items-center gap-2">
+                <span>Time Window & Duration</span>
+                <span className="font-mono text-xs font-black text-amber-600 dark:text-amber-400 px-2 py-0.5 rounded-lg bg-amber-50 dark:bg-amber-950/60 border border-amber-200 dark:border-amber-800">
+                  {durationMinutes} minutes
+                </span>
+              </label>
+
+              {initialData?.durationMinutes && initialData.durationMinutes !== durationMinutes && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (initialData.durationMinutes) {
+                      setEndTime(addMinutesToTime(startTime, initialData.durationMinutes));
+                    }
+                  }}
+                  className="text-[11px] font-bold px-2 py-0.5 rounded-lg bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30 hover:bg-emerald-500/25 flex items-center gap-1 cursor-pointer transition-colors"
+                  title="Expand to fill entire open window"
+                >
+                  <Maximize2 className="w-3 h-3" />
+                  <span>Fill Entire Gap ({initialData.durationMinutes}m)</span>
+                </button>
+              )}
+            </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
               <div>
@@ -360,7 +458,7 @@ export const BufferNoteModal: React.FC = () => {
                   key={mins}
                   type="button"
                   onClick={() => handleQuickDuration(mins)}
-                  className={`px-2 py-0.5 rounded-lg text-[11px] font-bold transition-all ${
+                  className={`px-2 py-0.5 rounded-lg text-[11px] font-bold transition-all cursor-pointer ${
                     durationMinutes === mins
                       ? 'bg-amber-500 text-white shadow-sm'
                       : 'bg-theme-card-hover hover:bg-theme-border text-theme-muted hover:text-theme-text border border-theme-border'

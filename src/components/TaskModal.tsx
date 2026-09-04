@@ -57,7 +57,9 @@ import {
   Repeat,
   Moon,
   Sun,
-  Flame
+  Flame,
+  Coffee,
+  BookOpen
 } from 'lucide-react';
 
 interface TaskModalProps {
@@ -91,6 +93,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
     defaultTaskSettings,
     planProjects,
     bufferNotes,
+    openBufferNoteModal,
     addTask, 
     updateTask, 
     updateRecurringSeriesEntirely,
@@ -255,8 +258,14 @@ export const TaskModal: React.FC<TaskModalProps> = ({
   const [conflictingTasks, setConflictingTasks] = useState<Task[]>([]);
   const [showConflictModal, setShowConflictModal] = useState(false);
 
+  // Linked 24H Life Diary Buffer Status Note
+  const linkedBufferNote = useMemo(() => {
+    if (!taskToEdit) return undefined;
+    return bufferNotes.find(b => b.relatedTaskId === taskToEdit.id || (b.date === taskDate && b.startTime === endTime));
+  }, [taskToEdit, bufferNotes, taskDate, endTime]);
+
   // Segmented Drawer Tab on the Right Column
-  const [detailsTab, setDetailsTab] = useState<'subtasks' | 'recurrence' | 'knowledge'>(
+  const [detailsTab, setDetailsTab] = useState<'subtasks' | 'recurrence' | 'knowledge' | 'buffer_diary'>(
     isMasterRecurringSeriesAdmin || (taskToEdit?.recurrence && taskToEdit.recurrence !== 'None')
       ? 'recurrence'
       : 'subtasks'
@@ -1650,7 +1659,20 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                     }`}
                   >
                     <LinkIcon className="w-3.5 h-3.5" />
-                    <span>Docs & Notes</span>
+                    <span>Docs</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setDetailsTab('buffer_diary')}
+                    className={`flex-1 py-1.5 px-2 rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                      detailsTab === 'buffer_diary'
+                        ? 'bg-amber-500 text-white shadow-xs font-black'
+                        : 'text-theme-muted hover:text-theme-text'
+                    }`}
+                  >
+                    <Coffee className="w-3.5 h-3.5" />
+                    <span>Diary {linkedBufferNote ? '✓' : bufferMinutes > 0 ? `(${bufferMinutes}m)` : ''}</span>
                   </button>
                 </div>
 
@@ -1995,6 +2017,124 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                           className="w-full text-xs px-3 py-2 rounded-xl bg-theme-card-hover border border-theme-border text-theme-text placeholder-theme-muted focus:outline-none focus:ring-1 focus:ring-blue-500"
                         />
                       </div>
+
+                    </div>
+                  )}
+
+                  {/* TAB D: SCIENTIFIC BUFFER & 24H LIFE DIARY */}
+                  {detailsTab === 'buffer_diary' && (
+                    <div className="space-y-3 animate-fade-in">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-black text-theme-text uppercase tracking-wider flex items-center gap-1.5 font-display">
+                          <Coffee className="w-3.5 h-3.5 text-amber-500" />
+                          <span>Post-Task Buffer & Life Diary</span>
+                        </span>
+                        <span className="text-[10px] font-bold px-2 py-0.5 bg-amber-500/10 text-amber-700 dark:text-amber-300 border border-amber-500/20 rounded-full font-mono">
+                          24H Continuity
+                        </span>
+                      </div>
+
+                      {/* Scientific Buffer Explanation */}
+                      <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/25 space-y-1 text-xs text-amber-950 dark:text-amber-200">
+                        <p className="font-bold flex items-center gap-1">
+                          <Sparkles className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+                          <span>Zero Unnoted Time Principle</span>
+                        </p>
+                        <p className="text-[11px] text-theme-muted leading-relaxed">
+                          Between scheduled tasks, transitions and rest must be accounted for in your 24H Life Diary so no time goes unnoted.
+                        </p>
+                      </div>
+
+                      {/* Buffer Window Overview */}
+                      <div className="p-3 rounded-xl bg-theme-card-hover border border-theme-border space-y-2">
+                        <div className="flex items-center justify-between text-xs">
+                          <span className="text-theme-muted font-bold">Post-Task Window:</span>
+                          <span className="font-mono font-black text-amber-600 dark:text-amber-400">
+                            {endTime} → {addMinutesToTime(endTime, bufferMinutes > 0 ? bufferMinutes : 15)}
+                          </span>
+                        </div>
+
+                        {/* Buffer Minutes Quick Buttons */}
+                        <div className="flex items-center gap-1.5 pt-1">
+                          <span className="text-[10px] text-theme-muted font-semibold">Cushion:</span>
+                          {[0, 5, 10, 15, 20, 30].map(mins => (
+                            <button
+                              key={mins}
+                              type="button"
+                              onClick={() => setBufferMinutes(mins)}
+                              className={`px-2 py-0.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                                bufferMinutes === mins
+                                  ? 'bg-amber-500 text-white shadow-2xs'
+                                  : 'bg-theme-card hover:bg-theme-border border border-theme-border text-theme-muted hover:text-theme-text'
+                              }`}
+                            >
+                              {mins === 0 ? 'Off' : `+${mins}m`}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Existing Linked Note Card OR Add New Note Prompt */}
+                      {linkedBufferNote ? (
+                        <div className="p-3.5 rounded-xl border border-emerald-500/30 bg-emerald-50/60 dark:bg-emerald-950/20 space-y-2 animate-fade-in">
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                              <span className="text-base">📝</span>
+                              <span className="text-xs font-black text-emerald-800 dark:text-emerald-300 font-display">
+                                Logged Life Diary Note
+                              </span>
+                            </div>
+                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 font-mono">
+                              {linkedBufferNote.activityTag}
+                            </span>
+                          </div>
+
+                          <div className="text-xs text-theme-text font-medium bg-white/80 dark:bg-slate-900/60 p-2.5 rounded-lg border border-emerald-500/20">
+                            "{linkedBufferNote.notes || 'Mindful recovery & transition'}"
+                          </div>
+
+                          <div className="flex items-center justify-between pt-1 text-[11px] text-theme-muted">
+                            <span>Window: {linkedBufferNote.startTime} - {linkedBufferNote.endTime} ({linkedBufferNote.durationMinutes}m)</span>
+                            <button
+                              type="button"
+                              onClick={() => openBufferNoteModal({ existingNote: linkedBufferNote })}
+                              className="font-bold text-blue-600 dark:text-blue-400 hover:underline cursor-pointer"
+                            >
+                              Edit Note →
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="p-3.5 rounded-xl border border-dashed border-amber-300 dark:border-amber-800 bg-amber-50/40 dark:bg-amber-950/20 space-y-2.5">
+                          <div className="flex items-center justify-between text-xs">
+                            <span className="font-bold text-amber-800 dark:text-amber-300">
+                              No Diary Note Logged for This Transition
+                            </span>
+                            <span className="text-[10px] font-mono text-theme-muted font-bold">
+                              {bufferMinutes > 0 ? `${bufferMinutes}m Free` : 'No Cushion'}
+                            </span>
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={() => {
+                              openBufferNoteModal({
+                                relatedTaskId: taskToEdit?.id,
+                                relatedTaskTitle: title || taskToEdit?.title || 'Task Buffer',
+                                date: taskDate,
+                                startTime: endTime,
+                                durationMinutes: bufferMinutes > 0 ? bufferMinutes : 15,
+                                activityTag: category === 'VRTX' ? 'Deep Focus Buffer' : 'Break / Rest',
+                                notes: `Post-task transition & recovery after ${title || 'task'}`
+                              });
+                            }}
+                            className="w-full py-2 px-3 rounded-xl bg-gradient-to-r from-amber-500 to-emerald-600 hover:from-amber-600 hover:to-emerald-700 text-white text-xs font-black shadow-xs flex items-center justify-center gap-1.5 transition-all transform active:scale-95 cursor-pointer"
+                          >
+                            <Coffee className="w-3.5 h-3.5" />
+                            <span>Log Post-Task Buffer Diary Note ({bufferMinutes > 0 ? bufferMinutes : 15}m)</span>
+                          </button>
+                        </div>
+                      )}
 
                     </div>
                   )}

@@ -26,7 +26,9 @@ import {
   getTaskIntervalForDate,
   getBangladeshNow,
   formatBangladeshTime,
-  BANGLADESH_TIMEZONE
+  BANGLADESH_TIMEZONE,
+  getScientificDynamicGapSlots,
+  ScientificGapSlot
 } from '../utils/timeUtils';
 import { 
   Play, 
@@ -115,7 +117,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
   const [reschedulingTask, setReschedulingTask] = useState<Task | null>(null);
   const [nowTime, setNowTime] = useState<Date>(() => getBangladeshNow());
   const [showPastGaps, setShowPastGaps] = useState(false);
-  const [gapDateFilter, setGapDateFilter] = useState<'all' | 'today' | 'tomorrow' | 'upcoming'>('all');
+  const [gapDateFilter, setGapDateFilter] = useState<'all' | 'today' | 'tomorrow' | 'deep_focus' | 'sprint' | 'quick'>('all');
+  const [slotDecomposition, setSlotDecomposition] = useState<boolean>(true);
 
   // Live timer tick every second strictly anchored to Bangladesh Standard Time (BST • Asia/Dhaka)
   useEffect(() => {
@@ -164,8 +167,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
 
   // Confirm Reschedule to new calculated slot (protecting recurring master schedule)
   const handleConfirmReschedule = (taskToReschedule: Task, newDate: string, newStartTime: string, newEndTime: string, scope: 'single' | 'series' = 'single') => {
-    if (taskToReschedule.recurrence && taskToReschedule.recurrence !== 'None' && scope === 'single') {
-      rescheduleTask(taskToReschedule.id, newDate, newStartTime, taskToReschedule.taskDate || selectedDate);
+    if (taskToReschedule.recurrence && taskToReschedule.recurrence !== 'None') {
+      rescheduleTask(taskToReschedule.id, newDate, newStartTime, taskToReschedule.taskDate || selectedDate, scope);
     } else {
       updateTask({
         ...taskToReschedule,
@@ -177,8 +180,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
         rescheduleCount: (taskToReschedule.rescheduleCount || 0) + 1,
         lastRescheduledAt: new Date().toISOString(),
         originallyAddedAt: taskToReschedule.originallyAddedAt || taskToReschedule.dateAdded || new Date().toISOString(),
-        originalScheduledDate: taskToReschedule.originalScheduledDate || taskToReschedule.taskDate,
-        originalScheduledStartTime: taskToReschedule.originalScheduledStartTime || taskToReschedule.startTime,
+        originalScheduledDate: newDate,
+        originalScheduledStartTime: newStartTime,
+        originalScheduledEndTime: newEndTime,
+        startDiscrepancyMinutes: 0,
         bufferMinutes: taskToReschedule.bufferMinutes !== undefined
           ? taskToReschedule.bufferMinutes
           : (capacitySettings.defaultBufferMinutes ?? defaultTaskSettings?.defaultBufferMinutes ?? 0)
@@ -422,10 +427,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
     <div className="space-y-4 animate-fade-in">
       
       {/* Sleek Compact Top Bar: Responsive & Multi-Device Optimized */}
-      <div className="glass-panel p-2.5 sm:px-3 sm:py-2 rounded-2xl flex flex-col md:flex-row items-stretch md:items-center justify-between gap-2.5 border border-theme-border shadow-sm">
+      <div className="glass-panel p-2 sm:px-3 sm:py-2 rounded-2xl flex flex-col md:flex-row items-stretch md:items-center justify-between gap-2.5 border border-theme-border shadow-sm">
         
         {/* Left Side: Apple-Graded Unified Date & Live Time Control */}
-        <div className="flex items-center gap-2 overflow-x-auto no-scrollbar py-0.5 max-w-full shrink-0">
+        <div className="flex-1 min-w-0 flex items-center gap-2 overflow-x-auto no-scrollbar py-0.5">
           {/* Unified Apple Glass Date & Live Pro Time Capsule */}
           <div 
             onClick={() => {
@@ -456,9 +461,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
             {/* Apple Hairline Separator */}
             <div className="h-3.5 w-px bg-theme-border/80 shrink-0 mx-0.5" />
 
-            {/* Live Clock with Pro Typography ("show the time nicely other pro font") */}
-            {/* Live Clock with Pro Typography & Bangladesh Time Indicator */}
-            <div className="flex items-center gap-2 shrink-0" title="Bangladesh Standard Time (BST • Asia/Dhaka • UTC+6)">
+            {/* Live Clock with Pro Typography */}
+            <div className="flex items-center gap-1.5 shrink-0">
               <div className="relative flex h-2 w-2 shrink-0">
                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
                 <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
@@ -468,12 +472,6 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
                 <span className="text-[9px] font-bold text-theme-muted opacity-80 ml-0.5">:{liveSeconds}</span>
                 <span className="text-[9px] font-black text-blue-600 dark:text-blue-400 ml-1 uppercase">{livePeriod}</span>
               </div>
-
-              {/* Dedicated Bangladesh Time Badge */}
-              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border border-emerald-500/20 text-[9px] font-black uppercase tracking-wider font-mono shrink-0">
-                <span>🇧🇩</span>
-                <span>BST (UTC+6)</span>
-              </span>
             </div>
 
             <input
@@ -587,13 +585,13 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
         </div>
 
         {/* Right Side: Mode Switcher & Primary Schedule CTA */}
-        <div className="flex items-center justify-between md:justify-end gap-2 shrink-0 pt-2 md:pt-0 border-t md:border-t-0 border-theme-border/50">
-          <div className="flex items-center gap-0.5 p-0.5 bg-theme-card-hover rounded-xl border border-theme-border shadow-inner shrink-0">
+        <div className="flex items-center justify-between md:justify-end gap-2 shrink-0 pt-2 md:pt-0 border-t md:border-t-0 border-theme-border/50 pl-2">
+          <div className="flex items-center gap-0.5 p-0.5 bg-theme-card-hover/80 rounded-full border border-theme-border/80 shadow-2xs shrink-0">
             <button
               onClick={() => setDashboardMode('time')}
-              className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold whitespace-nowrap shrink-0 transition-all ${
+              className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold whitespace-nowrap shrink-0 transition-all cursor-pointer active:scale-95 ${
                 dashboardMode === 'time'
-                  ? 'bg-blue-600 text-white shadow-sm shadow-blue-500/30'
+                  ? 'bg-blue-600 text-white shadow-sm shadow-blue-500/25 ring-1 ring-white/20'
                   : 'text-theme-muted hover:text-theme-text hover:bg-theme-card/50'
               }`}
               title="Time-Based Chronological Sequence (Default)"
@@ -604,9 +602,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
 
             <button
               onClick={() => setDashboardMode('priority')}
-              className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold whitespace-nowrap shrink-0 transition-all ${
+              className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold whitespace-nowrap shrink-0 transition-all cursor-pointer active:scale-95 ${
                 dashboardMode === 'priority'
-                  ? 'bg-blue-600 text-white shadow-sm shadow-blue-500/30'
+                  ? 'bg-blue-600 text-white shadow-sm shadow-blue-500/25 ring-1 ring-white/20'
                   : 'text-theme-muted hover:text-theme-text hover:bg-theme-card/50'
               }`}
               title="Priority-Based Ordering (P1 Must-Do to P5 Noise)"
@@ -618,9 +616,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
 
           <button
             onClick={() => onOpenTaskModal(undefined, selectedDate)}
-            className="flex items-center gap-1 px-3 py-1.5 bg-gradient-to-r from-blue-600 to-sky-500 hover:from-blue-700 hover:to-sky-600 text-white text-xs font-bold rounded-xl shadow-sm transition-all transform active:scale-95 whitespace-nowrap shrink-0"
+            className="flex items-center gap-1.5 px-4 py-1.5 bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold rounded-full shadow-sm shadow-blue-600/30 transition-all active:scale-95 whitespace-nowrap shrink-0 cursor-pointer min-w-fit"
           >
-            <Plus className="w-3.5 h-3.5 stroke-[3]" />
+            <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
             <span>Schedule</span>
           </button>
         </div>
@@ -1613,25 +1611,131 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
               return m > 0 ? `${h}h ${m}m` : `${h}h`;
             };
 
+            // 1. SCIENTIFIC DYNAMIC GAP SLOTS ENGINE (Guaranteed 10+ Actionable Slots)
+            const scientificSlots: ScientificGapSlot[] = getScientificDynamicGapSlots({
+              selectedDate,
+              tasks,
+              bufferNotes,
+              capacitySettings,
+              timePeriodSettings,
+              minSlots: 10,
+              currentMinutes: currentMinutesFromMidnight,
+              referenceDate: nowTime,
+              decomposeUltradian: slotDecomposition
+            });
+
+            // 2. Unaccounted Gaps Today for Life Diary Continuity Guard
+            const unaccountedGapsToday = isSelectedToday
+              ? gaps.filter(g => {
+                  let gEndMin = parse12HourToMinutes(g.endTime);
+                  let gStartMin = parse12HourToMinutes(g.startTime);
+                  if (gEndMin < gStartMin) gEndMin += 1440;
+                  return gEndMin <= currentMinutesFromMidnight && g.durationMinutes >= 5;
+                })
+              : [];
+            const unaccountedTotalMins = unaccountedGapsToday.reduce((sum, g) => sum + g.durationMinutes, 0);
+
+            // 3. Slot Filtering
+            const todaySlots = scientificSlots.filter(s => s.isToday);
+            const tomorrowSlots = scientificSlots.filter(s => s.isTomorrow);
+            const deepFocusSlots = scientificSlots.filter(s => s.durationMinutes >= 60);
+            const sprintSlots = scientificSlots.filter(s => s.durationMinutes >= 30 && s.durationMinutes < 60);
+            const quickSlots = scientificSlots.filter(s => s.durationMinutes < 30);
+
+            const filteredSlots = scientificSlots.filter(s => {
+              if (gapDateFilter === 'today') return s.isToday;
+              if (gapDateFilter === 'tomorrow') return s.isTomorrow;
+              if (gapDateFilter === 'deep_focus') return s.durationMinutes >= 60;
+              if (gapDateFilter === 'sprint') return s.durationMinutes >= 30 && s.durationMinutes < 60;
+              if (gapDateFilter === 'quick') return s.durationMinutes < 30;
+              return true; // 'all'
+            });
+
+            // Global 1-based sequential slot indexing across the whole calendar
+            let globalIndex = 1;
+            const slotGlobalIndexMap = new Map<string, number>();
+            for (const s of scientificSlots) {
+              slotGlobalIndexMap.set(s.slotId, globalIndex++);
+            }
+
+            // Spotlight Hero Slot (First immediate or earliest upcoming slot from filtered selection)
+            const heroSpotlightSlot = filteredSlots.find(s => s.isImmediate) || filteredSlots[0] || null;
+
+            // Slots for the list below the spotlight card (strictly excludes heroSpotlightSlot to eliminate duplicate presentation)
+            const listSlots = heroSpotlightSlot
+              ? filteredSlots.filter(s => s.slotId !== heroSpotlightSlot.slotId)
+              : filteredSlots;
+
+            // Group filtered slots by date
+            const dateGroupsMap = new Map<string, {
+              date: string;
+              dateLabel: string;
+              dayOfWeek: string;
+              isToday: boolean;
+              isTomorrow: boolean;
+              slots: ScientificGapSlot[];
+              totalFreeMinutes: number;
+            }>();
+
+            for (const s of listSlots) {
+              const existing = dateGroupsMap.get(s.date);
+              if (existing) {
+                existing.slots.push(s);
+                existing.totalFreeMinutes += s.durationMinutes;
+              } else {
+                dateGroupsMap.set(s.date, {
+                  date: s.date,
+                  dateLabel: s.dateLabel,
+                  dayOfWeek: s.dayOfWeek,
+                  isToday: s.isToday,
+                  isTomorrow: s.isTomorrow,
+                  slots: [s],
+                  totalFreeMinutes: s.durationMinutes
+                });
+              }
+            }
+
+            const datewiseGroups = Array.from(dateGroupsMap.values());
+
             return (
               <div className="glass-panel p-5 rounded-3xl border border-slate-200/80 dark:border-white/10 bg-white/70 dark:bg-slate-900/70 backdrop-blur-2xl shadow-sm space-y-4">
-                <div className="flex items-center justify-between gap-2">
+                
+                {/* Header Ribbon */}
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
                   <div className="flex items-center gap-2.5">
-                    <div className="w-7 h-7 rounded-xl bg-gradient-to-br from-amber-400 to-amber-600 text-white flex items-center justify-center shadow-xs shadow-amber-500/30 shrink-0">
-                      <Sparkles className="w-3.5 h-3.5 fill-white" />
+                    <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-amber-400 to-amber-600 text-white flex items-center justify-center shadow-xs shadow-amber-500/30 shrink-0">
+                      <Sparkles className="w-4 h-4 fill-white" />
                     </div>
                     <div>
-                      <h3 className="text-xs font-bold text-theme-text uppercase tracking-wider font-display">
-                        Dynamic Gap Finder
-                      </h3>
+                      <div className="flex items-center gap-2">
+                        <h3 className="text-xs font-black text-theme-text uppercase tracking-wider font-display">
+                          Dynamic Gap Finder
+                        </h3>
+                        <span className="text-[10px] font-bold px-2 py-0.5 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border border-emerald-500/25 rounded-full font-mono">
+                          {scientificSlots.length} Slots Guaranteed
+                        </span>
+                      </div>
                       <span className="text-[10px] text-theme-muted font-medium block">
-                        Real-time intelligent capacity analysis
+                        Ultradian Rhythm Decomposition & Circadian Capacity Analysis
                       </span>
                     </div>
                   </div>
-                  <span className="text-[10px] font-semibold px-2.5 py-0.5 bg-amber-500/10 text-amber-700 dark:text-amber-300 border border-amber-500/25 rounded-full shrink-0">
-                    10+ Available Slots
-                  </span>
+
+                  {/* Mode & Decompose Switcher */}
+                  <div className="flex items-center gap-1.5 shrink-0 self-start sm:self-auto">
+                    <button
+                      type="button"
+                      onClick={() => setSlotDecomposition(!slotDecomposition)}
+                      className={`px-2.5 py-1 rounded-xl text-[11px] font-bold transition-all border flex items-center gap-1.5 cursor-pointer shadow-2xs ${
+                        slotDecomposition
+                          ? 'bg-amber-500 text-white border-amber-600 shadow-sm'
+                          : 'bg-theme-card-hover hover:bg-theme-border text-theme-muted hover:text-theme-text border-theme-border'
+                      }`}
+                      title={slotDecomposition ? "Decomposing large gaps into 90m, 45m & 30m Ultradian slots" : "Showing raw discrete gaps"}
+                    >
+                      <span>🧠 {slotDecomposition ? 'Ultradian Split (10+)' : 'Raw Gaps'}</span>
+                    </button>
+                  </div>
                 </div>
 
                 {/* Unstarted Task Alert in Current Slot */}
@@ -1714,658 +1818,359 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
                   </div>
                 )}
 
-                {gaps.length === 0 ? (
-                  <div className="p-4 rounded-xl bg-theme-card-hover border border-theme-border text-center text-xs text-theme-muted">
-                    Schedule is 100% time-boxed with no remaining gaps!
-                  </div>
-                ) : (() => {
-                  const nowPlus5Min = currentMinutesFromMidnight + 5;
-                  
-                  // Check if there is an active running task right now
-                  const activeRunningTask = tasks.find(t => 
-                    (t.status === 'Working' || (t.startTime && t.endTime && isTaskInRunningSlot(t.taskDate, t.startTime, t.endTime, nowTime))) &&
-                    isTaskScheduledForDate(t, selectedDate)
-                  );
+                {/* ZERO TIME LEFT UNNOTED: Life Diary Continuity Guard */}
+                {isSelectedToday && unaccountedGapsToday.length > 0 && (
+                  <div className="p-3.5 rounded-2xl border border-dashed border-amber-400/80 dark:border-amber-700/80 bg-gradient-to-r from-amber-50/70 to-orange-50/50 dark:from-amber-950/30 dark:to-orange-950/20 space-y-2 animate-fade-in shadow-2xs">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-base">📖</span>
+                        <span className="text-xs font-black text-amber-900 dark:text-amber-200 font-display">
+                          Zero Unnoted Gaps • Life Diary Guard
+                        </span>
+                      </div>
+                      <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-full bg-amber-200/80 dark:bg-amber-900/80 text-amber-900 dark:text-amber-100">
+                        {unaccountedGapsToday.length} past gap(s) • {formatDurationHuman(unaccountedTotalMins)}
+                      </span>
+                    </div>
 
-                  let earliestPlanningMin = nowPlus5Min;
-                  if (activeRunningTask) {
-                    const rStart = parse12HourToMinutes(activeRunningTask.startTime);
-                    let rEnd = parse12HourToMinutes(activeRunningTask.endTime);
-                    if (rEnd < rStart) rEnd += 1440;
-                    const rBuf = activeRunningTask.bufferMinutes !== undefined ? activeRunningTask.bufferMinutes : (capacitySettings.defaultBufferMinutes ?? 0);
-                    const occupiedUntil = rEnd + rBuf;
-                    // Earliest free moment to schedule next work is strictly after running work finishes (+ buffer)
-                    earliestPlanningMin = Math.max(nowPlus5Min, occupiedUntil);
-                  }
+                    <p className="text-[11px] text-theme-muted leading-relaxed">
+                      You have past unnoted time today. In OptimusTime, 100% of your 24 hours is recorded with mindful reflection.
+                    </p>
 
-                  const earliestPlanningStr = formatMinutesTo12Hour(earliestPlanningMin);
-
-                  const todayDateStr = toISODateString(nowTime);
-                  const [sYear, sMonth, sDay] = selectedDate.split('-').map(Number);
-                  const baseDateObj = new Date(sYear, sMonth - 1, sDay);
-                  const tomorrowDateObj = new Date(sYear, sMonth - 1, sDay + 1);
-                  const tomorrowDateStr = toISODateString(tomorrowDateObj);
-
-                  const wakingStartMin = parse12HourToMinutes(wakingStart);
-                  let wakingEndMin = parse12HourToMinutes(wakingEnd);
-                  if (wakingEndMin <= wakingStartMin) wakingEndMin += 1440;
-
-                  let normalizedCurrentMin = currentMinutesFromMidnight;
-                  if (wakingEndMin > 1440 && normalizedCurrentMin < wakingStartMin) {
-                    normalizedCurrentMin += 1440;
-                  }
-
-                  let normalizedPlanningMin = earliestPlanningMin;
-                  if (wakingEndMin > 1440 && normalizedPlanningMin < wakingStartMin) {
-                    normalizedPlanningMin += 1440;
-                  }
-
-                  interface AnalyzedGapSlot {
-                    slotId: string;
-                    gap: TimeGap;
-                    date: string;
-                    dateLabel: string;
-                    dayOfWeek: string;
-                    isToday: boolean;
-                    isTomorrow: boolean;
-                    startTime: string;
-                    endTime: string;
-                    durationMinutes: number;
-                    isSimultaneous?: boolean;
-                    simultaneousTaskTitle?: string;
-                    period?: { name: string; emoji?: string } | null;
-                  }
-
-                  let firstSuggestion: {
-                    startTime: string;
-                    endTime: string;
-                    availableMin: number;
-                    isCurrentOverlap: boolean;
-                    originalGap: TimeGap;
-                    targetDate: string;
-                  } | null = null;
-
-                  const pastGaps: TimeGap[] = [];
-                  const todayUpcomingSlots: AnalyzedGapSlot[] = [];
-                  const tomorrowSlots: AnalyzedGapSlot[] = [];
-                  const upcomingDaysSlots: AnalyzedGapSlot[] = [];
-
-                  // Helper: compute genuine non-overlapping schedule gaps for any given date
-                  const getScheduleGapsForDate = (dateStr: string): TimeGap[] => {
-                    const dTasks = tasks.filter(t => isTaskScheduledForDate(t, dateStr));
-                    const dTasksForGaps = dTasks.map(t => {
-                      const simList = findSimultaneousTasks(t, dTasks);
-                      const isSimul = Boolean(
-                        (t as any).isSimultaneous ||
-                        (t.simultaneousWithIds && t.simultaneousWithIds.length > 0) ||
-                        simList.length > 0
-                      );
-                      return {
-                        ...t,
-                        isSimultaneous: isSimul,
-                        simultaneousWithIds: isSimul ? (t.simultaneousWithIds?.length ? t.simultaneousWithIds : ['simultaneous-active']) : []
-                      };
-                    });
-                    const dBuffers = bufferNotes.filter(n => n.date === dateStr);
-                    return findScheduleGaps(
-                      dTasksForGaps,
-                      wakingStart,
-                      wakingEnd,
-                      dBuffers,
-                      capacitySettings.defaultBufferMinutes ?? 0,
-                      capacitySettings.sleepStartTime,
-                      capacitySettings.sleepEndTime
-                    );
-                  };
-
-                  // 1. ANALYZE TODAY (or selectedDate)
-                  if (isSelectedToday) {
-                    for (const gap of gaps) {
-                      let gStartMin = parse12HourToMinutes(gap.startTime);
-                      let gEndMin = parse12HourToMinutes(gap.endTime);
-                      if (gEndMin < gStartMin) gEndMin += 1440;
-                      if (wakingEndMin > 1440 && gStartMin < wakingStartMin) {
-                        gStartMin += 1440;
-                        gEndMin += 1440;
-                      }
-
-                      if (gEndMin <= normalizedPlanningMin) {
-                        pastGaps.push(gap);
-                      } else if (gStartMin <= normalizedPlanningMin && normalizedPlanningMin < gEndMin) {
-                        const remainingFromEarliest = gEndMin - normalizedPlanningMin;
-                        if (remainingFromEarliest >= 5) {
-                          firstSuggestion = {
-                            startTime: earliestPlanningStr,
-                            endTime: gap.endTime,
-                            availableMin: remainingFromEarliest,
-                            isCurrentOverlap: !activeRunningTask,
-                            originalGap: gap,
-                            targetDate: selectedDate
-                          };
-                        } else {
-                          pastGaps.push(gap);
-                        }
-                      } else if (gStartMin >= normalizedPlanningMin) {
-                        todayUpcomingSlots.push({
-                          slotId: `today-${todayUpcomingSlots.length}`,
-                          gap,
-                          date: selectedDate,
-                          dateLabel: 'Today',
-                          dayOfWeek: getDayOfWeekFromDate(selectedDate),
-                          isToday: true,
-                          isTomorrow: false,
-                          startTime: gap.startTime,
-                          endTime: gap.endTime,
-                          durationMinutes: gap.durationMinutes,
-                          isSimultaneous: gap.isSimultaneousSlot,
-                          simultaneousTaskTitle: gap.simultaneousTaskTitle,
-                          period: getTimePeriodForTime(gap.startTime, timePeriodSettings)
-                        });
-                      }
-                    }
-
-                    // If not currently inside a free gap, the earliest upcoming slot becomes the #01 Spotlight Suggestion!
-                    if (!firstSuggestion && todayUpcomingSlots.length > 0) {
-                      const firstUp = todayUpcomingSlots.shift()!;
-                      let sMin = parse12HourToMinutes(firstUp.startTime);
-                      let eMin = parse12HourToMinutes(firstUp.endTime);
-                      if (eMin < sMin) eMin += 1440;
-                      if (wakingEndMin > 1440 && sMin < wakingStartMin) {
-                        sMin += 1440;
-                        eMin += 1440;
-                      }
-
-                      const effStartMin = Math.max(sMin, normalizedPlanningMin);
-                      const effStartStr = formatMinutesTo12Hour(effStartMin);
-                      const remaining = eMin - effStartMin;
-
-                      if (remaining >= 5) {
-                        firstSuggestion = {
-                          startTime: effStartStr,
-                          endTime: firstUp.endTime,
-                          availableMin: remaining,
-                          isCurrentOverlap: false,
-                          originalGap: firstUp.gap,
-                          targetDate: selectedDate
-                        };
-                      }
-                    }
-                  } else if (selectedDate < todayDateStr) {
-                    pastGaps.push(...[...gaps].reverse());
-                  } else {
-                    for (const gap of gaps) {
-                      todayUpcomingSlots.push({
-                        slotId: `sel-${todayUpcomingSlots.length}`,
-                        gap,
-                        date: selectedDate,
-                        dateLabel: formatDisplayDate(selectedDate),
-                        dayOfWeek: getDayOfWeekFromDate(selectedDate),
-                        isToday: false,
-                        isTomorrow: selectedDate === tomorrowDateStr,
-                        startTime: gap.startTime,
-                        endTime: gap.endTime,
-                        durationMinutes: gap.durationMinutes,
-                        isSimultaneous: gap.isSimultaneousSlot,
-                        simultaneousTaskTitle: gap.simultaneousTaskTitle,
-                        period: getTimePeriodForTime(gap.startTime, timePeriodSettings)
-                      });
-                    }
-                  }
-
-                  // 2. ANALYZE TOMORROW
-                  const rawTomorrowGaps = getScheduleGapsForDate(tomorrowDateStr);
-                  for (const tg of rawTomorrowGaps) {
-                    tomorrowSlots.push({
-                      slotId: `tomorrow-${tomorrowSlots.length}`,
-                      gap: tg,
-                      date: tomorrowDateStr,
-                      dateLabel: 'Tomorrow',
-                      dayOfWeek: getDayOfWeekFromDate(tomorrowDateStr),
-                      isToday: false,
-                      isTomorrow: true,
-                      startTime: tg.startTime,
-                      endTime: tg.endTime,
-                      durationMinutes: tg.durationMinutes,
-                      isSimultaneous: tg.isSimultaneousSlot,
-                      simultaneousTaskTitle: tg.simultaneousTaskTitle,
-                      period: getTimePeriodForTime(tg.startTime, timePeriodSettings)
-                    });
-                  }
-
-                  // 3. MULTI-DAY LOOKAHEAD (Guarantee at least 10 genuine non-overlapping slots)
-                  let totalGathered = (firstSuggestion ? 1 : 0) + todayUpcomingSlots.length + tomorrowSlots.length;
-                  if (totalGathered < 10) {
-                    for (let offset = 2; offset <= 7 && totalGathered < 10; offset++) {
-                      const nextDate = new Date(baseDateObj);
-                      nextDate.setDate(baseDateObj.getDate() + offset);
-                      const nextDateStr = toISODateString(nextDate);
-
-                      const futureDayGaps = getScheduleGapsForDate(nextDateStr);
-                      for (const fg of futureDayGaps) {
-                        upcomingDaysSlots.push({
-                          slotId: `upcoming-${nextDateStr}-${upcomingDaysSlots.length}`,
-                          gap: fg,
-                          date: nextDateStr,
-                          dateLabel: formatDisplayDate(nextDateStr),
-                          dayOfWeek: getDayOfWeekFromDate(nextDateStr),
-                          isToday: false,
-                          isTomorrow: false,
-                          startTime: fg.startTime,
-                          endTime: fg.endTime,
-                          durationMinutes: fg.durationMinutes,
-                          isSimultaneous: fg.isSimultaneousSlot,
-                          simultaneousTaskTitle: fg.simultaneousTaskTitle,
-                          period: getTimePeriodForTime(fg.startTime, timePeriodSettings)
-                        });
-                        totalGathered++;
-                        if (totalGathered >= 10) break;
-                      }
-                    }
-                  }
-
-                  // 4. GROUP SLOTS DATEWISE
-                  const datewiseGroups: Array<{
-                    date: string;
-                    dateLabel: string;
-                    dayOfWeek: string;
-                    isToday: boolean;
-                    isTomorrow: boolean;
-                    slots: AnalyzedGapSlot[];
-                    totalFreeMinutes: number;
-                  }> = [];
-
-                  const todayTotalFree = todayUpcomingSlots.reduce((sum, s) => sum + s.durationMinutes, 0) +
-                    (firstSuggestion && firstSuggestion.targetDate === selectedDate ? firstSuggestion.availableMin : 0);
-
-                  if (todayUpcomingSlots.length > 0) {
-                    datewiseGroups.push({
-                      date: selectedDate,
-                      dateLabel: isSelectedToday ? 'Today' : formatDisplayDate(selectedDate),
-                      dayOfWeek: getDayOfWeekFromDate(selectedDate),
-                      isToday: isSelectedToday,
-                      isTomorrow: false,
-                      slots: todayUpcomingSlots,
-                      totalFreeMinutes: todayTotalFree
-                    });
-                  }
-
-                  if (tomorrowSlots.length > 0) {
-                    datewiseGroups.push({
-                      date: tomorrowDateStr,
-                      dateLabel: 'Tomorrow',
-                      dayOfWeek: getDayOfWeekFromDate(tomorrowDateStr),
-                      isToday: false,
-                      isTomorrow: true,
-                      slots: tomorrowSlots,
-                      totalFreeMinutes: tomorrowSlots.reduce((sum, s) => sum + s.durationMinutes, 0)
-                    });
-                  }
-
-                  const futureByDate = new Map<string, AnalyzedGapSlot[]>();
-                  for (const s of upcomingDaysSlots) {
-                    const existing = futureByDate.get(s.date) || [];
-                    existing.push(s);
-                    futureByDate.set(s.date, existing);
-                  }
-                  for (const [dStr, dSlots] of futureByDate.entries()) {
-                    datewiseGroups.push({
-                      date: dStr,
-                      dateLabel: formatDisplayDate(dStr),
-                      dayOfWeek: getDayOfWeekFromDate(dStr),
-                      isToday: false,
-                      isTomorrow: false,
-                      slots: dSlots,
-                      totalFreeMinutes: dSlots.reduce((sum, s) => sum + s.durationMinutes, 0)
-                    });
-                  }
-
-                  // Global sequential slot counter #01, #02, #03...
-                  let slotCounter = firstSuggestion ? 2 : 1;
-                  const slotNumberMap = new Map<string, number>();
-                  for (const group of datewiseGroups) {
-                    for (const s of group.slots) {
-                      slotNumberMap.set(s.slotId, slotCounter++);
-                    }
-                  }
-
-                  const totalSlotsCount = (firstSuggestion ? 1 : 0) + todayUpcomingSlots.length + tomorrowSlots.length + upcomingDaysSlots.length;
-                  const todayCount = (firstSuggestion && firstSuggestion.targetDate === selectedDate ? 1 : 0) + todayUpcomingSlots.length;
-
-                  // Filtered groups according to tab selection
-                  const visibleGroups = datewiseGroups.filter(g => {
-                    if (gapDateFilter === 'all') return true;
-                    if (gapDateFilter === 'today') return g.isToday;
-                    if (gapDateFilter === 'tomorrow') return g.isTomorrow;
-                    if (gapDateFilter === 'upcoming') return !g.isToday && !g.isTomorrow;
-                    return true;
-                  });
-
-                  const showHeroSpotlight = firstSuggestion && (
-                    gapDateFilter === 'all' ||
-                    (gapDateFilter === 'today' && firstSuggestion.targetDate === selectedDate) ||
-                    (gapDateFilter === 'tomorrow' && firstSuggestion.targetDate === tomorrowDateStr)
-                  );
-
-                  return (
-                    <div className="space-y-3.5">
-                      
-                      {/* Datewise Quick Filter Tabs */}
-                      <div className="flex items-center gap-1.5 p-1 rounded-xl bg-slate-100/90 dark:bg-white/[0.06] border border-slate-200/60 dark:border-white/10 overflow-x-auto no-scrollbar">
-                        <button
-                          type="button"
-                          onClick={() => setGapDateFilter('all')}
-                          className={`px-3 py-1 rounded-lg text-xs font-bold transition-all whitespace-nowrap cursor-pointer ${
-                            gapDateFilter === 'all'
-                              ? 'bg-white dark:bg-slate-800 text-slate-900 dark:text-white shadow-xs font-display'
-                              : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-                          }`}
-                        >
-                          All Dates ({totalSlotsCount})
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setGapDateFilter('today')}
-                          className={`px-3 py-1 rounded-lg text-xs font-bold transition-all whitespace-nowrap cursor-pointer ${
-                            gapDateFilter === 'today'
-                              ? 'bg-white dark:bg-slate-800 text-slate-900 dark:text-white shadow-xs font-display'
-                              : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-                          }`}
-                        >
-                          Today ({todayCount})
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setGapDateFilter('tomorrow')}
-                          className={`px-3 py-1 rounded-lg text-xs font-bold transition-all whitespace-nowrap cursor-pointer ${
-                            gapDateFilter === 'tomorrow'
-                              ? 'bg-white dark:bg-slate-800 text-slate-900 dark:text-white shadow-xs font-display'
-                              : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-                          }`}
-                        >
-                          Tomorrow ({tomorrowSlots.length})
-                        </button>
-                        {upcomingDaysSlots.length > 0 && (
-                          <button
-                            type="button"
-                            onClick={() => setGapDateFilter('upcoming')}
-                            className={`px-3 py-1 rounded-lg text-xs font-bold transition-all whitespace-nowrap cursor-pointer ${
-                              gapDateFilter === 'upcoming'
-                                ? 'bg-white dark:bg-slate-800 text-slate-900 dark:text-white shadow-xs font-display'
-                                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-                            }`}
-                          >
-                            Upcoming ({upcomingDaysSlots.length})
-                          </button>
-                        )}
+                    <div className="flex items-center justify-between gap-2 pt-1 border-t border-amber-200/50 dark:border-amber-900/40">
+                      <div className="text-[11px] font-mono font-bold text-amber-800 dark:text-amber-300 truncate">
+                        Recent: {unaccountedGapsToday[0].startTime} - {unaccountedGapsToday[0].endTime} ({unaccountedGapsToday[0].durationMinutes}m)
                       </div>
 
-                      {/* 1st Suggestion Card (Apple Dynamic Spotlight) */}
-                      {showHeroSpotlight && firstSuggestion && (() => {
-                        const isFirstAfterMidnight = wakingEndMin > 1440 && parse12HourToMinutes(firstSuggestion.startTime) < wakingStartMin;
-                        const targetFirstDate = isFirstAfterMidnight ? tomorrowDateStr : firstSuggestion.targetDate;
-                        const humanDur = formatDurationHuman(firstSuggestion.availableMin);
-                        const isSimul = firstSuggestion.originalGap.isSimultaneousSlot;
+                      <button
+                        type="button"
+                        onClick={() => openBufferNoteModal({
+                          date: selectedDate,
+                          startTime: unaccountedGapsToday[0].startTime,
+                          endTime: unaccountedGapsToday[0].endTime,
+                          durationMinutes: unaccountedGapsToday[0].durationMinutes,
+                          activityTag: 'Break / Rest',
+                          notes: 'Unrecorded time account in 24H Life Diary'
+                        })}
+                        className="px-3 py-1 rounded-xl bg-amber-500 hover:bg-amber-600 text-white text-xs font-black shadow-xs flex items-center gap-1.5 cursor-pointer shrink-0 transition-all active:scale-95"
+                      >
+                        <Coffee className="w-3.5 h-3.5" />
+                        <span>Log to Life Diary</span>
+                      </button>
+                    </div>
+                  </div>
+                )}
 
-                        return (
-                          <div className="p-3.5 rounded-2xl border border-emerald-500/30 dark:border-emerald-500/40 bg-gradient-to-br from-emerald-500/[0.09] via-teal-500/[0.04] to-transparent dark:from-emerald-500/[0.14] dark:via-teal-500/[0.05] dark:to-transparent shadow-xs space-y-2.5 animate-fade-in relative overflow-hidden group">
-                            {/* Ambient Top Glow */}
-                            <div className="absolute -right-6 -top-6 w-24 h-24 bg-emerald-500/15 rounded-full blur-xl pointer-events-none" />
+                {/* Quick Filter Tabs */}
+                <div className="flex items-center gap-1 p-1 rounded-2xl bg-slate-100/90 dark:bg-white/[0.06] border border-slate-200/60 dark:border-white/10 overflow-x-auto no-scrollbar">
+                  <button
+                    type="button"
+                    onClick={() => setGapDateFilter('all')}
+                    className={`px-3 py-1 rounded-xl text-xs font-bold transition-all whitespace-nowrap cursor-pointer ${
+                      gapDateFilter === 'all'
+                        ? 'bg-white dark:bg-slate-800 text-slate-900 dark:text-white shadow-xs font-display'
+                        : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                    }`}
+                  >
+                    All Slots ({scientificSlots.length})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setGapDateFilter('today')}
+                    className={`px-3 py-1 rounded-xl text-xs font-bold transition-all whitespace-nowrap cursor-pointer ${
+                      gapDateFilter === 'today'
+                        ? 'bg-white dark:bg-slate-800 text-slate-900 dark:text-white shadow-xs font-display'
+                        : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                    }`}
+                  >
+                    Today ({todaySlots.length})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setGapDateFilter('tomorrow')}
+                    className={`px-3 py-1 rounded-xl text-xs font-bold transition-all whitespace-nowrap cursor-pointer ${
+                      gapDateFilter === 'tomorrow'
+                        ? 'bg-white dark:bg-slate-800 text-slate-900 dark:text-white shadow-xs font-display'
+                        : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                    }`}
+                  >
+                    Tomorrow ({tomorrowSlots.length})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setGapDateFilter('deep_focus')}
+                    className={`px-3 py-1 rounded-xl text-xs font-bold transition-all whitespace-nowrap cursor-pointer ${
+                      gapDateFilter === 'deep_focus'
+                        ? 'bg-white dark:bg-slate-800 text-slate-900 dark:text-white shadow-xs font-display'
+                        : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                    }`}
+                  >
+                    🧠 Deep Focus ({deepFocusSlots.length})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setGapDateFilter('sprint')}
+                    className={`px-3 py-1 rounded-xl text-xs font-bold transition-all whitespace-nowrap cursor-pointer ${
+                      gapDateFilter === 'sprint'
+                        ? 'bg-white dark:bg-slate-800 text-slate-900 dark:text-white shadow-xs font-display'
+                        : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                    }`}
+                  >
+                    ⚡ Sprints ({sprintSlots.length})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setGapDateFilter('quick')}
+                    className={`px-3 py-1 rounded-xl text-xs font-bold transition-all whitespace-nowrap cursor-pointer ${
+                      gapDateFilter === 'quick'
+                        ? 'bg-white dark:bg-slate-800 text-slate-900 dark:text-white shadow-xs font-display'
+                        : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                    }`}
+                  >
+                    ☕ Quick ({quickSlots.length})
+                  </button>
+                </div>
 
-                            {/* Top Row: Eyebrow + Available Duration Display */}
-                            <div className="flex items-center justify-between gap-2 relative z-10">
-                              <div className="flex items-center gap-1.5">
-                                <span className="relative flex h-2 w-2">
-                                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
-                                  <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
-                                </span>
-                                <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-800 dark:text-emerald-300">
-                                  #01 Immediate Window • {activeRunningTask ? 'After Work' : 'Starts Now'}
-                                </span>
-                              </div>
+                {/* Hero Spotlight Slot Card (Apple Featured Window Widget) */}
+                {heroSpotlightSlot && (
+                  <div className="p-4 rounded-2xl border border-emerald-500/30 dark:border-emerald-500/40 bg-gradient-to-br from-emerald-500/[0.08] via-teal-500/[0.04] to-transparent dark:from-emerald-500/[0.14] dark:via-teal-500/[0.05] dark:to-transparent shadow-xs space-y-2.5 animate-fade-in relative overflow-hidden group">
+                    <div className="absolute -right-6 -top-6 w-24 h-24 bg-emerald-500/15 rounded-full blur-xl pointer-events-none" />
 
-                              {/* Apple Health style Available Badge */}
-                              <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-500/15 text-emerald-800 dark:text-emerald-200 border border-emerald-500/30 text-xs font-bold font-mono shrink-0">
-                                <span>{humanDur}</span>
-                                <span className="text-[9px] uppercase tracking-wider font-semibold opacity-75">free</span>
-                              </div>
-                            </div>
+                    {/* Top Label: Beacon + Window Title + Free Duration */}
+                    <div className="flex items-center justify-between gap-2 relative z-10">
+                      <div className="flex items-center gap-1.5">
+                        <span className="relative flex h-2 w-2">
+                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+                          <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
+                        </span>
+                        <span className="text-[11px] font-bold text-emerald-800 dark:text-emerald-300 font-display tracking-tight">
+                          Next Recommended Window • {heroSpotlightSlot.isImmediate ? 'Starts Now' : heroSpotlightSlot.dateLabel}
+                        </span>
+                      </div>
 
-                            {/* Marked Sign for Simultaneous Slot */}
-                            {isSimul && (
-                              <div className="relative z-10">
-                                <span className="inline-flex items-center gap-1.5 text-[10px] font-bold px-2.5 py-1 rounded-full bg-purple-500/15 text-purple-700 dark:text-purple-300 border border-purple-500/30">
-                                  <Shuffle className="w-3 h-3 text-purple-600 dark:text-purple-400" />
-                                  <span>Simultaneous • {firstSuggestion.originalGap.simultaneousTaskTitle || 'Parallel Free Slot'}</span>
-                                </span>
-                              </div>
-                            )}
+                      <div className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-emerald-500/15 text-emerald-800 dark:text-emerald-200 border border-emerald-500/30 text-xs font-bold font-mono shrink-0">
+                        <span>{formatDurationHuman(heroSpotlightSlot.durationMinutes)}</span>
+                        <span className="text-[9px] uppercase tracking-wider font-semibold opacity-75">free</span>
+                      </div>
+                    </div>
 
-                            {/* Main Row: Non-wrapping Time Range + Modern Apple Buttons */}
-                            <div className="flex items-center justify-between gap-2 relative z-10 pt-0.5">
-                              <div className="flex items-center gap-2">
-                                <span className="font-mono text-sm font-bold text-slate-900 dark:text-white tracking-tight whitespace-nowrap">
-                                  {firstSuggestion.startTime}
-                                  <span className="text-slate-400 font-normal mx-1.5">→</span>
-                                  {firstSuggestion.endTime}
-                                </span>
-                                {isFirstAfterMidnight && (
-                                  <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-purple-500/10 text-purple-700 dark:text-purple-300 border border-purple-500/20 font-mono shrink-0">
-                                    Tomorrow
-                                  </span>
-                                )}
-                              </div>
-
-                              <div className="flex items-center gap-1.5 shrink-0">
-                                <button
-                                  onClick={() => onOpenTaskModal(undefined, targetFirstDate, firstSuggestion.startTime)}
-                                  className="h-7 px-3.5 rounded-full bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white text-xs font-semibold shadow-xs shadow-emerald-500/25 transition-all flex items-center gap-1.5 cursor-pointer"
-                                  title={`Plan task on ${formatDisplayDate(targetFirstDate)} starting at ${firstSuggestion.startTime}`}
-                                >
-                                  <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
-                                  <span>Schedule</span>
-                                </button>
-
-                                <button
-                                  onClick={() => openBufferNoteModal({
-                                    date: targetFirstDate,
-                                    startTime: firstSuggestion.startTime,
-                                    endTime: firstSuggestion.endTime,
-                                    durationMinutes: firstSuggestion.availableMin,
-                                    activityTag: firstSuggestion.availableMin < 10 ? 'Break / Rest' : 'Deep Focus Buffer',
-                                    notes: firstSuggestion.availableMin < 10 ? 'Quick noise work / micro-break' : 'Dedicated focus buffer'
-                                  })}
-                                  className="w-7 h-7 rounded-full bg-slate-100 hover:bg-slate-200 dark:bg-white/10 dark:hover:bg-white/15 text-slate-600 dark:text-slate-300 transition-colors flex items-center justify-center cursor-pointer"
-                                  title={`Log buffer note on ${formatDisplayDate(targetFirstDate)}`}
-                                >
-                                  <Coffee className="w-3.5 h-3.5" />
-                                </button>
-                              </div>
-                            </div>
-                          </div>
-                        );
-                      })()}
-
-                      {/* Datewise Grouped Free Slots */}
-                      {visibleGroups.length > 0 ? (
-                        <div className="space-y-3">
-                          {visibleGroups.map((group) => (
-                            <div
-                              key={group.date}
-                              className="rounded-2xl border border-slate-200/80 dark:border-white/10 bg-slate-50/70 dark:bg-slate-900/40 p-2.5 space-y-2"
-                            >
-                              {/* Date Header */}
-                              <div className="flex items-center justify-between px-2.5 py-1.5 rounded-xl bg-slate-200/50 dark:bg-slate-800/60 border border-slate-200/60 dark:border-white/5 text-xs font-bold text-slate-800 dark:text-slate-200">
-                                <div className="flex items-center gap-1.5 font-display">
-                                  <Calendar className="w-3.5 h-3.5 text-blue-500" />
-                                  <span>{group.dateLabel}</span>
-                                  <span className="text-[10px] font-normal text-slate-500 dark:text-slate-400">({group.dayOfWeek})</span>
-                                </div>
-                                <div className="flex items-center gap-2">
-                                  <span className="text-[10px] font-mono font-medium px-2 py-0.5 rounded-full bg-white/70 dark:bg-white/10 text-slate-700 dark:text-slate-300">
-                                    {group.slots.length} {group.slots.length === 1 ? 'slot' : 'slots'}
-                                  </span>
-                                  <span className="text-[10px] font-mono font-bold text-emerald-700 dark:text-emerald-400">
-                                    {formatDurationHuman(group.totalFreeMinutes)} free
-                                  </span>
-                                </div>
-                              </div>
-
-                              {/* Slot Rows */}
-                              <div className="space-y-1.5">
-                                {group.slots.map((item) => {
-                                  const slotNum = slotNumberMap.get(item.slotId) || 1;
-                                  const humanDur = formatDurationHuman(item.durationMinutes);
-                                  const isSimul = item.isSimultaneous;
-
-                                  return (
-                                    <div
-                                      key={item.slotId}
-                                      className="group p-2.5 hover:bg-white/90 dark:hover:bg-slate-800/70 transition-colors space-y-1.5 rounded-xl border border-slate-200/60 dark:border-white/[0.06] bg-white/60 dark:bg-slate-900/40"
-                                    >
-                                      {/* Row 1: Slot Index + Clean Non-wrapping Time Range + Apple Duration Badge */}
-                                      <div className="flex items-center justify-between gap-2">
-                                        <div className="flex items-center gap-2 min-w-0">
-                                          <span className="text-[11px] font-mono font-bold text-slate-400 dark:text-slate-500 shrink-0">
-                                            #{String(slotNum).padStart(2, '0')}
-                                          </span>
-                                          <span className="font-mono text-xs font-bold text-slate-900 dark:text-slate-100 tracking-tight whitespace-nowrap">
-                                            {item.startTime}
-                                            <span className="text-slate-400 font-light mx-1.5">→</span>
-                                            {item.endTime}
-                                          </span>
-                                        </div>
-
-                                        {/* Apple Health style duration pill */}
-                                        <div className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border border-emerald-500/20 text-[11px] font-bold font-mono shrink-0 whitespace-nowrap">
-                                          <span>{humanDur}</span>
-                                          <span className="text-[9px] uppercase tracking-wider font-semibold opacity-75">free</span>
-                                        </div>
-                                      </div>
-
-                                      {/* Row 2: Badges (Simultaneous Marked Sign, Period) + Apple Action Buttons */}
-                                      <div className="flex items-center justify-between gap-2 pt-0.5">
-                                        <div className="flex items-center gap-1.5 flex-wrap min-w-0">
-                                          {/* Marked Sign for Simultaneous Slot */}
-                                          {isSimul && (
-                                            <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-purple-500/15 text-purple-700 dark:text-purple-300 border border-purple-500/25 shrink-0 animate-pulse">
-                                              <Shuffle className="w-2.5 h-2.5 text-purple-600 dark:text-purple-400" />
-                                              <span>Simultaneous • {item.simultaneousTaskTitle || 'Co-run Slot'}</span>
-                                            </span>
-                                          )}
-
-                                          {item.period && (
-                                            <span className="text-[10px] text-slate-500 dark:text-slate-400 flex items-center gap-1 shrink-0 font-medium">
-                                              <span>{item.period.emoji}</span>
-                                              <span>{item.period.name}</span>
-                                            </span>
-                                          )}
-                                        </div>
-
-                                        {/* Action Buttons: Apple Capsule Schedule + Buffer */}
-                                        <div className="flex items-center gap-1.5 shrink-0">
-                                          <button
-                                            onClick={() => onOpenTaskModal(undefined, item.date, item.startTime)}
-                                            className="h-6 px-3 rounded-full text-[11px] font-semibold tracking-tight text-white bg-slate-900 hover:bg-slate-800 dark:bg-white dark:text-slate-900 dark:hover:bg-slate-100 shadow-2xs active:scale-95 transition-all flex items-center gap-1 cursor-pointer shrink-0"
-                                            title={`Plan task on ${formatDisplayDate(item.date)} starting at ${item.startTime}`}
-                                          >
-                                            <Plus className="w-3 h-3 stroke-[2.5]" />
-                                            <span>Schedule</span>
-                                          </button>
-
-                                          <button
-                                            onClick={() => openBufferNoteModal({
-                                              date: item.date,
-                                              startTime: item.startTime,
-                                              endTime: item.endTime,
-                                              durationMinutes: item.durationMinutes,
-                                              activityTag: 'Deep Focus Buffer'
-                                            })}
-                                            className="w-6 h-6 rounded-full text-slate-400 hover:text-amber-500 hover:bg-slate-200/60 dark:hover:bg-white/10 transition-colors flex items-center justify-center cursor-pointer shrink-0"
-                                            title={`Log buffer note on ${formatDisplayDate(item.date)}`}
-                                          >
-                                            <Coffee className="w-3 h-3" />
-                                          </button>
-                                        </div>
-                                      </div>
-                                    </div>
-                                  );
-                                })}
-                              </div>
-                            </div>
-                          ))}
+                    {/* Time & Focus Rhythm Line */}
+                    <div className="flex flex-wrap items-center justify-between gap-2 relative z-10 pt-0.5">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="font-mono text-base sm:text-lg font-bold text-theme-text tracking-tight whitespace-nowrap">
+                            {heroSpotlightSlot.startTime} – {heroSpotlightSlot.endTime}
+                          </span>
+                          <span className="text-xs font-medium text-theme-muted">
+                            ({heroSpotlightSlot.dateLabel})
+                          </span>
                         </div>
-                      ) : (
-                        <div className="p-4 rounded-xl bg-slate-100/60 dark:bg-slate-900/40 border border-slate-200/60 dark:border-white/10 text-center text-xs text-theme-muted">
-                          No upcoming free slots found for the selected filter.
-                        </div>
-                      )}
-
-                      {/* Earlier Today Past Gaps (Collapsible so recent times stay first) */}
-                      {pastGaps.length > 0 && (
-                        <div className="pt-2 border-t border-theme-border/60 space-y-2">
-                          <button
-                            type="button"
-                            onClick={() => setShowPastGaps(prev => !prev)}
-                            className="w-full flex items-center justify-between p-2.5 rounded-xl bg-theme-card hover:bg-theme-card-hover border border-theme-border text-xs font-bold text-theme-muted hover:text-theme-text transition-colors cursor-pointer shadow-2xs"
-                          >
-                            <span className="flex items-center gap-1.5">
-                              <Clock className="w-3.5 h-3.5 text-amber-500" />
-                              <span>Earlier Today • {pastGaps.length} Past Free Windows</span>
-                            </span>
-                            <span className="text-[11px] text-amber-600 dark:text-amber-400 font-bold">
-                              {showPastGaps ? 'Hide Earlier Gaps ▲' : 'Show Earlier Gaps ▼'}
-                            </span>
-                          </button>
-
-                          {showPastGaps && (
-                            <div className="space-y-2 animate-fade-in pl-1">
-                              {pastGaps.map((gap, idx) => (
-                                <div
-                                  key={`past-${idx}`}
-                                  className="w-full p-3 rounded-xl border border-dashed border-amber-300 dark:border-amber-800/70 bg-amber-50/40 dark:bg-amber-950/20 space-y-2"
-                                >
-                                  <div className="flex items-center justify-between gap-2">
-                                    <span className="font-mono text-xs font-bold text-amber-800 dark:text-amber-300">
-                                      {gap.startTime} - {gap.endTime}
-                                    </span>
-                                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-300">
-                                      ⏳ Past Window
-                                    </span>
-                                  </div>
-
-                                  <div className="flex items-baseline gap-1.5 py-0.5">
-                                    <span className="text-2xl font-black font-mono font-display text-amber-700 dark:text-amber-400">
-                                      {gap.durationMinutes}
-                                    </span>
-                                    <span className="text-[10px] font-black uppercase tracking-wider text-theme-muted">
-                                      MIN ELAPSED
-                                    </span>
-                                  </div>
-
-                                  <div className="flex items-center justify-end gap-1.5 pt-1 border-t border-amber-200/50 dark:border-amber-900/30">
-                                    <button
-                                      onClick={() => openBufferNoteModal({
-                                        date: selectedDate,
-                                        startTime: gap.startTime,
-                                        endTime: gap.endTime,
-                                        durationMinutes: gap.durationMinutes
-                                      })}
-                                      className="px-2.5 py-1 rounded-lg bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold shadow-xs transition-transform active:scale-95 flex items-center gap-1 cursor-pointer"
-                                    >
-                                      <Coffee className="w-3.5 h-3.5" />
-                                      <span>Add Buffer Note</span>
-                                    </button>
-                                  </div>
-                                </div>
-                              ))}
-                            </div>
+                        <div className="text-xs text-theme-muted mt-0.5 flex items-center gap-1.5 font-medium">
+                          <span>{heroSpotlightSlot.ultradianEmoji || '⚡'} {heroSpotlightSlot.ultradianLabel}</span>
+                          <span className="opacity-40">•</span>
+                          <span>{heroSpotlightSlot.circadianEmoji} {heroSpotlightSlot.circadianLabel}</span>
+                          {heroSpotlightSlot.isLateNight && (
+                            <>
+                              <span className="opacity-40">•</span>
+                              <span className="text-indigo-600 dark:text-indigo-400">🌙 Late Night</span>
+                            </>
                           )}
                         </div>
-                      )}
+                      </div>
 
+                      <div className="flex items-center gap-1.5 shrink-0 ml-auto">
+                        <button
+                          onClick={() => onOpenTaskModal(undefined, heroSpotlightSlot.date, heroSpotlightSlot.startTime)}
+                          className="h-8 px-4 rounded-full bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white text-xs font-bold shadow-xs shadow-emerald-500/30 transition-all flex items-center gap-1.5 cursor-pointer whitespace-nowrap"
+                          title={`Schedule task starting at ${heroSpotlightSlot.startTime}`}
+                        >
+                          <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
+                          <span>Schedule Slot</span>
+                        </button>
+
+                        <button
+                          onClick={() => openBufferNoteModal({
+                            date: heroSpotlightSlot.date,
+                            startTime: heroSpotlightSlot.startTime,
+                            endTime: heroSpotlightSlot.endTime,
+                            durationMinutes: heroSpotlightSlot.durationMinutes,
+                            activityTag: heroSpotlightSlot.durationMinutes < 20 ? 'Break / Rest' : 'Deep Focus Buffer'
+                          })}
+                          className="w-8 h-8 rounded-full bg-theme-card-hover hover:bg-theme-border border border-theme-border/70 text-theme-muted hover:text-amber-500 transition-all flex items-center justify-center cursor-pointer active:scale-95"
+                          title={`Log buffer note on ${heroSpotlightSlot.dateLabel}`}
+                        >
+                          <Coffee className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
                     </div>
-                  );
-                })()}
+                  </div>
+                )}
+
+                {/* Datewise Grouped Slots (Apple Grouped List Style) */}
+                {datewiseGroups.length > 0 ? (
+                  <div className="space-y-3">
+                    {datewiseGroups.map((group) => (
+                      <div
+                        key={group.date}
+                        className="rounded-2xl border border-theme-border/80 bg-theme-card/60 dark:bg-theme-card/30 p-3 space-y-2 shadow-2xs"
+                      >
+                        {/* Group Header */}
+                        <div className="flex items-center justify-between px-2 py-1 text-xs font-bold text-theme-text">
+                          <div className="flex items-center gap-1.5 font-display">
+                            <Calendar className="w-3.5 h-3.5 text-blue-500" />
+                            <span>{group.dateLabel}</span>
+                            <span className="text-[11px] font-normal text-theme-muted">({group.dayOfWeek})</span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-[10px] font-mono font-medium px-2 py-0.5 rounded-full bg-theme-card-hover text-theme-muted border border-theme-border/60">
+                              {group.slots.length} {group.slots.length === 1 ? 'slot' : 'slots'}
+                            </span>
+                            <span className="text-[10px] font-mono font-bold text-emerald-600 dark:text-emerald-400">
+                              {formatDurationHuman(group.totalFreeMinutes)} free
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Slot Rows */}
+                        <div className="space-y-1.5">
+                          {group.slots.map((item) => {
+                            const humanDur = formatDurationHuman(item.durationMinutes);
+
+                            return (
+                              <div
+                                key={item.slotId}
+                                onClick={() => onOpenTaskModal(undefined, item.date, item.startTime)}
+                                className="group p-2.5 sm:px-3 sm:py-2.5 rounded-xl border border-theme-border/60 hover:border-blue-500/40 bg-theme-card/80 hover:bg-theme-card-hover/90 transition-all cursor-pointer shadow-2xs hover:shadow-xs active:scale-[0.99] flex items-center justify-between gap-3"
+                              >
+                                {/* Left: Time Interval + Focus Type */}
+                                <div className="min-w-0 flex-1">
+                                  <div className="flex items-center gap-2 flex-wrap">
+                                    <span className="font-mono text-xs sm:text-sm font-bold text-theme-text tracking-tight whitespace-nowrap">
+                                      {item.startTime} – {item.endTime}
+                                    </span>
+                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 font-mono text-[10px] font-bold">
+                                      {humanDur}
+                                    </span>
+                                    {item.isLateNight && (
+                                      <span className="text-[9px] font-bold px-1.5 py-0.2 rounded-full bg-indigo-500/10 text-indigo-700 dark:text-indigo-300">
+                                        🌙 Night
+                                      </span>
+                                    )}
+                                    {item.isSimultaneous && (
+                                      <span className="text-[9px] font-bold px-1.5 py-0.2 rounded-full bg-purple-500/10 text-purple-700 dark:text-purple-300">
+                                        🔀 Co-run
+                                      </span>
+                                    )}
+                                  </div>
+                                  <div className="text-[11px] text-theme-muted font-medium mt-0.5 flex items-center gap-1.5 truncate">
+                                    <span>{item.ultradianEmoji || '⚡'} {item.ultradianLabel}</span>
+                                    <span className="opacity-40">•</span>
+                                    <span>{item.circadianEmoji} {item.circadianLabel}</span>
+                                  </div>
+                                </div>
+
+                                {/* Right: Clean Cupertino Action Buttons */}
+                                <div className="flex items-center gap-1.5 shrink-0" onClick={(e) => e.stopPropagation()}>
+                                  <button
+                                    onClick={() => onOpenTaskModal(undefined, item.date, item.startTime)}
+                                    className="h-7 px-3 rounded-full text-xs font-semibold text-white bg-blue-600 hover:bg-blue-500 active:scale-95 transition-all flex items-center gap-1 shadow-2xs cursor-pointer"
+                                    title={`Schedule task on ${item.dateLabel} at ${item.startTime}`}
+                                  >
+                                    <Plus className="w-3 h-3 stroke-[2.5]" />
+                                    <span>Schedule</span>
+                                  </button>
+                                  <button
+                                    onClick={() => openBufferNoteModal({
+                                      date: item.date,
+                                      startTime: item.startTime,
+                                      endTime: item.endTime,
+                                      durationMinutes: item.durationMinutes,
+                                      activityTag: item.durationMinutes < 20 ? 'Break / Rest' : 'Deep Focus Buffer'
+                                    })}
+                                    className="w-7 h-7 rounded-full text-theme-muted hover:text-amber-500 hover:bg-theme-card-hover border border-theme-border/60 transition-all flex items-center justify-center cursor-pointer active:scale-95"
+                                    title={`Log buffer note on ${item.dateLabel}`}
+                                  >
+                                    <Coffee className="w-3.5 h-3.5" />
+                                  </button>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="p-4 rounded-xl bg-theme-card-hover border border-theme-border/60 text-center text-xs text-theme-muted">
+                    No open slots found for the selected filter.
+                  </div>
+                )}
+
+                {/* Collapsible Earlier Past Gaps (for retrospective diary completion) */}
+                {isSelectedToday && unaccountedGapsToday.length > 0 && (
+                  <div className="pt-2 border-t border-theme-border/60 space-y-2">
+                    <button
+                      type="button"
+                      onClick={() => setShowPastGaps(prev => !prev)}
+                      className="w-full flex items-center justify-between p-2.5 rounded-xl bg-theme-card hover:bg-theme-card-hover border border-theme-border text-xs font-bold text-theme-muted hover:text-theme-text transition-colors cursor-pointer shadow-2xs"
+                    >
+                      <span className="flex items-center gap-1.5">
+                        <Clock className="w-3.5 h-3.5 text-amber-500" />
+                        <span>Earlier Today • {unaccountedGapsToday.length} Unnoted Past Windows</span>
+                      </span>
+                      <span className="text-[11px] text-amber-600 dark:text-amber-400 font-bold">
+                        {showPastGaps ? 'Hide Earlier Gaps ▲' : 'Show Earlier Gaps ▼'}
+                      </span>
+                    </button>
+
+                    {showPastGaps && (
+                      <div className="space-y-2 animate-fade-in pl-1">
+                        {unaccountedGapsToday.map((gap, idx) => (
+                          <div
+                            key={`past-${idx}`}
+                            className="w-full p-3 rounded-xl border border-dashed border-amber-300 dark:border-amber-800/70 bg-amber-50/40 dark:bg-amber-950/20 space-y-2"
+                          >
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="font-mono text-xs font-bold text-amber-800 dark:text-amber-300">
+                                {gap.startTime} - {gap.endTime}
+                              </span>
+                              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-300">
+                                ⏳ Unnoted Window
+                              </span>
+                            </div>
+
+                            <div className="flex items-baseline gap-1.5 py-0.5">
+                              <span className="text-2xl font-black font-mono font-display text-amber-700 dark:text-amber-400">
+                                {gap.durationMinutes}
+                              </span>
+                              <span className="text-[10px] font-black uppercase tracking-wider text-theme-muted">
+                                MIN UNNOTED
+                              </span>
+                            </div>
+
+                            <div className="flex items-center justify-end gap-1.5 pt-1 border-t border-amber-200/50 dark:border-amber-900/30">
+                              <button
+                                onClick={() => openBufferNoteModal({
+                                  date: selectedDate,
+                                  startTime: gap.startTime,
+                                  endTime: gap.endTime,
+                                  durationMinutes: gap.durationMinutes,
+                                  activityTag: 'Break / Rest',
+                                  notes: 'Retrospective diary note entry'
+                                })}
+                                className="px-2.5 py-1 rounded-lg bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold shadow-xs transition-transform active:scale-95 flex items-center gap-1 cursor-pointer"
+                              >
+                                <Coffee className="w-3.5 h-3.5" />
+                                <span>Add Buffer Note</span>
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+
               </div>
             );
           })()}

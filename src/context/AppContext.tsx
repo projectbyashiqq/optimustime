@@ -146,7 +146,7 @@ interface AppContextType {
   pauseTask: (taskId: string) => void;
   completeTask: (taskId: string) => void;
   holdTask: (taskId: string) => void;
-  rescheduleTask: (taskId: string, newDate: string, newStartTime: string, originalDate?: string) => void;
+  rescheduleTask: (taskId: string, newDate: string, newStartTime: string, originalDate?: string, scope?: 'single' | 'series') => void;
   terminateTask: (taskId: string) => void;
   extendTaskDuration: (taskId: string, extraMinutes: number) => void;
   
@@ -2176,7 +2176,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }));
   }, [logLifeEvent]);
 
-  const rescheduleTask = useCallback((taskId: string, newDate: string, newStartTime: string, originalDate?: string) => {
+  const rescheduleTask = useCallback((taskId: string, newDate: string, newStartTime: string, originalDate?: string, scope: 'single' | 'series' = 'single') => {
     setTasks(prev => {
       const target = prev.find(t => t.id === taskId);
       if (!target) return prev;
@@ -2196,8 +2196,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
       const newEndTime = addMinutesToTime(newStartTime, target.appointedMinutes);
       const isRecurring = target.recurrence && target.recurrence !== 'None';
+      const crosses = taskCrossesMidnight(newStartTime, newEndTime);
+      const calculatedEndDate = crosses ? getTaskEndDate(newDate, newStartTime, newEndTime) : newDate;
 
-      if (isRecurring) {
+      if (isRecurring && scope === 'single') {
         // Isolate single occurrence for today: Exclude original occurrence date from master series so future recurring tasks stay on schedule
         const originalOccurrenceDate = originalDate || target.taskDate;
         const existingExclusions = target.excludedDates || [];
@@ -2209,9 +2211,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           ...target,
           excludedDates: updatedExclusions
         };
-
-        const crosses = taskCrossesMidnight(newStartTime, newEndTime);
-        const calculatedEndDate = crosses ? getTaskEndDate(newDate, newStartTime, newEndTime) : newDate;
 
         const singleRescheduledOccurrence: Task = {
           ...target,
@@ -2229,8 +2228,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           rescheduleCount: (target.rescheduleCount || 0) + 1,
           lastRescheduledAt: new Date().toISOString(),
           originallyAddedAt: target.originallyAddedAt || target.dateAdded || new Date().toISOString(),
-          originalScheduledDate: target.originalScheduledDate || target.taskDate,
-          originalScheduledStartTime: target.originalScheduledStartTime || target.startTime,
+          originalScheduledDate: newDate,
+          originalScheduledStartTime: newStartTime,
+          originalScheduledEndTime: newEndTime,
+          startDiscrepancyMinutes: 0,
           bufferMinutes: target.bufferMinutes !== undefined
             ? target.bufferMinutes
             : (defaultTaskSettings.defaultBufferMinutes ?? capacitySettings.defaultBufferMinutes ?? 0)
@@ -2243,7 +2244,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           projectCode: target.projectCode,
           priority: target.priority,
           category: target.category,
-          message: `↻ Rescheduled single occurrence of "${target.title}" [${target.recurrence}] from ${originalOccurrenceDate} (${target.startTime}) → ${newDate} (${newStartTime}) (Next recurring stays at original time)`,
+          message: `↻ Rescheduled single occurrence of "${target.title}" [${target.recurrence}] from ${originalOccurrenceDate} (${target.startTime}) → ${newDate} (${newStartTime}) (New core time set)`,
           details: {
             previousDate: originalOccurrenceDate,
             previousStartTime: target.startTime,
@@ -2266,7 +2267,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         projectCode: target.projectCode,
         priority: target.priority,
         category: target.category,
-        message: `↻ Rescheduled "${target.title}" [${target.priority}] from ${target.taskDate} (${target.startTime}) → ${newDate} (${newStartTime})`,
+        message: `↻ Rescheduled ${isRecurring && scope === 'series' ? 'entire series of ' : ''}"${target.title}" [${target.priority}] to new core time ${newDate} (${newStartTime})`,
         details: {
           previousDate: target.taskDate,
           previousStartTime: target.startTime,
@@ -2281,6 +2282,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           return {
             ...t,
             taskDate: newDate,
+            endDate: calculatedEndDate,
+            crossesMidnight: crosses,
             dayOfWeek: getDayOfWeekFromDate(newDate),
             startTime: newStartTime,
             endTime: newEndTime,
@@ -2288,8 +2291,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             rescheduleCount: (t.rescheduleCount || 0) + 1,
             lastRescheduledAt: new Date().toISOString(),
             originallyAddedAt: t.originallyAddedAt || t.dateAdded || new Date().toISOString(),
-            originalScheduledDate: t.originalScheduledDate || t.taskDate,
-            originalScheduledStartTime: t.originalScheduledStartTime || t.startTime,
+            originalScheduledDate: newDate,
+            originalScheduledStartTime: newStartTime,
+            originalScheduledEndTime: newEndTime,
+            startDiscrepancyMinutes: 0,
             bufferMinutes: t.bufferMinutes !== undefined
               ? t.bufferMinutes
               : (defaultTaskSettings.defaultBufferMinutes ?? capacitySettings.defaultBufferMinutes ?? 0)
@@ -2298,7 +2303,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         return t;
       });
     });
-  }, [logLifeEvent]);
+  }, [logLifeEvent, defaultTaskSettings.defaultBufferMinutes, capacitySettings.defaultBufferMinutes]);
 
   const terminateTask = useCallback((taskId: string) => {
     setTasks(prev => prev.map(t => {

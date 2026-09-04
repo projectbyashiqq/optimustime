@@ -22,18 +22,23 @@ export default {
         }
       },
       fontFamily: {
-        display: ['"Plus Jakarta Sans"', 'Outfit', '-apple-system', 'BlinkMacSystemFont', '"SF Pro Display"', 'sans-serif'],
+        display: ['"Plus Jakarta Sans"', 'Inter', 'Poppins', 'Roboto', '-apple-system', 'BlinkMacSystemFont', '"SF Pro Display"', 'sans-serif'],
         sans: [
+          '"Plus Jakarta Sans"',
+          'Inter',
+          'Roboto',
+          'Poppins',
           '-apple-system',
           'BlinkMacSystemFont',
           '"SF Pro Display"',
           '"SF Pro Text"',
-          '"Plus Jakarta Sans"',
-          'Inter',
           'system-ui',
           'sans-serif'
         ],
-        jakarta: ['"Plus Jakarta Sans"', 'sans-serif'],
+        jakarta: ['"Plus Jakarta Sans"', 'Inter', 'sans-serif'],
+        inter: ['Inter', '"Plus Jakarta Sans"', 'sans-serif'],
+        roboto: ['Roboto', 'sans-serif'],
+        poppins: ['Poppins', 'sans-serif'],
         mono: ['"Fira Code"', '"JetBrains Mono"', 'monospace'],
         openSans: ['"Open Sans"', 'sans-serif']
       },

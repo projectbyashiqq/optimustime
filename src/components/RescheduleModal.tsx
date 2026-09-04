@@ -62,7 +62,7 @@ export const RescheduleModal: React.FC<RescheduleModalProps> = ({
     return toISODateString(d);
   })();
 
-  // 1. Calculate the ideal conflict-free NEXT AVAILABLE slot (Today if available, or rolls over to Tomorrow)
+  // 1. Calculate the ideal conflict-free NEXT AVAILABLE slot (Prioritizing the task's core routine time on/after its scheduled date)
   // Strictly avoids the task's identical unchanged slot and active working tasks
   const suggestedNextSlot = useMemo(() => {
     return findNextAvailableSlot(
@@ -70,7 +70,7 @@ export const RescheduleModal: React.FC<RescheduleModalProps> = ({
       allTasks,
       capacitySettings,
       task.id,
-      undefined, // Start from Today!
+      task.taskDate && task.taskDate >= todayStr ? task.taskDate : todayStr, // Start search from the task's core scheduled date!
       false,
       15,
       { 
@@ -79,9 +79,10 @@ export const RescheduleModal: React.FC<RescheduleModalProps> = ({
         endTime: task.endTime,
         id: task.id,
         simultaneousWithIds: task.simultaneousWithIds
-      }
+      },
+      task.startTime // Target Core Routine Time!
     );
-  }, [task.appointedMinutes, allTasks, capacitySettings, task.id, task.taskDate, task.startTime, task.endTime, task.simultaneousWithIds]);
+  }, [task.appointedMinutes, allTasks, capacitySettings, task.id, task.taskDate, task.startTime, task.endTime, task.simultaneousWithIds, todayStr]);
 
   const [anchorDate, setAnchorDate] = useState<string>(() => {
     if (task.taskDate && task.taskDate >= todayStr) {
@@ -109,6 +110,7 @@ export const RescheduleModal: React.FC<RescheduleModalProps> = ({
   const currentMinutes = now.getHours() * 60 + now.getMinutes();
 
   // Helper to compute multiple conflict-free slots relative to anchorDate (0..7 days)
+  // Centered around the task's CORE TIME!
   const getSlotsForDayOffset = (days: number): { dayLabel: string; subLabel: string; dateStr: string; dayOfWeek: string; slots: AvailableSlotResult[] } => {
     const parts = anchorDate.split('-').map(Number);
     const target = new Date(parts[0], parts[1] - 1, parts[2] + days);
@@ -150,7 +152,9 @@ export const RescheduleModal: React.FC<RescheduleModalProps> = ({
         endTime: task.endTime,
         id: task.id,
         simultaneousWithIds: task.simultaneousWithIds
-      }
+      },
+      capacitySettings.defaultBufferMinutes ?? 0,
+      task.startTime // Core routine time!
     );
 
     let dayLabel = `+${days} Days`;
@@ -193,6 +197,7 @@ export const RescheduleModal: React.FC<RescheduleModalProps> = ({
   }, [anchorDate, task.appointedMinutes, allTasks, capacitySettings, task.id]);
 
   // 100-Day Smart Scanner: Scans the next 100 days to find earliest recommended conflict-free slots
+  // Prioritizes matching the task's CORE ROUTINE TIME!
   const scannedSlots = useMemo(() => {
     const results: AvailableSlotResult[] = [];
     for (let d = 0; d <= 100 && results.length < 8; d++) {
@@ -210,16 +215,18 @@ export const RescheduleModal: React.FC<RescheduleModalProps> = ({
         earliest,
         task.id,
         capacitySettings.sleepStartTime,
-        capacitySettings.sleepEndTime
+        capacitySettings.sleepEndTime,
+        capacitySettings.defaultBufferMinutes ?? 0,
+        task.startTime // Core routine time!
       );
       if (slot) {
         results.push(slot);
       }
     }
     return results;
-  }, [task.appointedMinutes, allTasks, capacitySettings, task.id, currentMinutes]);
+  }, [task.appointedMinutes, allTasks, capacitySettings, task.id, currentMinutes, task.startTime]);
 
-  // Custom date slots calculation (multiple slots on custom chosen date)
+  // Custom date slots calculation (multiple slots on custom chosen date centered on core time)
   const customSlots = useMemo(() => {
     if (!customDate || customDate < todayStr) return [];
     const isToday = customDate === todayStr;
@@ -241,7 +248,9 @@ export const RescheduleModal: React.FC<RescheduleModalProps> = ({
         endTime: task.endTime,
         id: task.id,
         simultaneousWithIds: task.simultaneousWithIds
-      }
+      },
+      capacitySettings.defaultBufferMinutes ?? 0,
+      task.startTime // Core routine time!
     );
   }, [customDate, task.appointedMinutes, allTasks, capacitySettings, todayStr, currentMinutes, task.id, task.taskDate, task.startTime, task.endTime, task.simultaneousWithIds]);
 
@@ -311,6 +320,12 @@ export const RescheduleModal: React.FC<RescheduleModalProps> = ({
   const taskCircadianStartMin = useMemo(() => {
     return task.startTime && task.startTime !== 'All Day' ? getCircadianMinutes(task.startTime) : null;
   }, [task.startTime, wakingStartMin]);
+
+  // Detect if the exact same core time is free on the target anchorDate
+  const sameTimeSlot = useMemo(() => {
+    if (taskCircadianStartMin === null || activeDateSlots.length === 0) return null;
+    return activeDateSlots.find(s => getCircadianMinutes(s.startTime) === taskCircadianStartMin) || null;
+  }, [activeDateSlots, taskCircadianStartMin]);
 
   // Partition available slots into 3-5 Before (Blue) and 3-5 After (Green) relative to Current Task Time
   const { beforeSlots, afterSlots } = useMemo(() => {
@@ -780,28 +795,70 @@ export const RescheduleModal: React.FC<RescheduleModalProps> = ({
                     </div>
 
                     {/* 2. CURRENT TIME REFERENCE (APPLE CUPERTINO PIN CARD) */}
-                    <div className="flex flex-col items-center justify-center p-3 rounded-2xl bg-amber-500/[0.06] dark:bg-amber-400/[0.08] border border-amber-500/30 dark:border-amber-400/30 text-center space-y-1 shrink-0 shadow-2xs">
-                      <span className="text-[10px] font-bold uppercase tracking-wider text-amber-700 dark:text-amber-300 px-2.5 py-0.5 rounded-full bg-amber-500/15 border border-amber-500/25 flex items-center gap-1">
-                        <Clock className="w-2.5 h-2.5" /> CURRENT
-                      </span>
-                      <div className="font-mono font-bold text-xs sm:text-sm text-theme-text leading-tight mt-1">
-                        {task.startTime}
-                      </div>
-                      <div className="text-[11px] text-theme-muted font-mono font-medium">
-                        ↓ {task.endTime}
-                      </div>
-                      <div className="text-[10px] text-amber-700 dark:text-amber-300 font-semibold">
-                        {task.taskDate === todayStr ? `Today (${formatDisplayDate(task.taskDate)})` : formatDisplayDate(task.taskDate)}
-                      </div>
-                      {(() => {
-                        const curPeriod = getTimePeriodForTime(task.startTime, timePeriodSettings);
-                        return (
-                          <span className="text-[10px] font-medium text-theme-muted truncate max-w-full px-1">
-                            {curPeriod?.emoji || '⏰'} {curPeriod?.name || 'Anchor'}
+                    {(() => {
+                      const isSameTimeSelected = Boolean(
+                        sameTimeSlot &&
+                        selectedSlot?.date === sameTimeSlot.date &&
+                        selectedSlot?.startTime === sameTimeSlot.startTime
+                      );
+                      const isAvailable = Boolean(sameTimeSlot);
+
+                      return (
+                        <div
+                          onClick={() => {
+                            if (sameTimeSlot) {
+                              setSelectedSlot(sameTimeSlot);
+                            }
+                          }}
+                          className={`flex flex-col items-center justify-center p-3 rounded-2xl border text-center space-y-1 shrink-0 transition-all ${
+                            isAvailable
+                              ? isSameTimeSelected
+                                ? 'bg-amber-500/20 dark:bg-amber-400/25 border-amber-500 ring-2 ring-amber-500/50 shadow-md cursor-pointer scale-[1.02]'
+                                : 'bg-amber-500/[0.08] dark:bg-amber-400/[0.1] border-amber-500/40 hover:border-amber-500/70 hover:bg-amber-500/15 cursor-pointer shadow-2xs'
+                              : 'bg-amber-500/[0.03] dark:bg-amber-400/[0.04] border-amber-500/20 opacity-75 cursor-default'
+                          }`}
+                        >
+                          <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full border flex items-center gap-1 ${
+                            isSameTimeSelected
+                              ? 'bg-amber-500 text-white border-amber-600'
+                              : 'bg-amber-500/15 text-amber-700 dark:text-amber-300 border-amber-500/25'
+                          }`}>
+                            <Clock className="w-2.5 h-2.5" /> CORE TIME
                           </span>
-                        );
-                      })()}
-                    </div>
+                          <div className="font-mono font-bold text-xs sm:text-sm text-theme-text leading-tight mt-1">
+                            {task.startTime}
+                          </div>
+                          <div className="text-[11px] text-theme-muted font-mono font-medium">
+                            ↓ {task.endTime}
+                          </div>
+                          {isAvailable ? (
+                            <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full flex items-center gap-1 mt-0.5 ${
+                              isSameTimeSelected
+                                ? 'bg-emerald-500 text-white font-bold'
+                                : 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-500/25'
+                            }`}>
+                              {isSameTimeSelected ? <Check className="w-2.5 h-2.5 stroke-[3]" /> : <Zap className="w-2.5 h-2.5 fill-current" />}
+                              {isSameTimeSelected ? 'Selected' : 'Available'}
+                            </span>
+                          ) : (
+                            <span className="text-[10px] font-medium text-theme-muted px-1 py-0.5">
+                              Busy on this day
+                            </span>
+                          )}
+                          <div className="text-[10px] text-amber-700 dark:text-amber-300 font-semibold">
+                            {task.taskDate === todayStr ? `Today (${formatDisplayDate(task.taskDate)})` : formatDisplayDate(task.taskDate)}
+                          </div>
+                          {(() => {
+                            const curPeriod = getTimePeriodForTime(task.startTime, timePeriodSettings);
+                            return (
+                              <span className="text-[10px] font-medium text-theme-muted truncate max-w-full px-1">
+                                {curPeriod?.emoji || '⏰'} {curPeriod?.name || 'Anchor'}
+                              </span>
+                            );
+                          })()}
+                        </div>
+                      );
+                    })()}
 
                     {/* 3. AFTER SLOTS (GREEN / POST-PONE) */}
                     <div className="space-y-2 flex flex-col justify-between">

@@ -79,21 +79,21 @@ export const Header: React.FC<HeaderProps> = ({ onOpenNewTaskModal }) => {
   ];
 
   return (
-    <header className="sticky top-0 z-30 glass-header shadow-sm transition-colors duration-200">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-2.5">
+    <header className="sticky top-0 z-30 glass-header shadow-xs transition-colors duration-200">
+      <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-2">
         <div className="flex items-center justify-between gap-3">
           
           {/* Logo & Live Time Section */}
-          <div className="flex items-center gap-3 shrink-0">
-            <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-blue-600 to-sky-400 flex items-center justify-center shadow-md shadow-blue-500/20 text-white font-bold text-base tracking-wider">
+          <div className="flex items-center gap-2.5 sm:gap-3 shrink-0">
+            <div className="w-9 h-9 rounded-2xl bg-gradient-to-b from-blue-500 to-blue-600 dark:from-blue-400 dark:to-blue-600 flex items-center justify-center shadow-sm shadow-blue-500/30 text-white font-black text-sm tracking-wider ring-1 ring-white/20 shrink-0">
               OT
             </div>
             <div>
               <div className="flex items-center gap-1.5">
-                <h1 className="text-base font-black tracking-tight font-display text-theme-text flex items-center gap-1">
+                <h1 className="text-sm sm:text-base font-black tracking-tight font-display text-theme-text flex items-center gap-1">
                   OPTIMUS<span className="text-blue-600 dark:text-blue-400">TIME</span>
                 </h1>
-                <span className="text-[9px] uppercase font-bold tracking-widest px-1.5 py-0.5 rounded bg-blue-100 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300">
+                <span className="text-[9px] uppercase font-bold tracking-widest px-1.5 py-0.5 rounded-full bg-blue-500/10 dark:bg-blue-400/15 text-blue-700 dark:text-blue-300 border border-blue-500/20">
                   Unified
                 </span>
               </div>
@@ -102,28 +102,25 @@ export const Header: React.FC<HeaderProps> = ({ onOpenNewTaskModal }) => {
               </div>
             </div>
 
-            {/* Big Live Clock Badge in Bangladesh Time */}
-            <div className="hidden sm:flex items-center gap-2 bg-gradient-to-r from-blue-50/90 via-sky-50/50 to-theme-card dark:from-blue-950/50 dark:via-sky-950/30 dark:to-theme-card px-3.5 py-1.5 rounded-xl border border-blue-200 dark:border-blue-800/80 shadow-sm ml-2 ring-1 ring-blue-500/20">
-              <div className="relative flex h-2.5 w-2.5">
+            {/* Big Live Clock Badge in Bangladesh Time (Apple Complication Style) */}
+            <div className="hidden sm:flex items-center gap-2 bg-theme-card/60 dark:bg-theme-card/50 backdrop-blur-xl px-3 py-1.5 rounded-2xl border border-theme-border/80 shadow-xs ml-1 ring-1 ring-black/5 dark:ring-white/5">
+              <div className="relative flex h-2 w-2">
                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
-                <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-blue-600 dark:bg-blue-400"></span>
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-blue-600 dark:bg-blue-400"></span>
               </div>
               {bdTime.isNight ? (
-                <Moon className="w-4 h-4 text-indigo-500 dark:text-indigo-400" />
+                <Moon className="w-3.5 h-3.5 text-indigo-500 dark:text-indigo-400" />
               ) : (
-                <Sun className="w-4 h-4 text-amber-500" />
+                <Sun className="w-3.5 h-3.5 text-amber-500" />
               )}
               <div className="flex items-center gap-1.5">
-                <span className="font-mono text-sm sm:text-base font-black tracking-wider text-theme-text font-display">
+                <span className="font-mono text-xs sm:text-sm font-bold tracking-tight text-theme-text">
                   {formattedTimeStr}
                 </span>
-                <span className="text-[9px] font-extrabold px-1.5 py-0.5 rounded bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-300 border border-blue-300 dark:border-blue-800">
-                  BST
-                </span>
-                <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${
+                <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full border ${
                   bdTime.isNight 
-                    ? 'bg-indigo-100 dark:bg-indigo-950/80 text-indigo-700 dark:text-indigo-300 border border-indigo-300 dark:border-indigo-800' 
-                    : 'bg-amber-100 dark:bg-amber-950/80 text-amber-700 dark:text-amber-300 border border-amber-300 dark:border-amber-800'
+                    ? 'bg-indigo-500/10 text-indigo-700 dark:text-indigo-300 border-indigo-500/25' 
+                    : 'bg-amber-500/10 text-amber-700 dark:text-amber-300 border-amber-500/25'
                 }`}>
                   {bdTime.circadianPeriod}
                 </span>
@@ -131,65 +128,91 @@ export const Header: React.FC<HeaderProps> = ({ onOpenNewTaskModal }) => {
             </div>
           </div>
 
-          {/* Daily Capacity & Red-Line Indicator */}
-          <div className="hidden md:block flex-1 max-w-xs lg:max-w-sm px-2">
-            <div className={`p-2 rounded-xl border transition-all duration-300 ${
+          {/* Daily Capacity & Red-Line Indicator (Apple Master-Level Lighting Capsule) */}
+          <div className="hidden md:block flex-1 max-w-[250px] lg:max-w-[280px] px-1.5 shrink-0">
+            <div className={`px-3 py-2 rounded-2xl border transition-all duration-300 shadow-2xs group ${
               isRedLine 
-                ? 'bg-red-50 dark:bg-red-950/40 border-red-300 dark:border-red-800 animate-glow-danger' 
-                : 'bg-theme-card/70 border-theme-border'
+                ? 'bg-red-500/[0.08] dark:bg-red-500/[0.14] border-red-500/40 animate-glow-danger' 
+                : 'bg-theme-card/70 dark:bg-theme-card/50 backdrop-blur-xl border-theme-border/80 hover:border-theme-border hover:shadow-xs'
             }`}>
-              <div className="flex items-center justify-between text-[11px] mb-1">
-                <div className="flex items-center gap-1 font-semibold">
-                  {isRedLine ? (
-                    <>
-                      <AlertTriangle className="w-3 h-3 text-red-600 dark:text-red-400 animate-bounce" />
-                      <span className="text-red-700 dark:text-red-400 font-bold uppercase tracking-wider text-[10px]">
-                        Red-Line Exceeded!
-                      </span>
-                    </>
-                  ) : (
-                    <>
-                      <Flame className="w-3 h-3 text-amber-500" />
-                      <span className="text-theme-text font-medium">Capacity</span>
-                    </>
-                  )}
-                </div>
-                <div className="font-mono text-[10px] font-bold text-theme-muted">
-                  <span className={isRedLine ? 'text-red-600 font-black' : 'text-blue-600 dark:text-blue-400'}>
-                    {formattedHours}h {formattedRemainingMinutes}m
+              {/* Top Row: Icon + Label + Single-line Tabular Figures + Percent Pill */}
+              <div className="flex items-center justify-between gap-2 mb-1.5 whitespace-nowrap">
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <div className={`w-4 h-4 rounded-md flex items-center justify-center shrink-0 ${
+                    isRedLine 
+                      ? 'bg-red-500/20 text-red-600 dark:text-red-400' 
+                      : 'bg-amber-500/15 text-amber-500'
+                  }`}>
+                    {isRedLine ? (
+                      <AlertTriangle className="w-2.5 h-2.5 animate-bounce stroke-[2.5]" />
+                    ) : (
+                      <Flame className="w-2.5 h-2.5 fill-current" />
+                    )}
+                  </div>
+                  <span className={`text-[11px] font-bold tracking-tight font-display ${
+                    isRedLine ? 'text-red-600 dark:text-red-400 uppercase tracking-wider text-[10px]' : 'text-theme-text'
+                  }`}>
+                    {isRedLine ? 'Red-Line' : 'Capacity'}
                   </span>
-                  {' '}/ {capacitySettings.maxWorkHours}h
+                </div>
+
+                <div className="flex items-center gap-1.5 shrink-0 font-mono">
+                  <div className="text-[10px] font-bold tracking-tight text-theme-muted whitespace-nowrap">
+                    <span className={isRedLine ? 'text-red-600 dark:text-red-400 font-black' : 'text-theme-text font-bold'}>
+                      {formattedHours}h {formattedRemainingMinutes}m
+                    </span>
+                    <span className="opacity-50 mx-0.5">/</span>
+                    <span className="opacity-80">{capacitySettings.maxWorkHours}h</span>
+                  </div>
+
+                  <span className={`text-[9px] font-extrabold px-1.5 py-0.2 rounded-full border shrink-0 ${
+                    isRedLine
+                      ? 'bg-red-500/20 text-red-600 dark:text-red-300 border-red-500/40 font-black'
+                      : capacityPercent > 80
+                      ? 'bg-amber-500/15 text-amber-700 dark:text-amber-300 border-amber-500/30'
+                      : 'bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/25'
+                  }`}>
+                    {capacityPercent}%
+                  </span>
                 </div>
               </div>
 
-              {/* Progress Bar */}
-              <div className="w-full bg-slate-200 dark:bg-slate-700 h-1.5 rounded-full overflow-hidden">
-                <div 
-                  className={`h-full transition-all duration-500 rounded-full ${
-                    isRedLine 
-                      ? 'bg-gradient-to-r from-orange-500 to-red-600' 
-                      : capacityPercent > 80 
-                        ? 'bg-gradient-to-r from-blue-500 to-amber-500' 
-                        : 'bg-gradient-to-r from-blue-600 to-sky-400'
-                  }`}
-                  style={{ width: `${capacityPercent}%` }}
-                />
+              {/* Apple Master-Level Lighting Progress Bar */}
+              <div className="w-full bg-black/[0.08] dark:bg-white/[0.08] h-2 rounded-full shadow-[inset_0_1px_2px_rgba(0,0,0,0.18)] overflow-hidden relative ring-1 ring-black/[0.03] dark:ring-white/[0.05]">
+                {capacityPercent > 0 && (
+                  <div 
+                    className={`h-full rounded-full transition-all duration-500 relative overflow-hidden ${
+                      isRedLine 
+                        ? 'bg-gradient-to-r from-red-500 via-rose-500 to-red-600 apple-lighting-glow-red' 
+                        : capacityPercent > 80 
+                          ? 'bg-gradient-to-r from-amber-500 via-orange-400 to-amber-500 apple-lighting-glow-amber' 
+                          : 'bg-gradient-to-r from-blue-600 via-sky-400 to-cyan-300 apple-lighting-glow-blue'
+                    }`}
+                    style={{ width: `${Math.min(100, Math.max(3, capacityPercent))}%` }}
+                  >
+                    {/* Animated Specular Traveling Light Sheen */}
+                    <div className="apple-lighting-sheen" />
+
+                    {/* Apple Dynamic Leading Light Beacon */}
+                    <div className="absolute right-0 top-0 bottom-0 w-2 bg-white/70 rounded-full blur-[1px] pointer-events-none" />
+                  </div>
+                )}
               </div>
             </div>
           </div>
 
-          {/* Quick Search & Actions */}
+          {/* Quick Search & Actions (Apple Cupertino Header Bar) */}
           <div className="flex items-center gap-2 shrink-0">
             
-            {/* Search Input */}
+            {/* Search Input (Apple Spotlight Pill) */}
             <div className="relative w-24 sm:w-36 md:w-44 focus-within:w-36 sm:focus-within:w-48 transition-all duration-200">
-              <Search className="w-3.5 h-3.5 text-theme-muted absolute left-2.5 top-1/2 -translate-y-1/2" />
+              <Search className="w-3.5 h-3.5 text-theme-muted absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
               <input
                 type="text"
                 placeholder="Search..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full text-xs pl-7 pr-2.5 py-1.5 rounded-lg bg-theme-card-hover border border-theme-border text-theme-text placeholder-theme-muted focus:outline-none focus:ring-1 focus:ring-blue-500"
+                className="w-full text-xs pl-8 pr-3 py-1.5 rounded-full bg-theme-card-hover/80 border border-theme-border/80 text-theme-text placeholder-theme-muted focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 transition-all shadow-2xs"
               />
             </div>
 
@@ -202,16 +225,16 @@ export const Header: React.FC<HeaderProps> = ({ onOpenNewTaskModal }) => {
                   syncNow();
                 }
               }}
-              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-xs font-semibold transition-all cursor-pointer shrink-0 ${
+              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-full border text-xs font-semibold transition-all cursor-pointer shrink-0 active:scale-95 shadow-2xs ${
                 cloudSyncStatus === 'synced'
-                  ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/20'
+                  ? 'bg-emerald-500/10 border-emerald-500/25 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/20'
                   : cloudSyncStatus === 'syncing'
-                  ? 'bg-blue-500/10 border-blue-500/30 text-blue-600 dark:text-blue-400 hover:bg-blue-500/20'
+                  ? 'bg-blue-500/10 border-blue-500/25 text-blue-600 dark:text-blue-400 hover:bg-blue-500/20'
                   : cloudSyncStatus === 'connecting'
-                  ? 'bg-amber-500/10 border-amber-500/30 text-amber-600 dark:text-amber-400 hover:bg-amber-500/20'
+                  ? 'bg-amber-500/10 border-amber-500/25 text-amber-600 dark:text-amber-400 hover:bg-amber-500/20'
                   : cloudSyncStatus === 'error'
-                  ? 'bg-red-500/10 border-red-500/30 text-red-600 dark:text-red-400 hover:bg-red-500/20'
-                  : 'bg-theme-card-hover border-theme-border text-theme-muted hover:text-theme-text'
+                  ? 'bg-red-500/10 border-red-500/25 text-red-600 dark:text-red-400 hover:bg-red-500/20'
+                  : 'bg-theme-card-hover border-theme-border/80 text-theme-muted hover:text-theme-text'
               }`}
               title={
                 !cloudSyncConfig.isEnabled
@@ -250,30 +273,30 @@ export const Header: React.FC<HeaderProps> = ({ onOpenNewTaskModal }) => {
             {/* Recurring Hub God Admin Button */}
             <button
               onClick={openRecurringHub}
-              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-theme-border bg-theme-card-hover hover:bg-theme-border text-theme-muted hover:text-theme-text text-xs font-semibold transition-all cursor-pointer shrink-0"
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-full border border-theme-border/80 bg-theme-card-hover/80 hover:bg-theme-border/80 text-theme-muted hover:text-theme-text text-xs font-semibold transition-all cursor-pointer shrink-0 active:scale-95 shadow-2xs"
               title="Recurring Tasks & Schedules Hub (God Admin)"
             >
               <Repeat className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
               <span className="hidden lg:inline text-[11px]">Recurring</span>
-              <span className="text-[9px] font-mono font-black px-1.5 py-0.2 rounded-full bg-indigo-100 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300">
+              <span className="text-[9px] font-mono font-black px-1.5 py-0.2 rounded-full bg-indigo-500/15 text-indigo-700 dark:text-indigo-300 border border-indigo-500/20">
                 {tasks.filter(t => t.recurrence && t.recurrence !== 'None').length}
               </span>
             </button>
 
-            {/* Theme Selector Dropdown */}
+            {/* Theme Selector Dropdown (Apple macOS Popover Style) */}
             <div className="relative">
               <button
                 onClick={() => setShowThemeMenu(!showThemeMenu)}
-                className="flex items-center gap-1 p-1.5 rounded-lg bg-theme-card-hover border border-theme-border text-theme-text hover:bg-theme-border transition-colors text-xs font-medium cursor-pointer shrink-0"
+                className="flex items-center gap-1 p-2 rounded-full bg-theme-card-hover/80 border border-theme-border/80 text-theme-text hover:bg-theme-border/80 transition-all text-xs font-medium cursor-pointer shrink-0 active:scale-95 shadow-2xs"
                 title="Change Theme"
               >
-                <Palette className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+                <Palette className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
                 <ChevronDown className="w-3 h-3 text-theme-muted" />
               </button>
 
               {showThemeMenu && (
-                <div className="absolute right-0 mt-2 w-52 glass-panel rounded-xl shadow-xl z-50 p-2 border border-theme-border animate-fade-in">
-                  <div className="text-[10px] font-bold text-theme-muted px-2 py-1 uppercase tracking-wider">
+                <div className="absolute right-0 mt-2 w-52 glass-panel rounded-2xl shadow-2xl z-50 p-2 border border-theme-border animate-fade-in">
+                  <div className="text-[10px] font-bold text-theme-muted px-2.5 py-1 uppercase tracking-wider">
                     Select Aesthetic Theme
                   </div>
                   <div className="space-y-1 mt-1">
@@ -284,15 +307,15 @@ export const Header: React.FC<HeaderProps> = ({ onOpenNewTaskModal }) => {
                           setTheme(t.id);
                           setShowThemeMenu(false);
                         }}
-                        className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs transition-colors cursor-pointer ${
+                        className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-xl text-xs transition-all cursor-pointer ${
                           theme === t.id 
-                            ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 font-bold' 
+                            ? 'bg-blue-500/10 text-blue-600 dark:text-blue-400 font-bold' 
                             : 'hover:bg-theme-card-hover text-theme-text'
                         }`}
                       >
                         <div className="flex items-center gap-2">
                           <span 
-                            className="w-2.5 h-2.5 rounded-full shadow-sm" 
+                            className="w-2.5 h-2.5 rounded-full shadow-xs" 
                             style={{ backgroundColor: t.color }}
                           />
                           <span>{t.name}</span>
@@ -305,10 +328,10 @@ export const Header: React.FC<HeaderProps> = ({ onOpenNewTaskModal }) => {
               )}
             </div>
 
-            {/* Primary New Task CTA */}
+            {/* Primary New Task CTA (Apple Cupertino Blue Pill) */}
             <button
               onClick={onOpenNewTaskModal}
-              className="btn-pro btn-pro-primary flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-xl shadow-md shrink-0 whitespace-nowrap"
+              className="flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-bold rounded-full bg-blue-600 hover:bg-blue-500 text-white shadow-sm shadow-blue-600/30 hover:shadow-md hover:shadow-blue-600/40 transition-all active:scale-95 shrink-0 whitespace-nowrap cursor-pointer"
               title="Create New Task"
             >
               <Plus className="w-4 h-4 stroke-[2.5]" />
@@ -319,7 +342,7 @@ export const Header: React.FC<HeaderProps> = ({ onOpenNewTaskModal }) => {
             {securitySettings.isPasswordProtected && (
               <button
                 onClick={logout}
-                className="btn-pro-icon hover:text-red-600 hover:border-red-300 dark:hover:border-red-800 text-xs"
+                className="w-8 h-8 rounded-full flex items-center justify-center border border-theme-border/80 bg-theme-card-hover/80 hover:text-red-600 hover:border-red-300 dark:hover:border-red-800 text-theme-muted transition-all active:scale-95 cursor-pointer shadow-2xs"
                 title="Lock System / Sign Out"
               >
                 <Lock className="w-3.5 h-3.5" />

@@ -3,51 +3,52 @@
 @tailwind utilities;
 
 :root {
-  /* Default: Light White & Bluish Theme */
-  --color-bg: #F8FAFC;
-  --color-card: #FFFFFF;
-  --color-card-hover: #F1F5F9;
-  --color-border: #E2E8F0;
-  --color-text: #0F172A;
-  --color-muted: #64748B;
-  --color-primary: #2563EB;
-  --color-primary-hover: #1D4ED8;
-  --color-primary-light: #EFF6FF;
-  --color-accent: #0EA5E9;
+  /* Default: Apple Cupertino Light Theme */
+  --color-bg: #F5F5F7;
+  --color-card: rgba(255, 255, 255, 0.94);
+  --color-card-hover: rgba(255, 255, 255, 0.98);
+  --color-border: rgba(0, 0, 0, 0.08);
+  --color-text: #1D1D1F;
+  --color-muted: #86868B;
+  --color-primary: #0071E3;
+  --color-primary-hover: #0077ED;
+  --color-primary-light: #F0F6FD;
+  --color-accent: #2997FF;
 }
 
 [data-theme="cyber-dark"] {
-  --color-bg: #0B0F19;
-  --color-card: #111827;
-  --color-card-hover: #1F2937;
-  --color-border: #1F2937;
-  --color-text: #F9FAFB;
-  --color-muted: #9CA3AF;
-  --color-primary: #3B82F6;
-  --color-primary-hover: #60A5FA;
-  --color-primary-light: #1E293B;
-  --color-accent: #06B6D4;
+  /* Apple Pro OLED Dark Mode */
+  --color-bg: #000000;
+  --color-card: #1C1C1E;
+  --color-card-hover: #2C2C2E;
+  --color-border: rgba(255, 255, 255, 0.1);
+  --color-text: #F5F5F7;
+  --color-muted: #98989D;
+  --color-primary: #2997FF;
+  --color-primary-hover: #0A84FF;
+  --color-primary-light: #15263F;
+  --color-accent: #64D2FF;
 }
 
 [data-theme="nord-slate"] {
-  --color-bg: #2E3440;
-  --color-card: #3B4252;
-  --color-card-hover: #434C5E;
-  --color-border: #4C566A;
+  --color-bg: #1E222A;
+  --color-card: #282C34;
+  --color-card-hover: #323842;
+  --color-border: rgba(236, 239, 244, 0.12);
   --color-text: #ECEFF4;
-  --color-muted: #D8DEE9;
+  --color-muted: #A3B1C2;
   --color-primary: #88C0D0;
   --color-primary-hover: #81A1C1;
-  --color-primary-light: #434C5E;
+  --color-primary-light: #2D3748;
   --color-accent: #8FBCBB;
 }
 
 [data-theme="emerald-obsidian"] {
-  --color-bg: #061A14;
-  --color-card: #0A2820;
-  --color-card-hover: #0F382D;
-  --color-border: #144739;
-  --color-text: #ECFDF5;
+  --color-bg: #04120E;
+  --color-card: #0A2018;
+  --color-card-hover: #0F2E23;
+  --color-border: rgba(110, 231, 183, 0.14);
+  --color-text: #F0FDF4;
   --color-muted: #6EE7B7;
   --color-primary: #10B981;
   --color-primary-hover: #34D399;
@@ -56,10 +57,10 @@
 }
 
 [data-theme="sunset-amber"] {
-  --color-bg: #181412;
-  --color-card: #251E1A;
-  --color-card-hover: #352B25;
-  --color-border: #453830;
+  --color-bg: #120E0C;
+  --color-card: #1E1714;
+  --color-card-hover: #2B211D;
+  --color-border: rgba(253, 186, 116, 0.14);
   --color-text: #FFF7ED;
   --color-muted: #FDBA74;
   --color-primary: #F97316;
@@ -69,10 +70,10 @@
 }
 
 [data-theme="rose-quartz"] {
-  --color-bg: #17111A;
-  --color-card: #241A28;
-  --color-card-hover: #33253A;
-  --color-border: #473250;
+  --color-bg: #120A14;
+  --color-card: #1E1221;
+  --color-card-hover: #2B1A2F;
+  --color-border: rgba(244, 114, 182, 0.14);
   --color-text: #FDF2F8;
   --color-muted: #F472B6;
   --color-primary: #EC4899;
@@ -81,10 +82,10 @@
   --color-accent: #A855F7;
 }
 
-/* Custom Scrollbars */
+/* Apple Pro Custom Scrollbars */
 ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 5px;
+  height: 5px;
 }
 
 ::-webkit-scrollbar-track {
@@ -100,17 +101,33 @@
   background: var(--color-muted);
 }
 
-/* Glassmorphic utilities */
+/* Apple Cupertino Glassmorphism */
 .glass-panel {
   background: var(--color-card);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(24px) saturate(180%);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
   border: 1px solid var(--color-border);
+  box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.04), inset 0 1px 0 0 rgba(255, 255, 255, 0.12);
 }
 
 .glass-header {
   background: var(--color-card);
+  backdrop-filter: blur(24px) saturate(180%);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
   border-bottom: 1px solid var(--color-border);
+  box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.03);
+}
+
+.apple-card {
+  background: var(--color-card);
+  border: 1px solid var(--color-border);
+  border-radius: 1.25rem;
+  box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.03), 0 6px 18px -4px rgba(0, 0, 0, 0.04), inset 0 1px 0 0 rgba(255, 255, 255, 0.1);
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.apple-card:hover {
+  box-shadow: 0 3px 8px 0 rgba(0, 0, 0, 0.04), 0 12px 28px -6px rgba(0, 0, 0, 0.08), inset 0 1px 0 0 rgba(255, 255, 255, 0.16);
 }
 
 /* Custom glow animations */
@@ -125,6 +142,47 @@
 
 .animate-glow-danger {
   animation: pulseGlow 2s infinite ease-in-out;
+}
+
+/* =========================================================================
+   APPLE MASTER-LEVEL LIGHTING SYSTEM (Cupertino Hardware Grade)
+   ========================================================================= */
+
+@keyframes appleLightingSheen {
+  0% {
+    transform: translateX(-150%);
+  }
+  60%, 100% {
+    transform: translateX(250%);
+  }
+}
+
+.apple-lighting-sheen {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.5) 50%,
+    transparent 100%
+  );
+  animation: appleLightingSheen 3.2s infinite cubic-bezier(0.4, 0, 0.2, 1);
+  pointer-events: none;
+}
+
+.apple-lighting-glow-blue {
+  box-shadow: 0 0 12px 2px rgba(41, 151, 255, 0.5), inset 0 1px 0 0 rgba(255, 255, 255, 0.6);
+}
+
+.apple-lighting-glow-amber {
+  box-shadow: 0 0 14px 2px rgba(255, 159, 10, 0.55), inset 0 1px 0 0 rgba(255, 255, 255, 0.6);
+}
+
+.apple-lighting-glow-red {
+  box-shadow: 0 0 16px 3px rgba(255, 59, 48, 0.65), inset 0 1px 0 0 rgba(255, 255, 255, 0.6);
 }
 
 /* Touch & Mobile UX Polish */
@@ -294,15 +352,15 @@ input[type="time"] {
 }
 
 /* Display Titles & Hero Headings */
-h1, h2, h3, .font-display {
-  font-family: 'Plus Jakarta Sans', Outfit, -apple-system, BlinkMacSystemFont, 'SF Pro Display', sans-serif;
+h1, h2, h3, h4, h5, h6, .font-display {
+  font-family: 'Plus Jakarta Sans', 'Inter', 'Poppins', 'Roboto', -apple-system, BlinkMacSystemFont, 'SF Pro Display', sans-serif;
   letter-spacing: -0.025em;
   font-feature-settings: "cv05" 1, "ss01" 1;
 }
 
-/* Linear-grade crisp text rendering */
-body {
-  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Plus Jakarta Sans", Inter, system-ui, sans-serif;
+/* Apple-grade crisp typography for the entire site */
+body, button, input, select, textarea {
+  font-family: 'Plus Jakarta Sans', 'Inter', 'Roboto', 'Poppins', -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;

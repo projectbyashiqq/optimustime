@@ -38,9 +38,9 @@ export const Navbar: React.FC = () => {
   ];
 
   return (
-    <nav className="border-b border-theme-border bg-theme-card/80 backdrop-blur-md sticky top-[61px] z-20 transition-colors duration-200 shadow-sm">
+    <nav className="border-b border-theme-border/60 bg-theme-card/75 backdrop-blur-xl saturate-180 sticky top-[57px] z-20 transition-colors duration-200 shadow-2xs">
       <div className="max-w-7xl mx-auto px-2 sm:px-6 lg:px-8 relative">
-        <div className="flex items-center space-x-1 sm:space-x-1.5 overflow-x-auto py-2 no-scrollbar scroll-smooth">
+        <div className="flex items-center space-x-1 sm:space-x-1.5 overflow-x-auto py-1.5 no-scrollbar scroll-smooth">
           {navItems.map((item) => {
             const Icon = item.icon;
             const isActive = activeTab === item.id;
@@ -48,14 +48,14 @@ export const Navbar: React.FC = () => {
               <button
                 key={item.id}
                 onClick={() => setActiveTab(item.id)}
-                className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition-all duration-150 shrink-0 touch-manipulation cursor-pointer ${
+                className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap transition-all duration-150 shrink-0 touch-manipulation cursor-pointer active:scale-95 ${
                   isActive
-                    ? 'bg-blue-600 text-white shadow-sm shadow-blue-500/25 ring-1 ring-blue-400/40'
-                    : 'text-theme-muted hover:text-theme-text hover:bg-theme-card-hover'
+                    ? 'bg-blue-600 text-white shadow-sm shadow-blue-500/25 ring-1 ring-white/20'
+                    : 'text-theme-muted hover:text-theme-text hover:bg-theme-card-hover/80'
                 }`}
               >
                 <Icon className={`w-3.5 h-3.5 ${isActive ? 'text-white' : 'text-theme-muted'}`} />
-                <span>
+                <span className="tracking-tight">
                   {item.shortLabel ? (
                     <>
                       <span className="inline lg:hidden">{item.shortLabel}</span>
@@ -66,7 +66,7 @@ export const Navbar: React.FC = () => {
                   )}
                 </span>
                 {item.badge !== undefined && (
-                  <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold leading-none ${item.badgeColor || 'bg-blue-500 text-white'}`}>
+                  <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold leading-none ${item.badgeColor || 'bg-blue-500 text-white'}`}>
                     {item.badge}
                   </span>
                 )}
