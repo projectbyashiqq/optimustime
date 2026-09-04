@@ -298,23 +298,33 @@ export const RescheduleModal: React.FC<RescheduleModalProps> = ({
     return dayData ? dayData.slots : [];
   }, [weekDaysData, anchorDate]);
 
-  const taskStartMin = useMemo(() => {
-    return task.startTime && task.startTime !== 'All Day' ? parse12HourToMinutes(task.startTime) : null;
-  }, [task.startTime]);
+  const wakingStartMin = useMemo(() => {
+    return parse12HourToMinutes(capacitySettings?.sleepEndTime || capacitySettings?.dayStartTime || '06:00 AM');
+  }, [capacitySettings]);
+
+  // Helper to compute circadian minutes relative to day start (so 12:00 AM midnight is 1440, not 0)
+  const getCircadianMinutes = (timeStr: string) => {
+    const raw = parse12HourToMinutes(timeStr);
+    return raw < wakingStartMin ? raw + 1440 : raw;
+  };
+
+  const taskCircadianStartMin = useMemo(() => {
+    return task.startTime && task.startTime !== 'All Day' ? getCircadianMinutes(task.startTime) : null;
+  }, [task.startTime, wakingStartMin]);
 
   // Partition available slots into 3-5 Before (Blue) and 3-5 After (Green) relative to Current Task Time
   const { beforeSlots, afterSlots } = useMemo(() => {
-    if (taskStartMin === null || activeDateSlots.length === 0) {
+    if (taskCircadianStartMin === null || activeDateSlots.length === 0) {
       return { beforeSlots: [], afterSlots: activeDateSlots.slice(0, 5) };
     }
     const before = activeDateSlots
-      .filter(s => parse12HourToMinutes(s.startTime) < taskStartMin)
+      .filter(s => getCircadianMinutes(s.startTime) < taskCircadianStartMin)
       .slice(-5); // Take the 3 to 5 slots closest before current time
     const after = activeDateSlots
-      .filter(s => parse12HourToMinutes(s.startTime) > taskStartMin)
+      .filter(s => getCircadianMinutes(s.startTime) > taskCircadianStartMin)
       .slice(0, 5); // Take the 3 to 5 slots closest after current time
     return { beforeSlots: before, afterSlots: after };
-  }, [activeDateSlots, taskStartMin]);
+  }, [activeDateSlots, taskCircadianStartMin, wakingStartMin]);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5 bg-black/40 backdrop-blur-md animate-fade-in">
@@ -662,7 +672,7 @@ export const RescheduleModal: React.FC<RescheduleModalProps> = ({
               </div>
 
               {/* RELATIVE SHIFT TIMELINE MATRIX */}
-              {taskStartMin !== null && (
+              {taskCircadianStartMin !== null && (
                 <div className="p-3.5 sm:p-4 rounded-2xl bg-theme-card-hover/70 border border-theme-border shadow-xs space-y-3 shrink-0">
                   <div className="flex items-center justify-between gap-2 flex-wrap pb-1 border-b border-theme-border/60">
                     <div className="flex items-center gap-2">
@@ -708,7 +718,7 @@ export const RescheduleModal: React.FC<RescheduleModalProps> = ({
                           beforeSlots.map((slot, bIdx) => {
                             const isSelected = selectedSlot?.date === slot.date && selectedSlot?.startTime === slot.startTime;
                             const period = getTimePeriodForTime(slot.startTime, timePeriodSettings);
-                            const diffMin = taskStartMin - parse12HourToMinutes(slot.startTime);
+                            const diffMin = (taskCircadianStartMin ?? 0) - getCircadianMinutes(slot.startTime);
                             const diffHours = Math.floor(diffMin / 60);
                             const diffMins = diffMin % 60;
                             const diffLabel = diffHours > 0 
@@ -738,6 +748,16 @@ export const RescheduleModal: React.FC<RescheduleModalProps> = ({
                                     <span>{period?.emoji || '⏰'}</span>
                                     <span>{period?.name || slot.period}</span>
                                   </span>
+                                  {(slot.isAfterMidnight || slot.date !== anchorDate) && (
+                                    <span className="text-[10px] font-bold px-1.5 py-0.2 rounded-full bg-purple-100 dark:bg-purple-950 text-purple-700 dark:text-purple-300 border border-purple-300 dark:border-purple-800 flex items-center gap-0.5">
+                                      <Moon className="w-2.5 h-2.5" /> Next Day ({formatDisplayDate(slot.date)})
+                                    </span>
+                                  )}
+                                  {slot.crossesMidnight && (
+                                    <span className="text-[10px] font-bold px-1.5 py-0.2 rounded-full bg-indigo-100 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 border border-indigo-300 dark:border-indigo-800 flex items-center gap-0.5">
+                                      <Moon className="w-2.5 h-2.5" /> Spans Midnight
+                                    </span>
+                                  )}
                                   {slot.isSimultaneousSlot && (
                                     <span className="text-[10px] font-semibold tracking-wider px-1.5 py-0.5 rounded-full bg-purple-500/15 text-purple-700 dark:text-purple-300 border border-purple-500/25 flex items-center gap-0.5">
                                       <Zap className="w-2.5 h-2.5 fill-current" /> Simultaneous
@@ -801,7 +821,7 @@ export const RescheduleModal: React.FC<RescheduleModalProps> = ({
                           afterSlots.map((slot, aIdx) => {
                             const isSelected = selectedSlot?.date === slot.date && selectedSlot?.startTime === slot.startTime;
                             const period = getTimePeriodForTime(slot.startTime, timePeriodSettings);
-                            const diffMin = parse12HourToMinutes(slot.startTime) - taskStartMin;
+                            const diffMin = getCircadianMinutes(slot.startTime) - (taskCircadianStartMin ?? 0);
                             const diffHours = Math.floor(diffMin / 60);
                             const diffMins = diffMin % 60;
                             const diffLabel = diffHours > 0 
@@ -831,6 +851,16 @@ export const RescheduleModal: React.FC<RescheduleModalProps> = ({
                                     <span>{period?.emoji || '⏰'}</span>
                                     <span>{period?.name || slot.period}</span>
                                   </span>
+                                  {(slot.isAfterMidnight || slot.date !== anchorDate) && (
+                                    <span className="text-[10px] font-bold px-1.5 py-0.2 rounded-full bg-purple-100 dark:bg-purple-950 text-purple-700 dark:text-purple-300 border border-purple-300 dark:border-purple-800 flex items-center gap-0.5">
+                                      <Moon className="w-2.5 h-2.5" /> Next Day ({formatDisplayDate(slot.date)})
+                                    </span>
+                                  )}
+                                  {slot.crossesMidnight && (
+                                    <span className="text-[10px] font-bold px-1.5 py-0.2 rounded-full bg-indigo-100 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 border border-indigo-300 dark:border-indigo-800 flex items-center gap-0.5">
+                                      <Moon className="w-2.5 h-2.5" /> Spans Midnight
+                                    </span>
+                                  )}
                                   {slot.isSimultaneousSlot && (
                                     <span className="text-[10px] font-semibold tracking-wider px-1.5 py-0.5 rounded-full bg-purple-500/15 text-purple-700 dark:text-purple-300 border border-purple-500/25 flex items-center gap-0.5">
                                       <Zap className="w-2.5 h-2.5 fill-current" /> Simultaneous
@@ -920,8 +950,8 @@ export const RescheduleModal: React.FC<RescheduleModalProps> = ({
                             const isSelected = selectedSlot?.date === slot.date && selectedSlot?.startTime === slot.startTime;
                             const isSuggested = suggestedNextSlot?.date === slot.date && suggestedNextSlot?.startTime === slot.startTime;
                             const period = getTimePeriodForTime(slot.startTime, timePeriodSettings);
-                            const isBeforeCurrent = taskStartMin !== null && parse12HourToMinutes(slot.startTime) < taskStartMin;
-                            const isAfterCurrent = taskStartMin !== null && parse12HourToMinutes(slot.startTime) > taskStartMin;
+                            const isBeforeCurrent = taskCircadianStartMin !== null && getCircadianMinutes(slot.startTime) < taskCircadianStartMin;
+                            const isAfterCurrent = taskCircadianStartMin !== null && getCircadianMinutes(slot.startTime) > taskCircadianStartMin;
 
                             return (
                               <button

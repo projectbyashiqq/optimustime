@@ -717,6 +717,9 @@ export interface AvailableSlotResult {
   reason?: string;
   isSimultaneousSlot?: boolean;
   simultaneousTaskTitle?: string;
+  crossesMidnight?: boolean;
+  endDate?: string;
+  isAfterMidnight?: boolean;
 }
 
 export interface CurrentTaskSlotInfo {
@@ -920,9 +923,28 @@ export function findAllAvailableSlotsOnDate(
     const period: 'Morning' | 'Afternoon' | 'Evening' = 
       (startMin % 1440) < 720 ? 'Morning' : (startMin % 1440) < 1020 ? 'Afternoon' : 'Evening';
 
+    // Calculate effective calendar date for the slot:
+    // If startMin >= 1440 (e.g. 12:00 AM after midnight), the slot belongs to the NEXT calendar day!
+    const daysToAdd = Math.floor(startMin / 1440);
+    let effectiveDateStr = dateStr;
+    let effectiveDayOfWeek = dayOfWeek;
+    if (daysToAdd > 0) {
+      const [y, m, d] = dateStr.split('-').map(Number);
+      const nextDateObj = new Date(y, m - 1, d + daysToAdd);
+      effectiveDateStr = toISODateString(nextDateObj);
+      effectiveDayOfWeek = getDayOfWeekFromDate(effectiveDateStr);
+    }
+
+    const crosses = (startMin % 1440) + durationMinutes > 1440;
+    let calculatedEndDate = effectiveDateStr;
+    if (crosses) {
+      const [sy, sm, sd] = effectiveDateStr.split('-').map(Number);
+      calculatedEndDate = toISODateString(new Date(sy, sm - 1, sd + 1));
+    }
+
     results.push({
-      date: dateStr,
-      dayOfWeek,
+      date: effectiveDateStr,
+      dayOfWeek: effectiveDayOfWeek,
       startTime: startStr,
       endTime: endStr,
       scheduledMinutesOnDay,
@@ -930,7 +952,10 @@ export function findAllAvailableSlotsOnDate(
       isRedLine,
       period,
       isSimultaneousSlot: Boolean(simTask),
-      simultaneousTaskTitle: simTask ? (simTask as any).title : undefined
+      simultaneousTaskTitle: simTask ? (simTask as any).title : undefined,
+      crossesMidnight: crosses,
+      endDate: calculatedEndDate,
+      isAfterMidnight: daysToAdd > 0
     });
     return true;
   };
@@ -2193,6 +2218,9 @@ export interface SuggestedNextSlotResult {
   isNextDay: boolean;
   daysOffset: number;
   reason: string;
+  crossesMidnight?: boolean;
+  endDate?: string;
+  isAfterMidnight?: boolean;
 }
 
 /**
@@ -2385,27 +2413,45 @@ export function findNextAvailableSlot(
     }
 
     if (foundSlot) {
+      const daysToAdd = Math.floor(foundSlot.start / 1440);
+      let slotDateStr = dateStr;
+      let slotDayOfWeek = dayOfWeek;
+      if (daysToAdd > 0) {
+        const [y, m, d] = dateStr.split('-').map(Number);
+        const nextDateObj = new Date(y, m - 1, d + daysToAdd);
+        slotDateStr = toISODateString(nextDateObj);
+        slotDayOfWeek = getDayOfWeekFromDate(slotDateStr);
+      }
+
       const startStr = formatMinutesTo12Hour(foundSlot.start);
       const endStr = formatMinutesTo12Hour(foundSlot.end);
       const period: 'Morning' | 'Afternoon' | 'Evening' = 
         (foundSlot.start % 1440) < 720 ? 'Morning' : (foundSlot.start % 1440) < 1020 ? 'Afternoon' : 'Evening';
-      const isNextDay = dateStr > todayStr;
-      const actualOffset = Math.round((new Date(dateStr + 'T00:00:00').getTime() - new Date(todayStr + 'T00:00:00').getTime()) / (1000 * 60 * 60 * 24));
+      const isNextDay = slotDateStr > todayStr;
+      const actualOffset = Math.round((new Date(slotDateStr + 'T00:00:00').getTime() - new Date(todayStr + 'T00:00:00').getTime()) / (1000 * 60 * 60 * 24));
+
+      const crosses = (foundSlot.start % 1440) + taskDurationMinutes > 1440;
+      let calculatedEndDate = slotDateStr;
+      if (crosses) {
+        const [sy, sm, sd] = slotDateStr.split('-').map(Number);
+        calculatedEndDate = toISODateString(new Date(sy, sm - 1, sd + 1));
+      }
 
       return {
-        date: dateStr,
-        dayOfWeek,
+        date: slotDateStr,
+        dayOfWeek: slotDayOfWeek,
         startTime: startStr,
         endTime: endStr,
         durationMinutes: taskDurationMinutes,
         period,
         isNextDay,
         daysOffset: actualOffset,
-        reason: actualOffset === 0 
-          ? '⚡ Earliest Available Free Slot Today' 
-          : actualOffset === 1 
-            ? '🌅 Next Day Slot (Sleep Time & Conflicts Avoided)' 
-            : `📅 In ${actualOffset} Days (Earliest Conflict-Free Waking Slot)`
+        reason: isNextDay 
+          ? `🌅 Next Day Slot on ${slotDayOfWeek} (${slotDateStr})` 
+          : '⚡ Earliest Available Free Slot Today',
+        crossesMidnight: crosses,
+        endDate: calculatedEndDate,
+        isAfterMidnight: daysToAdd > 0
       };
     }
   }

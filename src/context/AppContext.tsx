@@ -2210,10 +2210,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           excludedDates: updatedExclusions
         };
 
+        const crosses = taskCrossesMidnight(newStartTime, newEndTime);
+        const calculatedEndDate = crosses ? getTaskEndDate(newDate, newStartTime, newEndTime) : newDate;
+
         const singleRescheduledOccurrence: Task = {
           ...target,
           id: `task_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
           taskDate: newDate,
+          endDate: calculatedEndDate,
+          crossesMidnight: crosses,
           dayOfWeek: getDayOfWeekFromDate(newDate),
           startTime: newStartTime,
           endTime: newEndTime,
