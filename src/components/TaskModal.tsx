@@ -29,7 +29,8 @@ import {
   taskCrossesMidnight,
   getTaskEndDate,
   getBangladeshNow,
-  parse12HourToMinutes
+  parse12HourToMinutes,
+  computeNextFreeRawTimes
 } from '../utils/timeUtils';
 import { ConflictModal } from './ConflictModal';
 import { TimePicker } from './TimePicker';
@@ -168,59 +169,53 @@ export const TaskModal: React.FC<TaskModalProps> = ({
       : effectiveDefaultBuffer
   );
   
-  // Smart Next Free Slot Computation on Creation (Never recommends sleep time & defaults to PM if in sleep/afternoon)
+  // Smart Next Free Slot Computation on Creation
+  // Priority: (1) taskToEdit (2) initialStartTime (3) computeNextFreeRawTimes (now + 5 min, conflict-free)
   const initialSmartSlot = useMemo(() => {
     if (taskToEdit) {
-      return { startTime: taskToEdit.startTime, endTime: taskToEdit.endTime };
+      return { startTime: taskToEdit.startTime, endTime: taskToEdit.endTime, dateStr: taskToEdit.taskDate, crossesMidnight: false };
     }
 
-    const sleepStart = capacitySettings?.sleepStartTime || capacitySettings?.dayEndTime || '11:00 PM';
-    const sleepEnd = capacitySettings?.sleepEndTime || capacitySettings?.dayStartTime || '06:00 AM';
-
-    // If initialStartTime was provided (e.g. from a gap click), ensure it's not sleep time
     if (initialStartTime) {
-      const initEnd = addMinutesToTime(initialStartTime, defaultMin);
-      if (!isTimeInSleepWindow(initialStartTime, initEnd, sleepStart, sleepEnd)) {
-        return { startTime: initialStartTime, endTime: initEnd };
-      }
-      // If initialStartTime falls inside sleep window, do NOT recommend sleep time! Fall through to daytime/PM slot.
-    }
-    
-    // Check if right now is in the sleep window or afternoon/evening
-    const now = new Date();
-    const isAfternoonOrEvening = now.getHours() >= 12;
-    const nowCurMin = now.getHours() * 60 + now.getMinutes();
-    const isNowInSleep = isTimeInSleepWindow(formatMinutesTo12Hour(nowCurMin), formatMinutesTo12Hour(nowCurMin + 30), sleepStart, sleepEnd);
-    // Prefer PM if currently afternoon/evening or if currently in sleep window (avoid sleeping/morning period)
-    const preferPm = isAfternoonOrEvening || isNowInSleep;
-
-    const strategy = taskDefaults.defaultSmartSlot || 'auto-fit';
-    if (strategy === 'current-time' && !isNowInSleep) {
-      const roundedNow = getCurrentRoundedTime12Hour(5);
-      const roundedEnd = addMinutesToTime(roundedNow, defaultMin);
-      if (!isTimeInSleepWindow(roundedNow, roundedEnd, sleepStart, sleepEnd)) {
-        return { startTime: roundedNow, endTime: roundedEnd };
-      }
-    }
-    if (strategy === 'work-start') {
-      const workStart = capacitySettings.dayStartTime || '06:00 AM';
-      return { startTime: workStart, endTime: addMinutesToTime(workStart, defaultMin) };
+      return { startTime: initialStartTime, endTime: addMinutesToTime(initialStartTime, defaultMin), dateStr: initialDate, crossesMidnight: false };
     }
 
-    return getSmartNextFreeSlot(
-      initialDate || toISODateString(new Date()), 
-      defaultMin, 
-      tasks, 
-      bufferNotes, 
-      undefined, 
+    const todayStr = toISODateString(getBangladeshNow());
+    const targetDate = initialDate || todayStr;
+    const freeRawSlots = computeNextFreeRawTimes(
+      targetDate,
+      defaultMin,
+      tasks,
+      bufferNotes,
+      undefined,
       effectiveDefaultBuffer,
-      capacitySettings,
-      preferPm
+      capacitySettings
     );
-  }, [taskToEdit, initialStartTime, initialDate, defaultMin, tasks, bufferNotes, capacitySettings, taskDefaults.defaultSmartSlot, effectiveDefaultBuffer]);
+
+    if (freeRawSlots.length > 0) {
+      const best = freeRawSlots[0];
+      return { startTime: best, endTime: addMinutesToTime(best, defaultMin), dateStr: targetDate, crossesMidnight: false };
+    }
+
+    const roundedNow = getCurrentRoundedTime12Hour(5);
+    return { startTime: roundedNow, endTime: addMinutesToTime(roundedNow, defaultMin), dateStr: targetDate, crossesMidnight: false };
+  }, [taskToEdit, initialStartTime, initialDate, defaultMin, tasks, bufferNotes, capacitySettings, effectiveDefaultBuffer]);
 
   const [startTime, setStartTime] = useState<string>(initialSmartSlot.startTime);
   const [endTime, setEndTime] = useState<string>(initialSmartSlot.endTime);
+
+  // Next 3-5 Free Raw Time Suggestions for taskDate (Current Time + 5m, or after current tasks)
+  const freeRawTimeSuggestions = useMemo(() => {
+    return computeNextFreeRawTimes(
+      taskDate,
+      appointedMinutes,
+      tasks,
+      bufferNotes,
+      taskToEdit?.id,
+      effectiveDefaultBuffer,
+      capacitySettings
+    );
+  }, [taskDate, appointedMinutes, tasks, bufferNotes, taskToEdit?.id, effectiveDefaultBuffer, capacitySettings]);
   
   const [status, setStatus] = useState<TaskStatus>(taskToEdit?.status || 'Pending');
   const [recurrence, setRecurrence] = useState<RecurrenceType>(
@@ -1365,9 +1360,17 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                             type="button"
                             onClick={(e) => {
                               e.stopPropagation();
-                              setTaskDate(toISODateString(new Date()));
+                              const targetDate = toISODateString(new Date());
+                              setTaskDate(targetDate);
                               setRolloverNotice(null);
                               if (validationError) setValidationError(null);
+                              if (!taskToEdit) {
+                                const free = computeNextFreeRawTimes(targetDate, appointedMinutes, tasks, bufferNotes, undefined, effectiveDefaultBuffer, capacitySettings);
+                                if (free.length > 0) {
+                                  setStartTime(free[0]);
+                                  setEndTime(addMinutesToTime(free[0], appointedMinutes));
+                                }
+                              }
                             }}
                             className={`px-2 py-0.5 rounded font-bold border transition-colors cursor-pointer ${
                               taskDate === toISODateString(new Date())
@@ -1383,9 +1386,17 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                               e.stopPropagation();
                               const tomorrow = new Date();
                               tomorrow.setDate(tomorrow.getDate() + 1);
-                              setTaskDate(toISODateString(tomorrow));
+                              const targetDate = toISODateString(tomorrow);
+                              setTaskDate(targetDate);
                               setRolloverNotice(null);
                               if (validationError) setValidationError(null);
+                              if (!taskToEdit) {
+                                const free = computeNextFreeRawTimes(targetDate, appointedMinutes, tasks, bufferNotes, undefined, effectiveDefaultBuffer, capacitySettings);
+                                if (free.length > 0) {
+                                  setStartTime(free[0]);
+                                  setEndTime(addMinutesToTime(free[0], appointedMinutes));
+                                }
+                              }
                             }}
                             className="px-2 py-0.5 rounded font-bold bg-theme-card-hover text-theme-muted border border-theme-border hover:text-theme-text transition-colors cursor-pointer"
                           >
@@ -1399,8 +1410,16 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                         type="date"
                         value={taskDate}
                         onChange={(e) => {
-                          setTaskDate(e.target.value);
+                          const newD = e.target.value;
+                          setTaskDate(newD);
                           if (validationError) setValidationError(null);
+                          if (!taskToEdit && newD) {
+                            const free = computeNextFreeRawTimes(newD, appointedMinutes, tasks, bufferNotes, undefined, effectiveDefaultBuffer, capacitySettings);
+                            if (free.length > 0) {
+                              setStartTime(free[0]);
+                              setEndTime(addMinutesToTime(free[0], appointedMinutes));
+                            }
+                          }
                         }}
                         onClick={(e) => {
                           try {
@@ -1461,6 +1480,43 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                         value={startTime}
                         onChange={handleStartTimeChange}
                       />
+
+                      {/* Next 3-5 Free Raw Time Suggestions */}
+                      {freeRawTimeSuggestions.length > 0 && (
+                        <div className="pt-2 space-y-1.5 animate-fade-in">
+                          <div className="flex items-center justify-between text-[11px] font-bold text-theme-muted">
+                            <span className="flex items-center gap-1.5 text-theme-text font-display">
+                              <Sparkles className="w-3.5 h-3.5 text-amber-500" />
+                              <span>Next Free Times:</span>
+                            </span>
+                            <span className="text-[10px] text-theme-muted font-normal font-mono">1-tap select</span>
+                          </div>
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            {freeRawTimeSuggestions.slice(0, 5).map((timeStr, idx) => {
+                              const isSelected = startTime === timeStr;
+                              return (
+                                <button
+                                  key={idx}
+                                  type="button"
+                                  onClick={() => {
+                                    setStartTime(timeStr);
+                                    setEndTime(addMinutesToTime(timeStr, appointedMinutes));
+                                    if (validationError) setValidationError(null);
+                                  }}
+                                  className={`px-3 py-1.5 rounded-xl text-xs font-mono font-bold transition-all border cursor-pointer active:scale-95 shadow-2xs ${
+                                    isSelected
+                                      ? 'bg-blue-600 text-white border-blue-600 shadow-xs scale-105'
+                                      : 'bg-theme-card-hover hover:bg-theme-border text-theme-text border-theme-border/80 hover:border-blue-500/50'
+                                  }`}
+                                  title={`Select free slot at ${timeStr}`}
+                                >
+                                  <span>{timeStr}</span>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
                     </div>
 
                   </div>

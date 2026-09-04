@@ -2724,6 +2724,126 @@ export function findNextAvailableSlot(
   return null;
 }
 
+/**
+ * Computes the next conflict-free raw start times for a given date.
+ * - If date is today, begins searching strictly from current time + 5 minutes (rounded to 5 min).
+ * - Avoids overlapping with existing active tasks and buffer notes.
+ * - Returns 3 to 5 candidate free start times formatted in 12-hour AM/PM.
+ */
+export function computeNextFreeRawTimes(
+  dateStr: string,
+  durationMinutes = 15,
+  tasks: Array<{ taskDate: string; startTime: string; endTime: string; status: string; bufferMinutes?: number; recurrence?: string; selectedDays?: string[]; excludedDates?: string[]; id?: string }> = [],
+  bufferNotes: Array<{ date?: string; startTime: string; endTime: string }> = [],
+  ignoreTaskId?: string,
+  bufferGap = 0,
+  capacitySettings?: { dayStartTime?: string; dayEndTime?: string; sleepStartTime?: string; sleepEndTime?: string }
+): string[] {
+  const bstNow = getBangladeshNow();
+  const todayStr = toISODateString(bstNow);
+  const isToday = dateStr === todayStr;
+
+  let earliestMin = 0;
+  if (isToday) {
+    const curMin = bstNow.getHours() * 60 + bstNow.getMinutes();
+    // Start strictly from current time + 5 minutes, rounded to nearest 5 minutes
+    earliestMin = Math.ceil((curMin + 5) / 5) * 5;
+  } else if (dateStr > todayStr) {
+    // Tomorrow or future: start from morning/work start or start of day
+    earliestMin = parse12HourToMinutes(capacitySettings?.dayStartTime || '06:00 AM');
+  }
+
+  // Gather occupied intervals for dateStr
+  interface OccupiedInterval {
+    start: number;
+    end: number;
+  }
+  const occupied: OccupiedInterval[] = [];
+
+  for (const t of tasks) {
+    if (t.id === ignoreTaskId) continue;
+    if (t.status === 'Terminated' || t.status === 'Reschedule') continue;
+    if (!t.startTime || !t.endTime || t.startTime === 'All Day') continue;
+    if (!isTaskScheduledForDate(t, dateStr)) continue;
+
+    const s = parse12HourToMinutes(t.startTime);
+    let e = parse12HourToMinutes(t.endTime);
+    if (e <= s) e += 1440;
+    const buf = t.bufferMinutes !== undefined ? t.bufferMinutes : bufferGap;
+    occupied.push({ start: s, end: e + buf });
+  }
+
+  for (const b of bufferNotes) {
+    if (b.date && b.date !== dateStr) continue;
+    if (!b.startTime || !b.endTime) continue;
+    const s = parse12HourToMinutes(b.startTime);
+    let e = parse12HourToMinutes(b.endTime);
+    if (e <= s) e += 1440;
+    occupied.push({ start: s, end: e });
+  }
+
+  // Sort and merge intervals
+  occupied.sort((a, b) => a.start - b.start);
+  const merged: OccupiedInterval[] = [];
+  for (const interval of occupied) {
+    if (merged.length === 0) {
+      merged.push({ ...interval });
+    } else {
+      const prev = merged[merged.length - 1];
+      if (interval.start <= prev.end) {
+        prev.end = Math.max(prev.end, interval.end);
+      } else {
+        merged.push({ ...interval });
+      }
+    }
+  }
+
+  const freeTimes: string[] = [];
+  const addedMinutes = new Set<number>();
+
+  const tryAddSlot = (min: number) => {
+    const normMin = ((min % 1440) + 1440) % 1440;
+    if (addedMinutes.has(normMin)) return;
+    const slotStart = min;
+    const slotEnd = min + Math.min(15, durationMinutes);
+    const collides = merged.some(b => {
+      return slotStart < b.end && slotEnd > b.start;
+    });
+    if (!collides) {
+      addedMinutes.add(normMin);
+      freeTimes.push(formatMinutesTo12Hour(normMin));
+    }
+  };
+
+  let cursor = earliestMin;
+  for (const block of merged) {
+    if (cursor < block.start) {
+      let gapCursor = cursor;
+      while (gapCursor + Math.min(15, durationMinutes) <= block.start && freeTimes.length < 5) {
+        tryAddSlot(gapCursor);
+        gapCursor += Math.max(30, durationMinutes);
+      }
+    }
+    cursor = Math.max(cursor, block.end);
+    if (freeTimes.length >= 5) break;
+  }
+
+  while (cursor < 1440 + earliestMin && freeTimes.length < 5) {
+    tryAddSlot(cursor);
+    cursor += Math.max(30, durationMinutes);
+  }
+
+  if (freeTimes.length < 3) {
+    let fallback = earliestMin;
+    while (freeTimes.length < 5 && fallback < 1440 + earliestMin) {
+      tryAddSlot(fallback);
+      fallback += 30;
+    }
+  }
+
+  return freeTimes.slice(0, 5);
+}
+
 export function getSmartNextFreeSlot(
   dateStr: string,
   durationMinutes: number,
