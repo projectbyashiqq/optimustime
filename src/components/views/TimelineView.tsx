@@ -131,7 +131,7 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
       capacitySettings.dayStartTime, 
       capacitySettings.dayEndTime,
       dayBufferNotes,
-      capacitySettings.defaultBufferMinutes || 15
+      capacitySettings.defaultBufferMinutes ?? 0
     );
   }, [dayTasks, capacitySettings, dayBufferNotes]);
 
@@ -418,7 +418,7 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
 
               // Check if post-task buffer has been logged as a user buffer note
               const taskEndM = parse12HourToMinutes(task.endTime);
-              const taskBufMin = task.bufferMinutes !== undefined ? task.bufferMinutes : (capacitySettings.defaultBufferMinutes || 15);
+              const taskBufMin = task.bufferMinutes !== undefined ? task.bufferMinutes : (capacitySettings.defaultBufferMinutes ?? 0);
               const matchingBufferNote = dayBufferNotes.find(n => 
                 n.relatedTaskId === task.id ||
                 (parse12HourToMinutes(n.startTime) < taskEndM + taskBufMin && parse12HourToMinutes(n.endTime) > taskEndM)

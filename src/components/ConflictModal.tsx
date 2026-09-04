@@ -28,7 +28,7 @@ export const ConflictModal: React.FC<ConflictModalProps> = ({
   const { capacitySettings } = useApp();
   // Find the latest end time + buffer among all conflicting tasks
   const primaryConflict = conflictingTasks[0];
-  const bufferMinutes = primaryConflict?.bufferMinutes ?? (capacitySettings.defaultBufferMinutes || 15);
+  const bufferMinutes = primaryConflict?.bufferMinutes ?? (capacitySettings.defaultBufferMinutes ?? 0);
   const newCalculatedStart = primaryConflict ? addMinutesToTime(primaryConflict.endTime, bufferMinutes) : '10:00 AM';
   const newCalculatedEnd = addMinutesToTime(newCalculatedStart, appointedMinutes);
 

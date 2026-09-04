@@ -1638,8 +1638,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const isLate = actualDuration > budgetMinutes;
       isLateFinish = isLate;
 
-      const defaultBuf = capacitySettings.defaultBufferMinutes || 15;
-      const bufferMinutes = isLate ? Math.min(5, defaultBuf) : defaultBuf;
+      const configuredBuf = target.bufferMinutes !== undefined
+        ? target.bufferMinutes
+        : (capacitySettings.defaultBufferMinutes !== undefined ? capacitySettings.defaultBufferMinutes : (defaultTaskSettings.defaultBufferMinutes ?? 0));
+      const bufferMinutes = isLate ? Math.min(5, configuredBuf) : configuredBuf;
       const isRecurring = target.recurrence && target.recurrence !== 'None';
       const delayMins = Math.max(0, actualDuration - budgetMinutes);
       const savedFreeMinutes = Math.max(0, budgetMinutes - actualDuration);
@@ -1769,22 +1771,33 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
     playNotificationChime('timer');
 
-    // Trigger Buffer Status Prompt: Ask what user does during the free buffer time
+    // Trigger Buffer Status Prompt (Automated Post-Task Breaker): Only activate if bufferMinutes > 0
     if (completedTarget) {
-      const current12h = getCurrentRoundedTime12Hour(1);
-      const bufMin = isLateFinish ? 5 : 15;
-      const bufferStart = (completedTarget as Task).actualEndTime || current12h;
-      const bufferEnd12h = addMinutesToTime(bufferStart, bufMin);
-      setActiveBufferPrompt({
-        date: (completedTarget as Task).taskDate || todayStr,
-        startTime: bufferStart,
-        endTime: bufferEnd12h,
-        durationMinutes: bufMin,
-        relatedTaskId: (completedTarget as Task).id,
-        relatedTaskTitle: (completedTarget as Task).title
-      });
+      const taskObj = completedTarget as Task;
+      const configuredBuf = taskObj.bufferMinutes !== undefined
+        ? taskObj.bufferMinutes
+        : (capacitySettings.defaultBufferMinutes !== undefined ? capacitySettings.defaultBufferMinutes : (defaultTaskSettings.defaultBufferMinutes ?? 0));
+
+      const bufMin = isLateFinish ? Math.min(5, configuredBuf) : configuredBuf;
+
+      // If buffer is 0 (or less), Automated Post-Task Breaker is completely disabled
+      if (bufMin > 0) {
+        const current12h = getCurrentRoundedTime12Hour(1);
+        const bufferStart = taskObj.actualEndTime || current12h;
+        const bufferEnd12h = addMinutesToTime(bufferStart, bufMin);
+        setActiveBufferPrompt({
+          date: taskObj.taskDate || todayStr,
+          startTime: bufferStart,
+          endTime: bufferEnd12h,
+          durationMinutes: bufMin,
+          relatedTaskId: taskObj.id,
+          relatedTaskTitle: taskObj.title
+        });
+      } else {
+        setActiveBufferPrompt(null);
+      }
     }
-  }, [logLifeEvent]);
+  }, [logLifeEvent, capacitySettings.defaultBufferMinutes, defaultTaskSettings.defaultBufferMinutes]);
 
   // Plan & Project Folders CRUD
   const addPlanProject = useCallback((folderData: Omit<PlanProjectFolder, 'id' | 'createdAt' | 'updatedAt'> & { id?: string }): PlanProjectFolder => {
@@ -2343,8 +2356,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // Settings
   const updateCapacitySettings = useCallback((settings: CapacitySettings) => {
     setCapacitySettings(settings);
-    // Automatically synchronize pending tasks to new default buffer
-    const newDefBuffer = settings.defaultBufferMinutes || 15;
+    // Automatically synchronize pending tasks to new default buffer (honoring 0 min buffer)
+    const newDefBuffer = settings.defaultBufferMinutes !== undefined ? settings.defaultBufferMinutes : 0;
     setTasks(prev => prev.map(t => {
       if (t.status === 'Pending') {
         return {
@@ -2362,12 +2375,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const updateDefaultTaskSettings = useCallback((settings: DefaultTaskSettings) => {
     setDefaultTaskSettings(settings);
-    const newDefBuffer = settings.defaultBufferMinutes ?? 15;
+    const newDefBuffer = settings.defaultBufferMinutes !== undefined ? settings.defaultBufferMinutes : 0;
     setCapacitySettings(prev => ({
       ...prev,
       defaultBufferMinutes: newDefBuffer
     }));
-    // Automatically synchronize pending tasks to new default buffer
+    // Automatically synchronize pending tasks to new default buffer (honoring 0 min buffer)
     setTasks(prev => prev.map(t => {
       if (t.status === 'Pending') {
         return {

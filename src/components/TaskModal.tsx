@@ -93,10 +93,14 @@ export const TaskModal: React.FC<TaskModalProps> = ({
   const isEditing = !!taskToEdit;
 
   // Task Presets from Admin Settings
+  const effectiveDefaultBuffer = defaultTaskSettings?.defaultBufferMinutes !== undefined
+    ? defaultTaskSettings.defaultBufferMinutes
+    : (capacitySettings.defaultBufferMinutes !== undefined ? capacitySettings.defaultBufferMinutes : 0);
+
   const taskDefaults = defaultTaskSettings || {
     defaultPriority: 'P1',
     defaultCategory: categories[0]?.name || 'VRTX',
-    defaultBufferMinutes: capacitySettings.defaultBufferMinutes || 15,
+    defaultBufferMinutes: effectiveDefaultBuffer,
     defaultSmartSlot: 'auto-fit',
     defaultIsMandatory: false,
     autoConfirmDefaults: true
@@ -148,7 +152,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
   const [bufferMinutes, setBufferMinutes] = useState<number>(
     taskToEdit?.bufferMinutes !== undefined 
       ? taskToEdit.bufferMinutes 
-      : (taskDefaults.defaultBufferMinutes ?? (capacitySettings.defaultBufferMinutes || 15))
+      : effectiveDefaultBuffer
   );
   
   // Smart Next Free Slot Computation on Creation (Never recommends sleep time & defaults to PM if in sleep/afternoon)
@@ -196,11 +200,11 @@ export const TaskModal: React.FC<TaskModalProps> = ({
       tasks, 
       bufferNotes, 
       undefined, 
-      capacitySettings.defaultBufferMinutes || 15,
+      effectiveDefaultBuffer,
       capacitySettings,
       preferPm
     );
-  }, [taskToEdit, initialStartTime, initialDate, defaultMin, tasks, bufferNotes, capacitySettings, taskDefaults.defaultSmartSlot]);
+  }, [taskToEdit, initialStartTime, initialDate, defaultMin, tasks, bufferNotes, capacitySettings, taskDefaults.defaultSmartSlot, effectiveDefaultBuffer]);
 
   const [startTime, setStartTime] = useState<string>(initialSmartSlot.startTime);
   const [endTime, setEndTime] = useState<string>(initialSmartSlot.endTime);
@@ -274,8 +278,8 @@ export const TaskModal: React.FC<TaskModalProps> = ({
 
   // Recommended candidate free slots across the day (guaranteed zero sleep window slots)
   const recommendedSlots = useMemo(() => {
-    return getRecommendedDayFreeSlots(taskDate, appointedMinutes, tasks, bufferNotes, taskToEdit?.id, 5, capacitySettings.defaultBufferMinutes || 15, capacitySettings);
-  }, [taskDate, appointedMinutes, tasks, bufferNotes, taskToEdit?.id, capacitySettings]);
+    return getRecommendedDayFreeSlots(taskDate, appointedMinutes, tasks, bufferNotes, taskToEdit?.id, 5, effectiveDefaultBuffer, capacitySettings);
+  }, [taskDate, appointedMinutes, tasks, bufferNotes, taskToEdit?.id, capacitySettings, effectiveDefaultBuffer]);
 
   // Live Overlap / Conflict Intelligence calculation
   const liveOverlaps = useMemo(() => {
@@ -370,7 +374,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
       tasks,
       bufferNotes,
       taskToEdit?.id,
-      capacitySettings.defaultBufferMinutes || 15,
+      effectiveDefaultBuffer,
       capacitySettings,
       isAfternoonOrEvening
     );
@@ -554,7 +558,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
   const handleResolveWithAutoShift = (newCalculatedStartTime: string) => {
     const newEnd = addMinutesToTime(newCalculatedStartTime, appointedMinutes);
     // Cascade shift any downstream tasks starting at or after the new start time forward
-    const autoBuffer = capacitySettings.defaultBufferMinutes || 15;
+    const autoBuffer = effectiveDefaultBuffer;
     cascadeShiftDownstream(taskDate, newCalculatedStartTime, appointedMinutes + autoBuffer, taskToEdit?.id);
     setShowConflictModal(false);
     setStartTime(newCalculatedStartTime);
@@ -1271,7 +1275,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                         tasks, 
                         bufferNotes, 
                         taskToEdit?.id, 
-                        capacitySettings.defaultBufferMinutes || 15,
+                        effectiveDefaultBuffer,
                         capacitySettings,
                         isAfternoonOrEvening || startTime.includes('PM')
                       );
@@ -1347,7 +1351,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                           tasks, 
                           bufferNotes, 
                           taskToEdit?.id, 
-                          capacitySettings.defaultBufferMinutes || 15,
+                          effectiveDefaultBuffer,
                           capacitySettings,
                           startTime.includes('PM') || new Date().getHours() >= 12
                         );
@@ -1481,13 +1485,13 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                     <span>🟣 Automated Post-Task Break Buffer</span>
                   </span>
                   <span className="font-mono text-[11px] font-bold text-purple-700 dark:text-purple-300">
-                    {bufferMinutes} min {bufferMinutes === (capacitySettings.defaultBufferMinutes || 15) ? '(Admin Default)' : '(Custom Override)'}
+                    {bufferMinutes} min {bufferMinutes === effectiveDefaultBuffer ? '(Admin Default)' : '(Custom Override)'}
                   </span>
                 </div>
                 <div className="flex items-center gap-1.5 flex-wrap">
                   {[0, 5, 10, 15, 20, 30, 45].map((bMin) => {
                     const isSelected = bufferMinutes === bMin;
-                    const isDefault = bMin === (capacitySettings.defaultBufferMinutes || 15);
+                    const isDefault = bMin === effectiveDefaultBuffer;
                     return (
                       <button
                         key={bMin}
@@ -1566,7 +1570,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                           tasks,
                           bufferNotes,
                           taskToEdit?.id,
-                          capacitySettings.defaultBufferMinutes || 15,
+                          effectiveDefaultBuffer,
                           capacitySettings,
                           true
                         );

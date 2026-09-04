@@ -187,7 +187,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
     const existingOnDate = tasks.filter(t => t.taskDate === targetDate && t.id !== taskToMove.id && t.status !== 'Terminated');
     const sortedOnDate = [...existingOnDate].sort((a, b) => parse12HourToMinutes(b.endTime) - parse12HourToMinutes(a.endTime));
     const latestTask = sortedOnDate[0];
-    const bufferMin = latestTask?.bufferMinutes ?? (capacitySettings.defaultBufferMinutes || 15);
+    const bufferMin = latestTask?.bufferMinutes ?? (capacitySettings.defaultBufferMinutes ?? 0);
     const safeStart = latestTask ? addMinutesToTime(latestTask.endTime, bufferMin) : '09:00 AM';
     const safeEnd = addMinutesToTime(safeStart, taskToMove.appointedMinutes);
 
@@ -253,7 +253,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
       if (todayTasks.length > 0) {
         const sorted = [...todayTasks].sort((a, b) => parse12HourToMinutes(b.endTime) - parse12HourToMinutes(a.endTime));
         const latest = sorted[0];
-        const buffer = latest.bufferMinutes ?? (capacitySettings.defaultBufferMinutes || 15);
+        const buffer = latest.bufferMinutes ?? (capacitySettings.defaultBufferMinutes ?? 0);
         targetStart = addMinutesToTime(latest.endTime, buffer);
         targetEnd = addMinutesToTime(targetStart, taskToMove.appointedMinutes);
       }
@@ -397,7 +397,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
     wakingStart,
     wakingEnd,
     bufferNotes.filter(n => n.date === selectedDate),
-    capacitySettings.defaultBufferMinutes || 15
+    capacitySettings.defaultBufferMinutes ?? 0
   );
 
   return (
@@ -1491,7 +1491,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
                                     {isDone ? (
                                       <div className="text-[11px] font-mono text-emerald-600 dark:text-emerald-400 font-semibold flex items-center gap-1">
                                         <Check className="w-3.5 h-3.5 text-emerald-500" />
-                                        <span>Execution Completed & Done • {task.totalActualMinutes || task.appointedMinutes}m (+{task.bufferMinutes ?? (capacitySettings.defaultBufferMinutes || 15)}m buffer applied)</span>
+                                        <span>Execution Completed & Done • {task.totalActualMinutes || task.appointedMinutes}m (+{task.bufferMinutes ?? (capacitySettings.defaultBufferMinutes ?? 0)}m buffer applied)</span>
                                       </div>
                                     ) : (
                                       <div className="text-[11px] font-mono text-red-600 dark:text-red-400 font-semibold flex items-center gap-1">
@@ -1669,7 +1669,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
                     const rStart = parse12HourToMinutes(activeRunningTask.startTime);
                     let rEnd = parse12HourToMinutes(activeRunningTask.endTime);
                     if (rEnd < rStart) rEnd += 1440;
-                    const rBuf = activeRunningTask.bufferMinutes !== undefined ? activeRunningTask.bufferMinutes : (capacitySettings.defaultBufferMinutes || 15);
+                    const rBuf = activeRunningTask.bufferMinutes !== undefined ? activeRunningTask.bufferMinutes : (capacitySettings.defaultBufferMinutes ?? 0);
                     const occupiedUntil = rEnd + rBuf;
                     // Earliest free moment to schedule next work is strictly after running work finishes (+ buffer)
                     earliestPlanningMin = Math.max(nowPlus5Min, occupiedUntil);

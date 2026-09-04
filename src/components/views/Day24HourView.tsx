@@ -292,7 +292,7 @@ export const Day24HourView: React.FC<Day24HourViewProps> = ({
           {/* Post-Task Break Buffer Intervals Rendered on 24H Timeline */}
           {dayTasks.map((task) => {
             const endM = parse12HourToMinutes(task.endTime);
-            const bufMin = task.bufferMinutes !== undefined ? task.bufferMinutes : (capacitySettings.defaultBufferMinutes || 15);
+            const bufMin = task.bufferMinutes !== undefined ? task.bufferMinutes : (capacitySettings.defaultBufferMinutes ?? 0);
             if (bufMin <= 0) return null;
             const topPx = (endM / 60) * HOUR_HEIGHT;
             const heightPx = Math.max(16, (bufMin / 60) * HOUR_HEIGHT - 2);

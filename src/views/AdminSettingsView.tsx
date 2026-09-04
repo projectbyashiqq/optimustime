@@ -99,6 +99,7 @@ export const AdminSettingsView: React.FC = () => {
   const [periodsList, setPeriodsList] = useState<NamedTimePeriod[]>(timePeriodSettings.periods);
   const [periodSaveMsg, setPeriodSaveMsg] = useState<string | null>(null);
   const [testTimeInput, setTestTimeInput] = useState<string>('01:30 PM');
+  const [editingBoundaries, setEditingBoundaries] = useState<Record<string, string>>({});
 
   // Local editing states (24-Hours Locked System Tools)
   const [maxWorkHours, setMaxWorkHours] = useState(capacitySettings.maxWorkHours);
@@ -108,7 +109,7 @@ export const AdminSettingsView: React.FC = () => {
   const [dayEndTime, setDayEndTime] = useState(capacitySettings.dayEndTime || '11:00 PM');
   const [sleepStartTime, setSleepStartTime] = useState(capacitySettings.sleepStartTime || capacitySettings.dayEndTime || '11:00 PM');
   const [sleepEndTime, setSleepEndTime] = useState(capacitySettings.sleepEndTime || capacitySettings.dayStartTime || '06:00 AM');
-  const [defaultBufferMinutes, setDefaultBufferMinutes] = useState(capacitySettings.defaultBufferMinutes || 15);
+  const [defaultBufferMinutes, setDefaultBufferMinutes] = useState(capacitySettings.defaultBufferMinutes ?? 0);
   const [autoSleepScheduleEnabled, setAutoSleepScheduleEnabled] = useState(Boolean(capacitySettings.autoSleepScheduleEnabled));
   const [capacityStatusMsg, setCapacityStatusMsg] = useState<string | null>(null);
 
@@ -236,7 +237,7 @@ export const AdminSettingsView: React.FC = () => {
     setDayEndTime(capacitySettings.dayEndTime || '11:00 PM');
     setSleepStartTime(capacitySettings.sleepStartTime || capacitySettings.dayEndTime || '11:00 PM');
     setSleepEndTime(capacitySettings.sleepEndTime || capacitySettings.dayStartTime || '06:00 AM');
-    setDefaultBufferMinutes(capacitySettings.defaultBufferMinutes || 15);
+    setDefaultBufferMinutes(capacitySettings.defaultBufferMinutes ?? 0);
     setAutoSleepScheduleEnabled(Boolean(capacitySettings.autoSleepScheduleEnabled));
   }, [capacitySettings]);
 
@@ -362,13 +363,23 @@ export const AdminSettingsView: React.FC = () => {
     setPeriodsList(prev => prev.map(p => p.id === id ? { ...p, [field]: val } : p));
   };
 
-  // 2. Adjust boundary between Zone index and Zone (index + 1)
-  // Changing Zone index's endTime automatically locks Zone (index+1)'s startTime!
-  const handleBoundaryChange = (index: number, newEndTimeStr: string) => {
+  // 2. Commit boundary between Zone index and Zone (index + 1)
+  // Supports 12-hour (e.g. "09:30 AM", "2 PM") and 24-hour ("14:30", "09:00") inputs
+  const handleCommitBoundary = (index: number, rawValue: string) => {
     const list = [...periodsList];
     if (list.length <= 1) return;
 
-    const newEndMin = parse12HourToMinutes(newEndTimeStr);
+    const trimmed = rawValue.trim();
+    if (!trimmed) {
+      setEditingBoundaries(prev => {
+        const next = { ...prev };
+        delete next[`end_${index}`];
+        return next;
+      });
+      return;
+    }
+
+    const newEndMin = parse12HourToMinutes(trimmed);
     const cleanTimeStr = formatMinutesTo12Hour(newEndMin);
     const nextIndex = (index + 1) % list.length;
 
@@ -376,6 +387,41 @@ export const AdminSettingsView: React.FC = () => {
     list[nextIndex] = { ...list[nextIndex], startTime: cleanTimeStr };
 
     setPeriodsList(list);
+    setEditingBoundaries(prev => {
+      const next = { ...prev };
+      delete next[`end_${index}`];
+      return next;
+    });
+  };
+
+  // 2b. Commit Master Day Anchor Start Time (Zone #1 start and final zone's end)
+  const handleCommitStartAnchor = (rawValue: string) => {
+    const list = [...periodsList];
+    if (list.length === 0) return;
+
+    const trimmed = rawValue.trim();
+    if (!trimmed) {
+      setEditingBoundaries(prev => {
+        const next = { ...prev };
+        delete next['start_0'];
+        return next;
+      });
+      return;
+    }
+
+    const startMin = parse12HourToMinutes(trimmed);
+    const cleanTimeStr = formatMinutesTo12Hour(startMin);
+    const lastIndex = list.length - 1;
+
+    list[0] = { ...list[0], startTime: cleanTimeStr };
+    list[lastIndex] = { ...list[lastIndex], endTime: cleanTimeStr };
+
+    setPeriodsList(list);
+    setEditingBoundaries(prev => {
+      const next = { ...prev };
+      delete next['start_0'];
+      return next;
+    });
   };
 
   // 3. 1-Click Stepper Nudge (Shift boundary by +/-15 minutes)
@@ -392,6 +438,11 @@ export const AdminSettingsView: React.FC = () => {
     list[nextIndex] = { ...list[nextIndex], startTime: cleanTimeStr };
 
     setPeriodsList(list);
+    setEditingBoundaries(prev => {
+      const next = { ...prev };
+      delete next[`end_${index}`];
+      return next;
+    });
   };
 
   // 4. Split Zone: 1-click bisect any zone into two balanced halves with zero gaps!
@@ -530,6 +581,14 @@ export const AdminSettingsView: React.FC = () => {
       isEnabled: periodCustomizeEnabled,
       periods: periodsList
     });
+    try {
+      localStorage.setItem('optimustime_app_state_v2_time_periods', JSON.stringify({
+        isEnabled: periodCustomizeEnabled,
+        periods: periodsList
+      }));
+    } catch (e) {
+      console.error('Failed to direct save periods', e);
+    }
     setPeriodSaveMsg('24-Hour Name Engine saved! Active across all views & calculations ✨');
     setTimeout(() => setPeriodSaveMsg(null), 3500);
   };
@@ -550,6 +609,10 @@ export const AdminSettingsView: React.FC = () => {
   };
 
   const handleSaveCapacity = () => {
+    const chosenBuffer = taskDefaults.defaultBufferMinutes !== undefined
+      ? taskDefaults.defaultBufferMinutes
+      : (capacitySettings.defaultBufferMinutes !== undefined ? capacitySettings.defaultBufferMinutes : 0);
+
     updateCapacitySettings({
       ...capacitySettings,
       maxWorkHours: Number(maxWorkHours),
@@ -559,9 +622,15 @@ export const AdminSettingsView: React.FC = () => {
       dayEndTime,
       sleepStartTime,
       sleepEndTime,
-      defaultBufferMinutes: Number(taskDefaults.defaultBufferMinutes || capacitySettings.defaultBufferMinutes || 15),
+      defaultBufferMinutes: Number(chosenBuffer),
       autoSleepScheduleEnabled
     });
+
+    updateDefaultTaskSettings({
+      ...taskDefaults,
+      defaultBufferMinutes: Number(chosenBuffer)
+    });
+
     setCapacityStatusMsg('24-Hour Capacity & Red-Line Protocol saved successfully! ✅');
     setTimeout(() => setCapacityStatusMsg(null), 4000);
   };
@@ -579,7 +648,17 @@ export const AdminSettingsView: React.FC = () => {
   };
 
   const handleSaveTaskDefaults = () => {
-    updateDefaultTaskSettings(taskDefaults);
+    const chosenBuffer = taskDefaults.defaultBufferMinutes !== undefined ? taskDefaults.defaultBufferMinutes : 0;
+    updateDefaultTaskSettings({
+      ...taskDefaults,
+      defaultBufferMinutes: chosenBuffer
+    });
+
+    updateCapacitySettings({
+      ...capacitySettings,
+      defaultBufferMinutes: chosenBuffer
+    });
+
     setTaskDefaultsStatusMsg('Default Task Adding Presets saved successfully! ✅');
     setTimeout(() => setTaskDefaultsStatusMsg(null), 4000);
   };
@@ -1651,26 +1730,85 @@ export const AdminSettingsView: React.FC = () => {
 
                         {/* Time Window: Start -> End with Steppers */}
                         <div className="sm:col-span-4 flex items-center gap-1.5 flex-wrap">
-                          {/* Locked Start Time Pill (Inherited from prev zone) */}
-                          <span 
-                            className="px-2 py-1 rounded-lg bg-theme-card-hover border border-theme-border font-mono text-[11px] font-bold text-theme-muted"
-                            title={`Start Time is automatically locked to previous zone's end time`}
-                          >
-                            {period.startTime}
-                          </span>
+                          {/* Start Time: Editable anchor for Zone 1, Locked for subsequent zones */}
+                          {index === 0 ? (
+                            <div className="flex items-center gap-1">
+                              <input
+                                type="text"
+                                value={editingBoundaries['start_0'] ?? period.startTime}
+                                onChange={(e) => setEditingBoundaries(prev => ({ ...prev, 'start_0': e.target.value }))}
+                                onBlur={(e) => handleCommitStartAnchor(e.target.value)}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter') {
+                                    handleCommitStartAnchor((e.target as HTMLInputElement).value);
+                                    (e.target as HTMLInputElement).blur();
+                                  }
+                                }}
+                                placeholder="12:00 AM"
+                                className="w-20 px-2 py-1 rounded-lg bg-theme-card border border-amber-300 dark:border-amber-700 font-mono text-[11px] font-bold text-theme-text text-center focus:outline-none focus:ring-1 focus:ring-amber-500 transition-colors"
+                                title="Day Anchor Start Time (syncs with final zone's end time - press Enter or blur to save)"
+                              />
+                              <label 
+                                className="w-6 h-6 rounded bg-theme-card-hover hover:bg-theme-border text-theme-muted hover:text-theme-text flex items-center justify-center border border-theme-border cursor-pointer transition-colors"
+                                title="Clock picker for Day Anchor Start Time"
+                              >
+                                <Clock className="w-3 h-3" />
+                                <input
+                                  type="time"
+                                  className="sr-only"
+                                  onChange={(e) => {
+                                    if (e.target.value) {
+                                      handleCommitStartAnchor(e.target.value);
+                                    }
+                                  }}
+                                />
+                              </label>
+                            </div>
+                          ) : (
+                            <span 
+                              className="px-2 py-1 rounded-lg bg-theme-card-hover border border-theme-border font-mono text-[11px] font-bold text-theme-muted"
+                              title={`Start Time is automatically locked to previous zone's end time (${period.startTime})`}
+                            >
+                              {period.startTime}
+                            </span>
+                          )}
 
                           <ArrowRight className="w-3 h-3 text-theme-muted shrink-0" />
 
-                          {/* Editable End Time with Steppers */}
+                          {/* Editable End Time with Text Buffer, Clock Picker & Steppers */}
                           <div className="flex items-center gap-1">
                             <input
                               type="text"
-                              value={period.endTime}
-                              onChange={(e) => handleBoundaryChange(index, e.target.value)}
+                              value={editingBoundaries[`end_${index}`] ?? period.endTime}
+                              onChange={(e) => setEditingBoundaries(prev => ({ ...prev, [`end_${index}`]: e.target.value }))}
+                              onBlur={(e) => handleCommitBoundary(index, e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') {
+                                  handleCommitBoundary(index, (e.target as HTMLInputElement).value);
+                                  (e.target as HTMLInputElement).blur();
+                                }
+                              }}
                               placeholder="09:00 AM"
-                              className="w-20 px-2 py-1 rounded-lg bg-theme-card border border-theme-border font-mono text-[11px] font-bold text-theme-text text-center focus:outline-none focus:border-blue-500"
-                              title="Edit boundary (updates next zone's start time automatically)"
+                              className="w-20 px-2 py-1 rounded-lg bg-theme-card border border-theme-border font-mono text-[11px] font-bold text-theme-text text-center focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 transition-colors"
+                              title="Edit boundary (type 12h e.g. 09:30 AM, or 24h e.g. 14:00 - press Enter or blur to save)"
                             />
+
+                            {/* Native Clock Picker */}
+                            <label 
+                              className="w-6 h-6 rounded bg-theme-card-hover hover:bg-theme-border text-theme-muted hover:text-theme-text flex items-center justify-center border border-theme-border cursor-pointer transition-colors"
+                              title="Pick end time from clock"
+                            >
+                              <Clock className="w-3 h-3" />
+                              <input
+                                type="time"
+                                className="sr-only"
+                                onChange={(e) => {
+                                  if (e.target.value) {
+                                    handleCommitBoundary(index, e.target.value);
+                                  }
+                                }}
+                              />
+                            </label>
 
                             {/* -15m Stepper */}
                             <button
