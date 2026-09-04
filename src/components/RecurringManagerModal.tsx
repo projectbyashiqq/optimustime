@@ -13,6 +13,7 @@ import {
   addMinutesToTime, 
   diffTimeInMinutes,
   getNextRecurrenceDate,
+  isTaskScheduledForDate,
   SHORT_DAYS 
 } from '../utils/timeUtils';
 import { TimePicker } from './TimePicker';
@@ -143,13 +144,17 @@ export const RecurringManagerModal: React.FC<RecurringManagerModalProps> = ({
   // Helper to preview upcoming dates
   const getUpcomingDates = (task: Task, count: number = 3): string[] => {
     const dates: string[] = [];
-    const today = new Date();
-    let cursor = toISODateString(today);
-    for (let i = 0; i < 20 && dates.length < count; i++) {
+    const todayStr = toISODateString(new Date());
+    // If today is scheduled and not excluded, include today as the first upcoming occurrence
+    if (isTaskScheduledForDate(task, todayStr) && !(task.excludedDates || []).includes(todayStr)) {
+      dates.push(todayStr);
+    }
+    let cursor = todayStr;
+    for (let i = 0; i < 40 && dates.length < count; i++) {
       const next = getNextRecurrenceDate(task, cursor);
       if (!next || next === cursor) break;
       const isExcluded = (task.excludedDates || []).includes(next);
-      if (!isExcluded) {
+      if (!isExcluded && !dates.includes(next)) {
         dates.push(next);
       }
       cursor = next;

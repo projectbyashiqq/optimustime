@@ -264,16 +264,31 @@ export const TaskModal: React.FC<TaskModalProps> = ({
       recurrence,
       selectedDays,
       startTime,
-      baseDate: initialDate || toISODateString(new Date())
+      baseDate: taskDate || initialDate || toISODateString(new Date())
     });
-  }, [recurrence, selectedDays, startTime, initialDate]);
+  }, [recurrence, selectedDays, startTime, taskDate, initialDate]);
+
+  // Track previous recurrence pattern to only auto-align when recurrence pattern changes
+  const prevRecurrencePatternRef = useRef(`${recurrence}-${(selectedDays || []).sort().join(',')}`);
 
   // When setting recurrence on a new task, automatically align taskDate to the first valid occurrence
   useEffect(() => {
-    if (!taskToEdit && firstOccurrencePreview && firstOccurrencePreview !== taskDate) {
-      setTaskDate(firstOccurrencePreview);
+    const currentPattern = `${recurrence}-${(selectedDays || []).sort().join(',')}`;
+    if (prevRecurrencePatternRef.current !== currentPattern) {
+      prevRecurrencePatternRef.current = currentPattern;
+      if (!taskToEdit && recurrence && recurrence !== 'None') {
+        const nextValid = calculateFirstRecurringDate({
+          recurrence,
+          selectedDays,
+          startTime,
+          baseDate: taskDate
+        });
+        if (nextValid !== taskDate) {
+          setTaskDate(nextValid);
+        }
+      }
     }
-  }, [taskToEdit, firstOccurrencePreview]);
+  }, [recurrence, selectedDays, startTime, taskDate, taskToEdit]);
 
   // Live evaluation of whether scheduled start time is in the past
   const pastTimeCheck = useMemo(() => {
@@ -500,10 +515,10 @@ export const TaskModal: React.FC<TaskModalProps> = ({
 
     // Ensure 1st schedule date for recurring task is accurate
     let effectiveTaskDate = taskDate;
-    if (!taskToEdit && recurrence && recurrence !== 'None') {
+    if (recurrence && recurrence !== 'None') {
       effectiveTaskDate = calculateFirstRecurringDate({
         recurrence,
-        selectedDays,
+        selectedDays: recurrence === 'Selected Days' ? selectedDays : [],
         startTime,
         baseDate: taskDate
       });

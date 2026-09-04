@@ -399,33 +399,24 @@ export function playNotificationChime(type: 'success' | 'alert' | 'timer' = 'ale
  *   - Checks if startTime is strictly later than the current time today.
  *   - If startTime is later than current time today, returns today!
  *   - If startTime has already passed today, returns the NEXT matching occurrence (e.g. next Wednesday or tomorrow).
- * - If today does NOT match the recurrence pattern (e.g. today is Thursday for [Sun, Wed]):
- *   - Returns the next upcoming matching day (e.g. next Sunday).
  */
 export function calculateFirstRecurringDate(params: {
-  recurrence: string;
+  recurrence?: string;
   selectedDays?: string[];
   startTime?: string;
   baseDate?: string;
   referenceNow?: Date;
 }): string {
-  const { recurrence, selectedDays = [], startTime, baseDate } = params;
+  const { recurrence, selectedDays = [], baseDate } = params;
   const now = params.referenceNow || new Date();
   const todayStr = toISODateString(now);
+
+  // If baseDate is provided and on/after today, anchor to baseDate; otherwise anchor to today
   const startFromDateStr = baseDate && baseDate >= todayStr ? baseDate : todayStr;
 
   if (!recurrence || recurrence === 'None') {
     return startFromDateStr;
   }
-
-  const curMinutes = now.getHours() * 60 + now.getMinutes();
-
-  // Check if a time today is still in the future
-  const isTimeInFutureToday = () => {
-    if (!startTime || startTime === 'All Day') return true;
-    const taskStartMin = parse12HourToMinutes(startTime);
-    return taskStartMin > curMinutes;
-  };
 
   const [y, m, d] = startFromDateStr.split('-').map(Number);
 
@@ -439,8 +430,13 @@ export function calculateFirstRecurringDate(params: {
     }
 
     if (recurrence === 'Selected Days') {
-      if (!selectedDays || selectedDays.length === 0) return true;
-      return selectedDays.some(sd => sd === dayShort || sd === dayFull);
+      if (!selectedDays || selectedDays.length === 0) return false;
+      return selectedDays.some(sd => {
+        const lower = sd.trim().toLowerCase();
+        return lower === dayShort.toLowerCase() ||
+               lower === dayFull.toLowerCase() ||
+               lower.startsWith(dayShort.toLowerCase());
+      });
     }
 
     if (recurrence === 'Weekly') {
@@ -459,19 +455,14 @@ export function calculateFirstRecurringDate(params: {
     return false;
   };
 
-  // Check if startFromDateStr itself matches
+  // Check if startFromDateStr itself matches the pattern (e.g. today or chosen future date)
   const baseObj = new Date(y, m - 1, d);
-  const isBaseDateToday = startFromDateStr === todayStr;
-
   if (matchesPattern(baseObj)) {
-    // If base date is today, only schedule today if time is later today!
-    if (!isBaseDateToday || isTimeInFutureToday()) {
-      return startFromDateStr;
-    }
+    return startFromDateStr;
   }
 
-  // Scan up to 366 days into the future to find the first valid match
-  for (let offset = 1; offset <= 366; offset++) {
+  // Otherwise scan up to 400 days into the future to find the first valid match
+  for (let offset = 1; offset <= 400; offset++) {
     const candidate = new Date(y, m - 1, d + offset);
     if (matchesPattern(candidate)) {
       return toISODateString(candidate);
@@ -501,7 +492,7 @@ export function isTaskScheduledForDate(task: {
     return task.taskDate === targetDateStr;
   }
 
-  // A recurring task only applies on or after its first scheduled taskDate
+  // A recurring task only applies on or after its first scheduled taskDate (anchor start date)
   if (targetDateStr < task.taskDate) return false;
 
   if (recurrence === 'Daily') {
@@ -514,8 +505,13 @@ export function isTaskScheduledForDate(task: {
   const targetDayFull = DAYS_OF_WEEK[targetDateObj.getDay()]; // e.g. "Monday"
 
   if (recurrence === 'Selected Days') {
-    if (!task.selectedDays || task.selectedDays.length === 0) return true;
-    return task.selectedDays.some(d => d === targetDayShort || d === targetDayFull);
+    if (!task.selectedDays || task.selectedDays.length === 0) return false;
+    return task.selectedDays.some(d => {
+      const lower = d.trim().toLowerCase();
+      return lower === targetDayShort.toLowerCase() ||
+             lower === targetDayFull.toLowerCase() ||
+             lower.startsWith(targetDayShort.toLowerCase());
+    });
   }
 
   const [sYear, sMonth, sDay] = task.taskDate.split('-').map(Number);
@@ -543,46 +539,30 @@ export function getNextRecurrenceDate(task: {
   taskDate: string;
   recurrence?: string;
   selectedDays?: string[];
+  excludedDates?: string[];
 }, fromDateStr: string): string {
   const recurrence = task.recurrence || 'None';
   if (recurrence === 'None') return fromDateStr;
 
   const [year, month, day] = fromDateStr.split('-').map(Number);
-  const current = new Date(year, month - 1, day);
 
   if (recurrence === 'Daily') {
-    current.setDate(current.getDate() + 1);
-    return toISODateString(current);
+    const nextDate = new Date(year, month - 1, day + 1);
+    return toISODateString(nextDate);
   }
 
-  if (recurrence === 'Selected Days') {
-    for (let i = 1; i <= 14; i++) {
-      const nextDate = new Date(year, month - 1, day + i);
-      const nextDateStr = toISODateString(nextDate);
-      if (isTaskScheduledForDate(task, nextDateStr)) {
-        return nextDateStr;
-      }
+  // For Selected Days, Weekly, Monthly, Yearly:
+  // Scan forward up to 400 days to find the next scheduled occurrence
+  for (let offset = 1; offset <= 400; offset++) {
+    const nextDate = new Date(year, month - 1, day + offset);
+    const nextDateStr = toISODateString(nextDate);
+    if (isTaskScheduledForDate(task, nextDateStr)) {
+      return nextDateStr;
     }
-    current.setDate(current.getDate() + 1);
-    return toISODateString(current);
   }
 
-  if (recurrence === 'Weekly') {
-    current.setDate(current.getDate() + 7);
-    return toISODateString(current);
-  }
-
-  if (recurrence === 'Monthly') {
-    current.setMonth(current.getMonth() + 1);
-    return toISODateString(current);
-  }
-
-  if (recurrence === 'Yearly') {
-    current.setFullYear(current.getFullYear() + 1);
-    return toISODateString(current);
-  }
-
-  return fromDateStr;
+  const fallback = new Date(year, month - 1, day + 1);
+  return toISODateString(fallback);
 }
 
 export interface AvailableSlotResult {

@@ -1500,8 +1500,21 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         updatedExclusions = [];
       }
 
+      let updatedTaskDate = updates.taskDate || target.taskDate;
+      if (updatedRecurrence && updatedRecurrence !== 'None') {
+        updatedTaskDate = calculateFirstRecurringDate({
+          recurrence: updatedRecurrence,
+          selectedDays: updatedSelectedDays,
+          startTime: updatedStartTime,
+          baseDate: updatedTaskDate
+        });
+      }
+      const updatedDayOfWeek = getDayOfWeekFromDate(updatedTaskDate);
+
       const updatedMaster: Task = {
         ...target,
+        taskDate: updatedTaskDate,
+        dayOfWeek: updatedDayOfWeek,
         title: updatedTitle,
         description: updatedDescription,
         priority: updatedPriority,
