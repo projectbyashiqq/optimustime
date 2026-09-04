@@ -60,9 +60,10 @@ export type AllTasksViewMode = 'list' | 'table' | 'timeline' | '24hours' | 'week
 
 interface AllTasksViewProps {
   onOpenTaskModal: (task?: Task, date?: string, startTime?: string) => void;
+  onOpenBatchTaskModal?: () => void;
 }
 
-export const AllTasksView: React.FC<AllTasksViewProps> = ({ onOpenTaskModal }) => {
+export const AllTasksView: React.FC<AllTasksViewProps> = ({ onOpenTaskModal, onOpenBatchTaskModal }) => {
   const { 
     tasks, 
     categories, 
@@ -1113,6 +1114,17 @@ export const AllTasksView: React.FC<AllTasksViewProps> = ({ onOpenTaskModal }) =
             <Repeat className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
             <span>Recurring Hub ({tasks.filter(t => t.recurrence && t.recurrence !== 'None').length})</span>
           </button>
+
+          {onOpenBatchTaskModal && (
+            <button
+              onClick={onOpenBatchTaskModal}
+              className="flex items-center gap-1.5 px-3.5 py-2 bg-indigo-50 dark:bg-indigo-950/60 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 rounded-xl text-xs font-bold transition-all shadow-sm active:scale-95"
+              title="Batch Add / Import Tasks (Text, Excel, CSV)"
+            >
+              <Layers className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
+              <span>Batch Add</span>
+            </button>
+          )}
 
           <button
             onClick={() => onOpenTaskModal(undefined, selectedCalendarDate)}

@@ -24,9 +24,10 @@ import { ThemeName } from '../types';
 
 interface HeaderProps {
   onOpenNewTaskModal: () => void;
+  onOpenBatchTaskModal?: () => void;
 }
 
-export const Header: React.FC<HeaderProps> = ({ onOpenNewTaskModal }) => {
+export const Header: React.FC<HeaderProps> = ({ onOpenNewTaskModal, onOpenBatchTaskModal }) => {
   const { 
     tasks, 
     capacitySettings, 
@@ -47,6 +48,7 @@ export const Header: React.FC<HeaderProps> = ({ onOpenNewTaskModal }) => {
 
   const [currentTime, setCurrentTime] = useState<Date>(() => getBangladeshNow());
   const [showThemeMenu, setShowThemeMenu] = useState(false);
+  const [showActionMenu, setShowActionMenu] = useState(false);
 
   // Live 12h clock with seconds anchored to Bangladesh Standard Time (Asia/Dhaka)
   useEffect(() => {
@@ -93,9 +95,6 @@ export const Header: React.FC<HeaderProps> = ({ onOpenNewTaskModal }) => {
                 <h1 className="text-sm sm:text-base font-black tracking-tight font-display text-theme-text flex items-center gap-1">
                   OPTIMUS<span className="text-blue-600 dark:text-blue-400">TIME</span>
                 </h1>
-                <span className="text-[9px] uppercase font-bold tracking-widest px-1.5 py-0.5 rounded-full bg-blue-500/10 dark:bg-blue-400/15 text-blue-700 dark:text-blue-300 border border-blue-500/20">
-                  Unified
-                </span>
               </div>
               <div className="text-[11px] text-theme-muted font-medium flex items-center gap-1.5">
                 <span>{formatHeaderDate(currentTime)}</span>
@@ -270,21 +269,19 @@ export const Header: React.FC<HeaderProps> = ({ onOpenNewTaskModal }) => {
               </span>
             </button>
 
-            {/* Recurring Hub God Admin Button */}
-            <button
-              onClick={openRecurringHub}
-              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-full border border-theme-border/80 bg-theme-card-hover/80 hover:bg-theme-border/80 text-theme-muted hover:text-theme-text text-xs font-semibold transition-all cursor-pointer shrink-0 active:scale-95 shadow-2xs"
-              title="Recurring Tasks & Schedules Hub (God Admin)"
-            >
-              <Repeat className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
-              <span className="hidden lg:inline text-[11px]">Recurring</span>
-              <span className="text-[9px] font-mono font-black px-1.5 py-0.2 rounded-full bg-indigo-500/15 text-indigo-700 dark:text-indigo-300 border border-indigo-500/20">
-                {tasks.filter(t => t.recurrence && t.recurrence !== 'None').length}
-              </span>
-            </button>
+            {/* Backdrop for popovers */}
+            {(showThemeMenu || showActionMenu) && (
+              <div 
+                className="fixed inset-0 z-40 bg-transparent" 
+                onClick={() => {
+                  setShowThemeMenu(false);
+                  setShowActionMenu(false);
+                }} 
+              />
+            )}
 
             {/* Theme Selector Dropdown (Apple macOS Popover Style) */}
-            <div className="relative">
+            <div className="relative z-50">
               <button
                 onClick={() => setShowThemeMenu(!showThemeMenu)}
                 className="flex items-center gap-1 p-2 rounded-full bg-theme-card-hover/80 border border-theme-border/80 text-theme-text hover:bg-theme-border/80 transition-all text-xs font-medium cursor-pointer shrink-0 active:scale-95 shadow-2xs"
@@ -328,15 +325,105 @@ export const Header: React.FC<HeaderProps> = ({ onOpenNewTaskModal }) => {
               )}
             </div>
 
-            {/* Primary New Task CTA (Apple Cupertino Blue Pill) */}
-            <button
-              onClick={onOpenNewTaskModal}
-              className="flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-bold rounded-full bg-blue-600 hover:bg-blue-500 text-white shadow-sm shadow-blue-600/30 hover:shadow-md hover:shadow-blue-600/40 transition-all active:scale-95 shrink-0 whitespace-nowrap cursor-pointer"
-              title="Create New Task"
-            >
-              <Plus className="w-4 h-4 stroke-[2.5]" />
-              <span className="hidden sm:inline">New Task</span>
-            </button>
+            {/* Apple Cupertino Action Pill: New Task + Options Menu */}
+            <div className="relative z-50">
+              <div className="flex items-center rounded-full bg-blue-600 hover:bg-blue-500 text-white shadow-sm shadow-blue-600/30 hover:shadow-md hover:shadow-blue-600/40 transition-all p-0.5">
+                <button
+                  onClick={onOpenNewTaskModal}
+                  className="flex items-center gap-1.5 pl-3 pr-2 py-1 text-xs font-bold transition-transform active:scale-95 cursor-pointer whitespace-nowrap"
+                  title="Create Single Task"
+                >
+                  <Plus className="w-4 h-4 stroke-[2.5]" />
+                  <span className="hidden sm:inline">New Task</span>
+                </button>
+
+                <div className="w-px h-3.5 bg-white/30" />
+
+                <button
+                  onClick={() => setShowActionMenu(!showActionMenu)}
+                  className="p-1.5 hover:bg-white/15 rounded-full transition-colors cursor-pointer"
+                  title="Task Creation Options: Batch Add, Recurring Hub"
+                >
+                  <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-200 ${showActionMenu ? 'rotate-180' : ''}`} />
+                </button>
+              </div>
+
+              {/* Floating Apple macOS Action Popover */}
+              {showActionMenu && (
+                <div className="absolute right-0 top-full mt-2 w-64 glass-panel rounded-2xl shadow-2xl z-50 p-2 border border-theme-border animate-fade-in space-y-1">
+                  <div className="text-[10px] font-bold text-theme-muted px-2.5 py-1 uppercase tracking-wider">
+                    Task Creation Options
+                  </div>
+
+                  <button
+                    onClick={() => {
+                      setShowActionMenu(false);
+                      onOpenNewTaskModal();
+                    }}
+                    className="w-full flex items-center gap-2.5 p-2 rounded-xl hover:bg-theme-card-hover text-left transition-colors cursor-pointer group"
+                  >
+                    <div className="w-7 h-7 rounded-lg bg-blue-500/15 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0">
+                      <Plus className="w-4 h-4 stroke-[2.5]" />
+                    </div>
+                    <div>
+                      <div className="text-xs font-bold text-theme-text group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
+                        New Single Task
+                      </div>
+                      <div className="text-[10px] text-theme-muted">
+                        Single time-boxed schedule
+                      </div>
+                    </div>
+                  </button>
+
+                  {onOpenBatchTaskModal && (
+                    <button
+                      onClick={() => {
+                        setShowActionMenu(false);
+                        onOpenBatchTaskModal();
+                      }}
+                      className="w-full flex items-center gap-2.5 p-2 rounded-xl hover:bg-theme-card-hover text-left transition-colors cursor-pointer group"
+                    >
+                      <div className="w-7 h-7 rounded-lg bg-indigo-500/15 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shrink-0">
+                        <Layers className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <div className="text-xs font-bold text-theme-text group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">
+                          Batch Import Tasks
+                        </div>
+                        <div className="text-[10px] text-theme-muted">
+                          Multi-line text, Excel (.xlsx) & CSV
+                        </div>
+                      </div>
+                    </button>
+                  )}
+
+                  <button
+                    onClick={() => {
+                      setShowActionMenu(false);
+                      openRecurringHub();
+                    }}
+                    className="w-full flex items-center gap-2.5 p-2 rounded-xl hover:bg-theme-card-hover text-left transition-colors cursor-pointer group"
+                  >
+                    <div className="w-7 h-7 rounded-lg bg-purple-500/15 text-purple-600 dark:text-purple-400 flex items-center justify-center shrink-0">
+                      <Repeat className="w-4 h-4" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between">
+                        <div className="text-xs font-bold text-theme-text group-hover:text-purple-600 dark:group-hover:text-purple-400 transition-colors">
+                          Recurring Hub
+                        </div>
+                        <span className="text-[9px] font-mono font-bold px-1.5 py-0.5 rounded-full bg-purple-500/15 text-purple-600 dark:text-purple-400 border border-purple-500/20">
+                          {tasks.filter(t => t.recurrence && t.recurrence !== 'None').length}
+                        </span>
+                      </div>
+                      <div className="text-[10px] text-theme-muted">
+                        Master recurring schedule manager
+                      </div>
+                    </div>
+                  </button>
+                </div>
+              )}
+            </div>
 
             {/* Quick Lock / Logout Button */}
             {securitySettings.isPasswordProtected && (

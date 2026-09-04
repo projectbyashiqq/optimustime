@@ -448,5 +448,12 @@ export interface DayBreakdown24Metrics {
   noiseLeakMinutes: number;
 }
 
-
-
+export type BatchTaskInput = Partial<Omit<Task, 'title' | 'priority' | 'category' | 'appointedMinutes' | 'taskDate' | 'startTime' | 'endTime'>> & {
+  title: string;
+  priority: PriorityLevel;
+  category: string;
+  appointedMinutes: number;
+  taskDate: string;
+  startTime: string;
+  endTime: string;
+};

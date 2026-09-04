@@ -8,6 +8,7 @@ import { BufferNoteModal } from './components/BufferNoteModal';
 import { RecurringDeleteModal } from './components/RecurringDeleteModal';
 import { RecurringManagerModal } from './components/RecurringManagerModal';
 import { BackupRestoreModal } from './components/BackupRestoreModal';
+import { BatchTaskModal } from './components/BatchTaskModal';
 import { DashboardView } from './views/DashboardView';
 import { TimeTracker24View } from './views/TimeTracker24View';
 import { AllTasksView } from './views/AllTasksView';
@@ -27,7 +28,7 @@ export const AppContent: React.FC = () => {
     return <LoginGate />;
   }
 
-  // Task Modal state
+  // Single Task Modal state
   const [isTaskModalOpen, setIsTaskModalOpen] = useState(false);
   const [taskToEdit, setTaskToEdit] = useState<Task | null>(null);
   const [modalInitialDate, setModalInitialDate] = useState<string | undefined>(undefined);
@@ -37,6 +38,26 @@ export const AppContent: React.FC = () => {
   const [modalInitialPlanProjectId, setModalInitialPlanProjectId] = useState<string | undefined>(undefined);
   const [modalInitialRecurrence, setModalInitialRecurrence] = useState<RecurrenceType | undefined>(undefined);
   const [isMasterSeriesAdmin, setIsMasterSeriesAdmin] = useState<boolean>(false);
+
+  // Batch Task Modal state
+  const [isBatchTaskModalOpen, setIsBatchTaskModalOpen] = useState(false);
+  const [batchModalInitialDate, setBatchModalInitialDate] = useState<string | undefined>(undefined);
+  const [batchModalInitialCategory, setBatchModalInitialCategory] = useState<string | undefined>(undefined);
+  const [batchModalInitialPlanProjectId, setBatchModalInitialPlanProjectId] = useState<string | undefined>(undefined);
+
+  const handleOpenBatchTaskModal = (date?: string, category?: string, planProjectId?: string) => {
+    setBatchModalInitialDate(date);
+    setBatchModalInitialCategory(category);
+    setBatchModalInitialPlanProjectId(planProjectId);
+    setIsBatchTaskModalOpen(true);
+  };
+
+  const handleCloseBatchTaskModal = () => {
+    setIsBatchTaskModalOpen(false);
+    setBatchModalInitialDate(undefined);
+    setBatchModalInitialCategory(undefined);
+    setBatchModalInitialPlanProjectId(undefined);
+  };
 
   const handleOpenTaskModal = (
     task?: Task, 
@@ -75,7 +96,10 @@ export const AppContent: React.FC = () => {
     <div className="min-h-screen flex flex-col bg-theme-bg text-theme-text transition-colors duration-200">
       
       {/* Top Header Protocol */}
-      <Header onOpenNewTaskModal={() => handleOpenTaskModal()} />
+      <Header 
+        onOpenNewTaskModal={() => handleOpenTaskModal()} 
+        onOpenBatchTaskModal={() => handleOpenBatchTaskModal()}
+      />
 
       {/* Main Navigation Bar */}
       <Navbar />
@@ -92,10 +116,16 @@ export const AppContent: React.FC = () => {
           <TimeTracker24View onOpenTaskModal={handleOpenTaskModal} />
         )}
         {activeTab === 'all-tasks' && (
-          <AllTasksView onOpenTaskModal={handleOpenTaskModal} />
+          <AllTasksView 
+            onOpenTaskModal={handleOpenTaskModal} 
+            onOpenBatchTaskModal={() => handleOpenBatchTaskModal()}
+          />
         )}
         {activeTab === 'plans-projects' && (
-          <PlansProjectsView onOpenTaskModal={handleOpenTaskModal} />
+          <PlansProjectsView 
+            onOpenTaskModal={handleOpenTaskModal} 
+            onOpenBatchTaskModal={handleOpenBatchTaskModal}
+          />
         )}
         {activeTab === 'categories' && (
           <CategoryView onOpenTaskModal={handleOpenTaskModal} />
@@ -134,6 +164,15 @@ export const AppContent: React.FC = () => {
 
       {/* 100% System Backup & Data Recovery Hub Modal */}
       <BackupRestoreModal />
+
+      {/* Batch Task Importer Modal (Text, Excel, CSV) */}
+      <BatchTaskModal
+        isOpen={isBatchTaskModalOpen}
+        initialDate={batchModalInitialDate}
+        initialCategory={batchModalInitialCategory}
+        initialPlanProjectId={batchModalInitialPlanProjectId}
+        onClose={handleCloseBatchTaskModal}
+      />
 
       {/* Recurring Tasks & Schedules Manager Hub Modal (God Admin) */}
       {isRecurringHubOpen && (

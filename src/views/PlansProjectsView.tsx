@@ -48,9 +48,10 @@ import {
 
 interface PlansProjectsViewProps {
   onOpenTaskModal: (task?: Task, date?: string, startTime?: string, projectCode?: string, category?: string, planProjectId?: string) => void;
+  onOpenBatchTaskModal?: (date?: string, category?: string, planProjectId?: string) => void;
 }
 
-export const PlansProjectsView: React.FC<PlansProjectsViewProps> = ({ onOpenTaskModal }) => {
+export const PlansProjectsView: React.FC<PlansProjectsViewProps> = ({ onOpenTaskModal, onOpenBatchTaskModal }) => {
   const { 
     planProjects, 
     tasks, 
@@ -687,15 +688,26 @@ export const PlansProjectsView: React.FC<PlansProjectsViewProps> = ({ onOpenTask
             <div className="flex items-center gap-2 shrink-0">
               <button
                 onClick={() => handleCreateTaskForFolder(selectedFolder)}
-                className="flex-1 flex items-center justify-center gap-1.5 py-2.5 px-4 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold shadow-md shadow-blue-500/20 transition-all"
+                className="flex-1 flex items-center justify-center gap-1.5 py-2.5 px-4 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold shadow-md shadow-blue-500/20 transition-all cursor-pointer"
               >
                 <Plus className="w-4 h-4 stroke-[3]" />
-                <span>Add Task to {selectedFolder.title}</span>
+                <span>Add Task</span>
               </button>
+
+              {onOpenBatchTaskModal && (
+                <button
+                  onClick={() => onOpenBatchTaskModal(selectedFolder.startDate || todayStr, selectedFolder.category, selectedFolder.id)}
+                  className="flex items-center justify-center gap-1.5 py-2.5 px-3.5 bg-indigo-50 dark:bg-indigo-950/60 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 rounded-xl text-xs font-bold transition-all shadow-xs cursor-pointer"
+                  title="Batch Add Tasks directly into this folder"
+                >
+                  <Layers className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
+                  <span>Batch Add</span>
+                </button>
+              )}
 
               <button
                 onClick={() => setAssignExistingModalOpen(true)}
-                className="px-4 py-2.5 bg-theme-card-hover hover:bg-theme-border border border-theme-border text-theme-text rounded-xl text-xs font-bold transition-colors shadow-xs"
+                className="px-4 py-2.5 bg-theme-card-hover hover:bg-theme-border border border-theme-border text-theme-text rounded-xl text-xs font-bold transition-colors shadow-xs cursor-pointer"
                 title="Pull existing tasks into this folder"
               >
                 Link Tasks

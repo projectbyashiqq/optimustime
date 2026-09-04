@@ -29,7 +29,8 @@ import {
   DaySlice24,
   SignalNoiseType,
   NamedTimePeriod,
-  TimePeriodSettings
+  TimePeriodSettings,
+  BatchTaskInput
 } from '../types';
 import { detectSignalVsNoise } from '../utils/signalNoiseUtils';
 import { 
@@ -123,6 +124,7 @@ interface AppContextType {
   
   // Task Actions & Automation Engines
   addTask: (task: Omit<Task, 'id' | 'projectCode' | 'dateAdded' | 'executionLogs' | 'totalActualMinutes'> & { id?: string; projectCode?: string }) => Task;
+  addBatchTasks: (tasks: BatchTaskInput[]) => Task[];
   updateTask: (task: Task) => void;
   deleteTask: (taskId: string) => void;
   deleteRecurringInstance: (taskId: string, dateStr: string) => void;
@@ -1321,7 +1323,89 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     playNotificationChime('success');
     return newTask;
-  }, [prioritySettings, logLifeEvent]);
+  }, [prioritySettings, logLifeEvent, defaultTaskSettings, capacitySettings]);
+
+  const addBatchTasks = useCallback((tasksData: BatchTaskInput[]): Task[] => {
+    if (!tasksData || tasksData.length === 0) return [];
+
+    const createdTasks: Task[] = tasksData.map((taskData, index) => {
+      const defaultMins = prioritySettings[taskData.priority]?.defaultMinutes ?? 60;
+      const appointedMinutes = taskData.appointedMinutes || defaultMins;
+      const hasNoTime = Boolean(
+        taskData.hasNoTime ||
+        taskData.startTime === 'Anytime' ||
+        taskData.startTime === 'Free Time' ||
+        (taskData.priority === 'P5' && (taskData.hasNoTime !== false && !taskData.startTime))
+      );
+      const startTime = hasNoTime ? 'Anytime' : (taskData.startTime || getCurrentRoundedTime12Hour(15));
+      const endTime = hasNoTime ? 'Anytime' : (taskData.endTime || addMinutesToTime(startTime, appointedMinutes));
+      let date = taskData.taskDate || toISODateString(new Date());
+
+      const recurrence = taskData.recurrence || 'None';
+      if (recurrence !== 'None' && !hasNoTime) {
+        date = calculateFirstRecurringDate({
+          recurrence,
+          selectedDays: taskData.selectedDays,
+          startTime,
+          baseDate: date
+        });
+      }
+      const day = getDayOfWeekFromDate(date);
+
+      const newTask: Task = {
+        id: taskData.id || `task-${Date.now()}-${index}-${Math.floor(Math.random() * 1000)}`,
+        projectCode: taskData.projectCode || generateProjectCode(),
+        title: taskData.title,
+        description: taskData.description || '',
+        dateAdded: new Date().toISOString(),
+        taskDate: date,
+        dayOfWeek: day,
+        priority: taskData.priority,
+        category: taskData.category?.trim() || 'Unknown',
+        subCategory: taskData.subCategory || '',
+        appointedMinutes,
+        startTime,
+        endTime,
+        status: taskData.status || 'Pending',
+        bufferMinutes: taskData.bufferMinutes !== undefined
+          ? taskData.bufferMinutes
+          : (defaultTaskSettings.defaultBufferMinutes ?? capacitySettings.defaultBufferMinutes ?? 0),
+        recurrence: taskData.recurrence || 'None',
+        selectedDays: taskData.selectedDays || [],
+        isMandatorySchedule: taskData.isMandatorySchedule || false,
+        planProjectId: taskData.planProjectId,
+        rescheduleCount: 0,
+        originallyAddedAt: new Date().toISOString(),
+        originalScheduledDate: date,
+        originalScheduledStartTime: startTime,
+        executionLogs: [],
+        totalActualMinutes: 0,
+        notes: taskData.notes || '',
+        links: taskData.links || [],
+        subtasks: taskData.subtasks || [],
+        crossesMidnight: hasNoTime ? false : (taskData.crossesMidnight ?? taskCrossesMidnight(startTime, endTime)),
+        endDate: hasNoTime ? date : (taskData.endDate || (taskCrossesMidnight(startTime, endTime) ? getTaskEndDate(date, startTime, endTime) : date)),
+        hasNoTime,
+        isSimultaneous: hasNoTime ? true : (taskData.isSimultaneous || false),
+        simultaneousWithIds: taskData.simultaneousWithIds || []
+      };
+      return newTask;
+    });
+
+    setTasks(prev => sanitizeSimultaneousTasks([...createdTasks, ...prev]));
+
+    logLifeEvent({
+      eventType: 'TASK_CREATED',
+      taskTitle: `Batch Created ${createdTasks.length} Tasks`,
+      message: `Batch created ${createdTasks.length} tasks successfully`,
+      details: {
+        batchCount: createdTasks.length
+      }
+    });
+
+    playNotificationChime('success');
+    return createdTasks;
+  }, [prioritySettings, logLifeEvent, defaultTaskSettings, capacitySettings]);
 
   const updateTask = useCallback((updated: Task) => {
     setTasks(prev => {
@@ -3015,6 +3099,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setSearchQuery,
         setSelectedCategoryFilter,
         addTask,
+        addBatchTasks,
         updateTask,
         deleteTask,
         deleteRecurringInstance,
