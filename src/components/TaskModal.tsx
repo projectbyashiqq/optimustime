@@ -316,7 +316,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
 
   // Recommended candidate free slots across the day (guaranteed zero sleep window slots)
   const recommendedSlots = useMemo(() => {
-    return getRecommendedDayFreeSlots(taskDate, appointedMinutes, tasks, bufferNotes, taskToEdit?.id, 5, effectiveDefaultBuffer, capacitySettings);
+    return getRecommendedDayFreeSlots(taskDate, appointedMinutes, tasks, bufferNotes, taskToEdit?.id, 10, effectiveDefaultBuffer, capacitySettings);
   }, [taskDate, appointedMinutes, tasks, bufferNotes, taskToEdit?.id, capacitySettings, effectiveDefaultBuffer]);
 
   // Live Overlap / Conflict Intelligence calculation

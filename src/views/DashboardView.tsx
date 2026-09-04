@@ -1598,7 +1598,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
                     Dynamic Gap Finder
                   </h3>
                   <span className="text-[10px] font-bold px-2 py-0.5 bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-300 rounded-full">
-                    {gaps.length} Free Slots
+                    10+ Available Slots
                   </span>
                 </div>
                 
@@ -1724,6 +1724,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
                     gap: TimeGap;
                     effectiveStart: string;
                     effectiveMin: number;
+                    targetDate?: string;
+                    isFutureDay?: boolean;
                   }> = [];
                   const pastGaps: TimeGap[] = [];
 
@@ -1777,7 +1779,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
                         upcomingGaps.push({
                           gap,
                           effectiveStart: gap.startTime,
-                          effectiveMin: gap.durationMinutes
+                          effectiveMin: gap.durationMinutes,
+                          targetDate: selectedDate
                         });
                       }
                     }
@@ -1815,8 +1818,93 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
                       upcomingGaps.push({
                         gap,
                         effectiveStart: gap.startTime,
-                        effectiveMin: gap.durationMinutes
+                        effectiveMin: gap.durationMinutes,
+                        targetDate: selectedDate
                       });
+                    }
+                  }
+
+                  // GUARANTEE AT LEAST 10 UPCOMING SLOTS
+                  // Step 1: Expand existing large gaps with 60m focus milestone sub-slots if needed
+                  const currentUpcomingCount = (firstSuggestion ? 1 : 0) + upcomingGaps.length;
+                  if (currentUpcomingCount < 10) {
+                    const expandedGaps: typeof upcomingGaps = [];
+                    for (const item of upcomingGaps) {
+                      expandedGaps.push(item);
+                      let sM = parse12HourToMinutes(item.gap.startTime);
+                      let eM = parse12HourToMinutes(item.gap.endTime);
+                      if (eM <= sM) eM += 1440;
+                      let step = sM + 60;
+                      while (step + 15 <= eM && (firstSuggestion ? 1 : 0) + expandedGaps.length < 10) {
+                        const stepStr = formatMinutesTo12Hour(step);
+                        expandedGaps.push({
+                          gap: {
+                            startTime: stepStr,
+                            endTime: item.gap.endTime,
+                            durationMinutes: eM - step
+                          },
+                          effectiveStart: stepStr,
+                          effectiveMin: eM - step,
+                          targetDate: item.targetDate || selectedDate,
+                          isFutureDay: item.isFutureDay
+                        });
+                        step += 60;
+                      }
+                    }
+                    upcomingGaps.length = 0;
+                    upcomingGaps.push(...expandedGaps);
+                  }
+
+                  // Step 2: Multi-day lookahead (scan subsequent days until at least 10 slots are achieved)
+                  if ((firstSuggestion ? 1 : 0) + upcomingGaps.length < 10) {
+                    const baseDateObj = new Date(sYear, sMonth - 1, sDay);
+                    for (let offset = 1; offset <= 7 && (firstSuggestion ? 1 : 0) + upcomingGaps.length < 10; offset++) {
+                      const nextDate = new Date(baseDateObj);
+                      nextDate.setDate(baseDateObj.getDate() + offset);
+                      const nextDateStr = toISODateString(nextDate);
+
+                      const nextDayTasks = tasks.filter(t => isTaskScheduledForDate(t, nextDateStr));
+                      const nextDayBuffers = bufferNotes.filter(n => n.date === nextDateStr);
+                      const nextDayGaps = findScheduleGaps(
+                        nextDayTasks,
+                        wakingStart,
+                        wakingEnd,
+                        nextDayBuffers,
+                        capacitySettings.defaultBufferMinutes ?? 0,
+                        capacitySettings.sleepStartTime,
+                        capacitySettings.sleepEndTime
+                      );
+
+                      for (const ng of nextDayGaps) {
+                        if ((firstSuggestion ? 1 : 0) + upcomingGaps.length >= 10) break;
+                        upcomingGaps.push({
+                          gap: ng,
+                          effectiveStart: ng.startTime,
+                          effectiveMin: ng.durationMinutes,
+                          targetDate: nextDateStr,
+                          isFutureDay: true
+                        });
+
+                        let ngStart = parse12HourToMinutes(ng.startTime);
+                        let ngEnd = parse12HourToMinutes(ng.endTime);
+                        if (ngEnd <= ngStart) ngEnd += 1440;
+                        let nextStep = ngStart + 60;
+                        while (nextStep + 15 <= ngEnd && (firstSuggestion ? 1 : 0) + upcomingGaps.length < 10) {
+                          const candStr = formatMinutesTo12Hour(nextStep);
+                          upcomingGaps.push({
+                            gap: {
+                              startTime: candStr,
+                              endTime: ng.endTime,
+                              durationMinutes: ngEnd - nextStep
+                            },
+                            effectiveStart: candStr,
+                            effectiveMin: ngEnd - nextStep,
+                            targetDate: nextDateStr,
+                            isFutureDay: true
+                          });
+                          nextStep += 60;
+                        }
+                      }
                     }
                   }
 
@@ -1936,12 +2024,13 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
                         </div>
                       )}
 
-                      {/* Remaining Upcoming Gaps (Recent / Earliest First) */}
+                      {/* Remaining Upcoming Gaps (Showing Next 10+ Slots) */}
                       {upcomingGaps.map((item, idx) => {
                         const gap = item.gap;
                         const isLess10 = gap.durationMinutes < 10;
                         const isAfterMidnight = wakingEndMin > 1440 && parse12HourToMinutes(gap.startTime) < wakingStartMin;
-                        const targetGapDate = isAfterMidnight ? tomorrowDateStr : selectedDate;
+                        const targetGapDate = item.targetDate || (isAfterMidnight ? tomorrowDateStr : selectedDate);
+                        const isFutureDay = targetGapDate !== selectedDate;
 
                         return (
                           <div
@@ -1952,10 +2041,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
                               <span className="font-mono text-xs font-bold text-blue-700 dark:text-blue-300 flex items-center gap-1.5 flex-wrap">
                                 <Clock className="w-3.5 h-3.5" />
                                 <span>{gap.startTime} - {gap.endTime}</span>
-                                {isAfterMidnight && (
+                                {isFutureDay && (
                                   <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-purple-100 dark:bg-purple-950 text-purple-700 dark:text-purple-300 border border-purple-300 dark:border-purple-800 flex items-center gap-1 font-mono">
-                                    <span>🌙</span>
-                                    <span>Next Day ({formatDisplayDate(tomorrowDateStr)})</span>
+                                    <span>📅</span>
+                                    <span>{formatDisplayDate(targetGapDate)}</span>
                                   </span>
                                 )}
                                 {(() => {
@@ -1987,7 +2076,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
                                 </span>
                                 <span className="text-[10px] font-mono text-theme-muted">
                                   {gap.startTime} → {gap.endTime}
-                                  {isAfterMidnight ? ` (${formatDisplayDate(tomorrowDateStr)})` : ''}
+                                  {isFutureDay ? ` (${formatDisplayDate(targetGapDate)})` : ''}
                                 </span>
                               </div>
                             </div>

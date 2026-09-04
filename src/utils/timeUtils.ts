@@ -762,7 +762,7 @@ export function findAllAvailableSlotsOnDate(
   dayStartTime = '06:00 AM',
   dayEndTime = '11:00 PM',
   earliestAllowedMinutes?: number,
-  maxSlotsPerDay = 5,
+  maxSlotsPerDay = 12,
   ignoreTaskId?: string,
   sleepStartTime = '11:00 PM',
   sleepEndTime = '06:00 AM',
@@ -2531,7 +2531,7 @@ export function getRecommendedDayFreeSlots(
   tasks: Array<{ taskDate: string; startTime: string; endTime: string; status: string; bufferMinutes?: number; recurrence?: string; selectedDays?: string[]; excludedDates?: string[]; id?: string }>,
   bufferNotes: Array<{ date?: string; startTime: string; endTime: string }> = [],
   ignoreTaskId?: string,
-  limit = 5,
+  limit = 10,
   bufferGap = 15,
   capacitySettings?: { dayStartTime?: string; dayEndTime?: string; sleepStartTime?: string; sleepEndTime?: string; preferPm?: boolean }
 ): RecommendedSlot[] {
@@ -2562,32 +2562,30 @@ export function getRecommendedDayFreeSlots(
     minFutureMin = Math.ceil((nowMin + 5) / 15) * 15;
   }
 
-  // If today and not enough waking time left, return empty
-  if (isToday && minFutureMin + durationMinutes > wakingEndMin) {
-    return [];
-  }
-
-  const smartNext = getSmartNextFreeSlot(dateStr, durationMinutes, tasks, bufferNotes, ignoreTaskId, bufferGap, capacitySettings);
   const slots: RecommendedSlot[] = [];
 
-  // Only add smartNext if it belongs to this date and is strictly outside sleep window
-  if (
-    smartNext.dateStr === dateStr &&
-    (!isToday || (() => {
-      let snStart = parse12HourToMinutes(smartNext.startTime);
-      if (wakingEndMin > 1440 && snStart < wakingStartMin) snStart += 1440;
-      return snStart >= minFutureMin;
-    })()) &&
-    !isTimeInSleepWindow(smartNext.startTime, smartNext.endTime, sleepStartStr, sleepEndStr)
-  ) {
-    const isPm = smartNext.startTime.includes('PM');
-    slots.push({
-      startTime: smartNext.startTime,
-      endTime: smartNext.endTime,
-      label: isPm ? '⚡ Next Available (PM)' : '⚡ Next Available (AM)',
-      durationMinutes,
-      isContiguousNext: true
-    });
+  // Attempt smartNext contiguous slot
+  if (!isToday || minFutureMin + durationMinutes <= wakingEndMin) {
+    const smartNext = getSmartNextFreeSlot(dateStr, durationMinutes, tasks, bufferNotes, ignoreTaskId, bufferGap, capacitySettings);
+
+    if (
+      smartNext.dateStr === dateStr &&
+      (!isToday || (() => {
+        let snStart = parse12HourToMinutes(smartNext.startTime);
+        if (wakingEndMin > 1440 && snStart < wakingStartMin) snStart += 1440;
+        return snStart >= minFutureMin;
+      })()) &&
+      !isTimeInSleepWindow(smartNext.startTime, smartNext.endTime, sleepStartStr, sleepEndStr)
+    ) {
+      const isPm = smartNext.startTime.includes('PM');
+      slots.push({
+        startTime: smartNext.startTime,
+        endTime: smartNext.endTime,
+        label: isPm ? '⚡ Next Available (PM)' : '⚡ Next Available (AM)',
+        durationMinutes,
+        isContiguousNext: true
+      });
+    }
   }
 
   const activeTasks = tasks.filter(t => 
@@ -2600,7 +2598,15 @@ export function getRecommendedDayFreeSlots(
     isTaskScheduledForDate(t, dateStr)
   );
   const dayBufferNotes = bufferNotes.filter(b => !b.date || b.date === dateStr);
-  const gaps = findScheduleGaps(activeTasks, sleepEndStr, sleepStartStr, dayBufferNotes, bufferGap);
+  const gaps = findScheduleGaps(
+    activeTasks, 
+    capacitySettings?.dayStartTime || '06:00 AM', 
+    capacitySettings?.dayEndTime || '11:00 PM', 
+    dayBufferNotes, 
+    bufferGap,
+    sleepStartStr,
+    sleepEndStr
+  );
 
   // 1. Gather all non-sleep gaps across this date
   for (const gap of gaps) {
@@ -2635,8 +2641,9 @@ export function getRecommendedDayFreeSlots(
         }
       }
 
-      // If gap is large (>= 60 mins), offer milestone starting points (e.g. +60m) inside gap
-      let nextStep = usableStart + 60;
+      // Step inside gap every 30m or durationMinutes to offer dense starting times
+      const stepDelta = Math.max(15, Math.min(30, Math.floor(durationMinutes)));
+      let nextStep = usableStart + stepDelta;
       while (nextStep + durationMinutes <= gEnd && slots.length < limit) {
         const candStart = formatMinutesTo12Hour(nextStep);
         const candEnd = formatMinutesTo12Hour(nextStep + durationMinutes);
@@ -2656,18 +2663,30 @@ export function getRecommendedDayFreeSlots(
             });
           }
         }
-        nextStep += 60;
+        nextStep += stepDelta;
       }
     }
   }
 
-  // 2. Guarantee candidate daytime slots if still under limit
+  // 2. Guarantee candidate daytime anchor slots across the whole waking day if still under limit
   const testCandidateSlots = [
-    { startMin: 840, label: '🌤️ Afternoon (02:00 PM)' },
-    { startMin: 1080, label: '🌆 Evening (06:00 PM)' },
-    { startMin: 780, label: '🌤️ Afternoon (01:00 PM)' },
+    { startMin: 540, label: '🌅 Morning (09:00 AM)' },
     { startMin: 600, label: '☀️ Morning (10:00 AM)' },
-    { startMin: 1200, label: '🌙 Night (08:00 PM)' }
+    { startMin: 660, label: '☀️ Morning (11:00 AM)' },
+    { startMin: 720, label: '☀️ Midday (12:00 PM)' },
+    { startMin: 780, label: '🌤️ Afternoon (01:00 PM)' },
+    { startMin: 840, label: '🌤️ Afternoon (02:00 PM)' },
+    { startMin: 900, label: '🌤️ Afternoon (03:00 PM)' },
+    { startMin: 960, label: '🌤️ Afternoon (04:00 PM)' },
+    { startMin: 1020, label: '🌆 Evening (05:00 PM)' },
+    { startMin: 1080, label: '🌆 Evening (06:00 PM)' },
+    { startMin: 1140, label: '🌆 Evening (07:00 PM)' },
+    { startMin: 1200, label: '🌙 Night (08:00 PM)' },
+    { startMin: 1260, label: '🌙 Night (09:00 PM)' },
+    { startMin: 1320, label: '🌙 Night (10:00 PM)' },
+    { startMin: 1380, label: '🌙 Night (11:00 PM)' },
+    { startMin: 1445, label: '🌙 Deep Night (12:05 AM)' },
+    { startMin: 1500, label: '🌙 Deep Night (01:00 AM)' }
   ];
 
   for (const tSlot of testCandidateSlots) {
@@ -2700,6 +2719,55 @@ export function getRecommendedDayFreeSlots(
         label: tSlot.label,
         durationMinutes
       });
+    }
+  }
+
+  // 3. If still under limit, scan into tomorrow to fulfill at least 10 slots
+  if (slots.length < limit) {
+    const [y, m, d] = dateStr.split('-').map(Number);
+    const nextDate = new Date(y, m - 1, d + 1);
+    const nextDateStr = toISODateString(nextDate);
+
+    const nextActiveTasks = tasks.filter(t => 
+      t.id !== ignoreTaskId &&
+      t.status !== 'Terminated' && 
+      t.status !== 'Reschedule' &&
+      t.startTime && 
+      t.endTime && 
+      t.startTime !== 'All Day' &&
+      isTaskScheduledForDate(t, nextDateStr)
+    );
+    const nextDayBuffers = bufferNotes.filter(b => !b.date || b.date === nextDateStr);
+    const nextGaps = findScheduleGaps(
+      nextActiveTasks,
+      capacitySettings?.dayStartTime || '06:00 AM',
+      capacitySettings?.dayEndTime || '11:00 PM',
+      nextDayBuffers,
+      bufferGap,
+      sleepStartStr,
+      sleepEndStr
+    );
+
+    for (const ng of nextGaps) {
+      if (slots.length >= limit) break;
+      let ngStart = parse12HourToMinutes(ng.startTime);
+      let ngEnd = parse12HourToMinutes(ng.endTime);
+      if (ngEnd <= ngStart) ngEnd += 1440;
+
+      if (ngStart + durationMinutes <= ngEnd) {
+        const candStart = formatMinutesTo12Hour(ngStart);
+        const candEnd = formatMinutesTo12Hour(ngStart + durationMinutes);
+        if (!isTimeInSleepWindow(candStart, candEnd, sleepStartStr, sleepEndStr)) {
+          if (!slots.some(s => s.startTime === candStart)) {
+            slots.push({
+              startTime: candStart,
+              endTime: candEnd,
+              label: `Tomorrow • ${candStart}`,
+              durationMinutes
+            });
+          }
+        }
+      }
     }
   }
 
