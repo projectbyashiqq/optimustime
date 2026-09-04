@@ -1457,29 +1457,58 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                       </button>
                     </div>
 
-                    <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5">
-                      {recommendedSlots.map((slot, idx) => {
-                        const isSelected = startTime === slot.startTime;
-                        return (
+                    <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5 min-h-[32px]">
+                      {recommendedSlots.length > 0 ? (
+                        recommendedSlots.map((slot, idx) => {
+                          const isSelected = startTime === slot.startTime;
+                          return (
+                            <button
+                              key={idx}
+                              type="button"
+                              onClick={() => {
+                                setStartTime(slot.startTime);
+                                setEndTime(slot.endTime);
+                                setValidationError(null);
+                              }}
+                              className={`px-2.5 py-1 rounded-lg text-[10px] font-bold whitespace-nowrap transition-all border flex items-center gap-1 shrink-0 cursor-pointer ${
+                                isSelected
+                                  ? 'bg-blue-600 text-white border-blue-600 shadow-xs'
+                                  : 'bg-theme-card text-theme-muted hover:text-theme-text border-theme-border hover:border-blue-400'
+                              }`}
+                            >
+                              <span>{slot.label}</span>
+                              <span className="font-mono text-[9px] opacity-80">({slot.startTime} - {slot.endTime})</span>
+                            </button>
+                          );
+                        })
+                      ) : (
+                        <div className="text-[10px] text-theme-muted flex items-center gap-2 py-0.5 px-1">
+                          <span>No open slots on {formatDisplayDate(taskDate)}.</span>
                           <button
-                            key={idx}
                             type="button"
                             onClick={() => {
-                              setStartTime(slot.startTime);
-                              setEndTime(slot.endTime);
+                              const smart = getSmartNextFreeSlot(
+                                taskDate, 
+                                appointedMinutes, 
+                                tasks, 
+                                bufferNotes, 
+                                taskToEdit?.id, 
+                                effectiveDefaultBuffer,
+                                capacitySettings
+                              );
+                              setStartTime(smart.startTime);
+                              setEndTime(smart.endTime);
+                              if (smart.dateStr && smart.dateStr !== taskDate) {
+                                setTaskDate(smart.dateStr);
+                              }
                               setValidationError(null);
                             }}
-                            className={`px-2.5 py-1 rounded-lg text-[10px] font-bold whitespace-nowrap transition-all border flex items-center gap-1 shrink-0 cursor-pointer ${
-                              isSelected
-                                ? 'bg-blue-600 text-white border-blue-600 shadow-xs'
-                                : 'bg-theme-card text-theme-muted hover:text-theme-text border-theme-border hover:border-blue-400'
-                            }`}
+                            className="font-bold text-blue-600 dark:text-blue-400 hover:underline cursor-pointer"
                           >
-                            <span>{slot.label}</span>
-                            <span className="font-mono text-[9px] opacity-80">({slot.startTime} - {slot.endTime})</span>
+                            Find Next Free Day →
                           </button>
-                        );
-                      })}
+                        </div>
+                      )}
                     </div>
                   </div>
 

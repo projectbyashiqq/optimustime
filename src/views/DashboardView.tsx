@@ -1711,18 +1711,36 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
                   }> = [];
                   const pastGaps: TimeGap[] = [];
 
+                  const wakingStartMin = parse12HourToMinutes(wakingStart);
+                  let wakingEndMin = parse12HourToMinutes(wakingEnd);
+                  if (wakingEndMin <= wakingStartMin) wakingEndMin += 1440;
+
+                  let normalizedCurrentMin = currentMinutesFromMidnight;
+                  if (wakingEndMin > 1440 && normalizedCurrentMin < wakingStartMin) {
+                    normalizedCurrentMin += 1440;
+                  }
+
+                  let normalizedPlanningMin = earliestPlanningMin;
+                  if (wakingEndMin > 1440 && normalizedPlanningMin < wakingStartMin) {
+                    normalizedPlanningMin += 1440;
+                  }
+
                   if (isSelectedToday) {
                     for (const gap of gaps) {
-                      const gStartMin = parse12HourToMinutes(gap.startTime);
+                      let gStartMin = parse12HourToMinutes(gap.startTime);
                       let gEndMin = parse12HourToMinutes(gap.endTime);
                       if (gEndMin < gStartMin) gEndMin += 1440;
+                      if (wakingEndMin > 1440 && gStartMin < wakingStartMin) {
+                        gStartMin += 1440;
+                        gEndMin += 1440;
+                      }
 
-                      if (gEndMin <= currentMinutesFromMidnight || (activeRunningTask && gEndMin <= earliestPlanningMin)) {
+                      if (gEndMin <= normalizedCurrentMin || (activeRunningTask && gEndMin <= normalizedPlanningMin)) {
                         // Past gap or gap fully occupied by running task
                         pastGaps.push(gap);
-                      } else if (gStartMin <= earliestPlanningMin && earliestPlanningMin < gEndMin) {
+                      } else if (gStartMin <= normalizedPlanningMin && normalizedPlanningMin < gEndMin) {
                         // Active / upcoming window right after current moment or running work!
-                        const remainingFromEarliest = gEndMin - earliestPlanningMin;
+                        const remainingFromEarliest = gEndMin - normalizedPlanningMin;
                         if (remainingFromEarliest >= 5) {
                           firstSuggestion = {
                             startTime: earliestPlanningStr,
@@ -1735,7 +1753,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
                           pastGaps.push(gap);
                         }
                       } else {
-                        // Future gap starting after earliestPlanningMin
+                        // Future gap starting after normalizedPlanningMin
                         upcomingGaps.push({
                           gap,
                           effectiveStart: gap.startTime,
@@ -1747,12 +1765,16 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
                     // If not currently in a free gap, the first upcoming gap becomes the 1st suggestion!
                     if (!firstSuggestion && upcomingGaps.length > 0) {
                       const firstUp = upcomingGaps.shift()!;
-                      const sMin = parse12HourToMinutes(firstUp.gap.startTime);
+                      let sMin = parse12HourToMinutes(firstUp.gap.startTime);
                       let eMin = parse12HourToMinutes(firstUp.gap.endTime);
                       if (eMin < sMin) eMin += 1440;
+                      if (wakingEndMin > 1440 && sMin < wakingStartMin) {
+                        sMin += 1440;
+                        eMin += 1440;
+                      }
 
-                      // Start at max(gap.startTime, earliestPlanningMin)
-                      const effStartMin = Math.max(sMin, earliestPlanningMin);
+                      // Start at max(gap.startTime, normalizedPlanningMin)
+                      const effStartMin = Math.max(sMin, normalizedPlanningMin);
                       const effStartStr = formatMinutesTo12Hour(effStartMin);
                       const remaining = Math.max(1, eMin - effStartMin);
 
