@@ -1699,25 +1699,24 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
 
             return (
               <div className="glass-panel p-5 rounded-3xl border border-slate-200/80 dark:border-white/10 bg-white/70 dark:bg-slate-900/70 backdrop-blur-2xl shadow-sm space-y-4">
-                
                 {/* Header Ribbon */}
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
-                  <div className="flex items-center gap-2.5">
-                    <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-amber-400 to-amber-600 text-white flex items-center justify-center shadow-xs shadow-amber-500/30 shrink-0">
-                      <Sparkles className="w-4 h-4 fill-white" />
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-1 border-b border-theme-border/40">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-2xl bg-gradient-to-b from-amber-500/15 to-orange-500/10 dark:from-amber-400/20 dark:to-orange-500/10 border border-amber-500/25 dark:border-amber-400/20 text-amber-600 dark:text-amber-400 flex items-center justify-center shadow-inner shadow-amber-500/10 shrink-0">
+                      <Sparkles className="w-5 h-5 stroke-[2]" />
                     </div>
                     <div>
-                      <div className="flex items-center gap-2">
-                        <h3 className="text-xs font-black text-theme-text uppercase tracking-wider font-display">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <h3 className="text-sm font-bold text-theme-text tracking-tight font-display">
                           Dynamic Gap Finder
                         </h3>
-                        <span className="text-[10px] font-bold px-2 py-0.5 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border border-emerald-500/25 rounded-full font-mono">
+                        <span className="text-[10px] font-mono font-bold px-2.5 py-0.5 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border border-emerald-500/20 rounded-full">
                           {scientificSlots.length} Slots Guaranteed
                         </span>
                       </div>
-                      <span className="text-[10px] text-theme-muted font-medium block">
+                      <p className="text-[11px] text-theme-muted font-medium mt-0.5">
                         Ultradian Rhythm Decomposition & Circadian Capacity Analysis
-                      </span>
+                      </p>
                     </div>
                   </div>
 
@@ -1726,14 +1725,15 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
                     <button
                       type="button"
                       onClick={() => setSlotDecomposition(!slotDecomposition)}
-                      className={`px-2.5 py-1 rounded-xl text-[11px] font-bold transition-all border flex items-center gap-1.5 cursor-pointer shadow-2xs ${
+                      className={`px-3 py-1.5 rounded-full text-xs font-semibold transition-all border flex items-center gap-1.5 cursor-pointer shadow-2xs ${
                         slotDecomposition
-                          ? 'bg-amber-500 text-white border-amber-600 shadow-sm'
-                          : 'bg-theme-card-hover hover:bg-theme-border text-theme-muted hover:text-theme-text border-theme-border'
+                          ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900 border-transparent shadow-xs'
+                          : 'bg-black/[0.03] dark:bg-white/[0.06] text-theme-muted hover:text-theme-text border-black/[0.06] dark:border-white/10'
                       }`}
                       title={slotDecomposition ? "Decomposing large gaps into 90m, 45m & 30m Ultradian slots" : "Showing raw discrete gaps"}
                     >
-                      <span>🧠 {slotDecomposition ? 'Ultradian Split (10+)' : 'Raw Gaps'}</span>
+                      <span className="text-xs">🧠</span>
+                      <span>{slotDecomposition ? 'Ultradian Split (10+)' : 'Raw Gaps'}</span>
                     </button>
                   </div>
                 </div>
@@ -1798,7 +1798,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
                                 className="px-2.5 py-1 rounded-lg bg-amber-500 hover:bg-amber-600 text-white text-[11px] font-bold flex items-center gap-1 shadow-xs transition-transform active:scale-95 cursor-pointer"
                                 title="Log elapsed unstarted time as a Buffer Note"
                               >
-                                <Coffee className="w-3 h-3" />
+                                <Coffee className="w-3.5 h-3.5" />
                                 <span>Log Buffer ({delayMins}m)</span>
                               </button>
 
@@ -1861,147 +1861,116 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
                   </div>
                 )}
 
-                {/* Quick Filter Tabs */}
-                <div className="flex items-center gap-1 p-1 rounded-2xl bg-slate-100/90 dark:bg-white/[0.06] border border-slate-200/60 dark:border-white/10 overflow-x-auto no-scrollbar">
-                  <button
-                    type="button"
-                    onClick={() => setGapDateFilter('all')}
-                    className={`px-3 py-1 rounded-xl text-xs font-bold transition-all whitespace-nowrap cursor-pointer ${
-                      gapDateFilter === 'all'
-                        ? 'bg-white dark:bg-slate-800 text-slate-900 dark:text-white shadow-xs font-display'
-                        : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-                    }`}
-                  >
-                    All Slots ({scientificSlots.length})
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setGapDateFilter('today')}
-                    className={`px-3 py-1 rounded-xl text-xs font-bold transition-all whitespace-nowrap cursor-pointer ${
-                      gapDateFilter === 'today'
-                        ? 'bg-white dark:bg-slate-800 text-slate-900 dark:text-white shadow-xs font-display'
-                        : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-                    }`}
-                  >
-                    Today ({todaySlots.length})
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setGapDateFilter('tomorrow')}
-                    className={`px-3 py-1 rounded-xl text-xs font-bold transition-all whitespace-nowrap cursor-pointer ${
-                      gapDateFilter === 'tomorrow'
-                        ? 'bg-white dark:bg-slate-800 text-slate-900 dark:text-white shadow-xs font-display'
-                        : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-                    }`}
-                  >
-                    Tomorrow ({tomorrowSlots.length})
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setGapDateFilter('deep_focus')}
-                    className={`px-3 py-1 rounded-xl text-xs font-bold transition-all whitespace-nowrap cursor-pointer ${
-                      gapDateFilter === 'deep_focus'
-                        ? 'bg-white dark:bg-slate-800 text-slate-900 dark:text-white shadow-xs font-display'
-                        : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-                    }`}
-                  >
-                    🧠 Deep Focus ({deepFocusSlots.length})
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setGapDateFilter('sprint')}
-                    className={`px-3 py-1 rounded-xl text-xs font-bold transition-all whitespace-nowrap cursor-pointer ${
-                      gapDateFilter === 'sprint'
-                        ? 'bg-white dark:bg-slate-800 text-slate-900 dark:text-white shadow-xs font-display'
-                        : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-                    }`}
-                  >
-                    ⚡ Sprints ({sprintSlots.length})
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setGapDateFilter('quick')}
-                    className={`px-3 py-1 rounded-xl text-xs font-bold transition-all whitespace-nowrap cursor-pointer ${
-                      gapDateFilter === 'quick'
-                        ? 'bg-white dark:bg-slate-800 text-slate-900 dark:text-white shadow-xs font-display'
-                        : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-                    }`}
-                  >
-                    ☕ Quick ({quickSlots.length})
-                  </button>
+                {/* Quick Filter Tabs (Apple Segmented Control) */}
+                <div className="p-1 rounded-2xl bg-black/[0.04] dark:bg-white/[0.06] border border-black/[0.04] dark:border-white/[0.08] flex items-center gap-1 overflow-x-auto no-scrollbar scroll-smooth">
+                  {[
+                    { id: 'all', label: 'All Slots', count: scientificSlots.length, icon: null },
+                    { id: 'today', label: 'Today', count: todaySlots.length, icon: null },
+                    { id: 'tomorrow', label: 'Tomorrow', count: tomorrowSlots.length, icon: null },
+                    { id: 'deep_focus', label: 'Deep Focus', count: deepFocusSlots.length, icon: '🧠' },
+                    { id: 'sprint', label: 'Sprints', count: sprintSlots.length, icon: '⚡' },
+                    { id: 'quick', label: 'Quick', count: quickSlots.length, icon: '☕' },
+                  ].map(tab => {
+                    const isActive = gapDateFilter === tab.id;
+                    return (
+                      <button
+                        key={tab.id}
+                        type="button"
+                        onClick={() => setGapDateFilter(tab.id as any)}
+                        className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all whitespace-nowrap cursor-pointer flex items-center gap-1.5 ${
+                          isActive
+                            ? 'bg-white dark:bg-slate-800 text-slate-900 dark:text-white shadow-xs scale-[1.02]'
+                            : 'text-theme-muted hover:text-theme-text hover:bg-black/[0.02] dark:hover:bg-white/[0.04]'
+                        }`}
+                      >
+                        {tab.icon && <span>{tab.icon}</span>}
+                        <span>{tab.label}</span>
+                        <span className={`text-[10px] font-mono ${isActive ? 'opacity-90 font-bold' : 'opacity-60'}`}>
+                          ({tab.count})
+                        </span>
+                      </button>
+                    );
+                  })}
                 </div>
 
-                {/* Hero Spotlight Slot Card (Apple Featured Window Widget) */}
+                {/* Hero Spotlight Slot Card (Apple Visionary Live Window) */}
                 {heroSpotlightSlot && (
-                  <div className="p-4 rounded-2xl border border-emerald-500/30 dark:border-emerald-500/40 bg-gradient-to-br from-emerald-500/[0.08] via-teal-500/[0.04] to-transparent dark:from-emerald-500/[0.14] dark:via-teal-500/[0.05] dark:to-transparent shadow-xs space-y-2.5 animate-fade-in relative overflow-hidden group">
-                    <div className="absolute -right-6 -top-6 w-24 h-24 bg-emerald-500/15 rounded-full blur-xl pointer-events-none" />
+                  <div className="p-4 sm:p-5 rounded-2xl border border-emerald-500/30 dark:border-emerald-500/40 bg-gradient-to-b from-emerald-500/[0.09] via-teal-500/[0.03] to-transparent dark:from-emerald-500/[0.16] dark:via-teal-500/[0.05] dark:to-transparent shadow-[0_4px_24px_-4px_rgba(16,185,129,0.15)] space-y-3 animate-fade-in relative overflow-hidden group">
+                    <div className="absolute -right-8 -top-8 w-32 h-32 bg-emerald-500/15 rounded-full blur-2xl pointer-events-none" />
 
-                    {/* Top Label: Beacon + Window Title + Free Duration */}
+                    {/* Top Status Header */}
                     <div className="flex items-center justify-between gap-2 relative z-10">
-                      <div className="flex items-center gap-1.5">
-                        <span className="relative flex h-2 w-2">
+                      <div className="flex items-center gap-2">
+                        <span className="relative flex h-2.5 w-2.5">
                           <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
-                          <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
+                          <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500" />
                         </span>
-                        <span className="text-[11px] font-bold text-emerald-800 dark:text-emerald-300 font-display tracking-tight">
-                          Next Recommended Window • {heroSpotlightSlot.isImmediate ? 'Starts Now' : heroSpotlightSlot.dateLabel}
+                        <span className="text-xs font-bold text-emerald-800 dark:text-emerald-300 font-display tracking-tight">
+                          Recommended Window • {heroSpotlightSlot.isImmediate ? 'Available Now' : heroSpotlightSlot.dateLabel}
                         </span>
                       </div>
 
-                      <div className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-emerald-500/15 text-emerald-800 dark:text-emerald-200 border border-emerald-500/30 text-xs font-bold font-mono shrink-0">
+                      <div className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-emerald-500/15 text-emerald-800 dark:text-emerald-200 border border-emerald-500/30 text-xs font-bold font-mono shrink-0 shadow-2xs">
                         <span>{formatDurationHuman(heroSpotlightSlot.durationMinutes)}</span>
                         <span className="text-[9px] uppercase tracking-wider font-semibold opacity-75">free</span>
                       </div>
                     </div>
 
-                    {/* Time & Focus Rhythm Line */}
-                    <div className="flex flex-wrap items-center justify-between gap-2 relative z-10 pt-0.5">
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <span className="font-mono text-base sm:text-lg font-bold text-theme-text tracking-tight whitespace-nowrap">
-                            {heroSpotlightSlot.startTime} – {heroSpotlightSlot.endTime}
-                          </span>
-                          <span className="text-xs font-medium text-theme-muted">
-                            ({heroSpotlightSlot.dateLabel})
-                          </span>
-                        </div>
-                        <div className="text-xs text-theme-muted mt-0.5 flex items-center gap-1.5 font-medium">
-                          <span>{heroSpotlightSlot.ultradianEmoji || '⚡'} {heroSpotlightSlot.ultradianLabel}</span>
-                          <span className="opacity-40">•</span>
-                          <span>{heroSpotlightSlot.circadianEmoji} {heroSpotlightSlot.circadianLabel}</span>
-                          {heroSpotlightSlot.isLateNight && (
-                            <>
-                              <span className="opacity-40">•</span>
-                              <span className="text-indigo-600 dark:text-indigo-400">🌙 Late Night</span>
-                            </>
-                          )}
-                        </div>
+                    {/* Hero Time Interval */}
+                    <div className="relative z-10 space-y-1.5">
+                      <div className="flex items-baseline gap-2 flex-wrap">
+                        <span className="font-mono text-xl sm:text-2xl font-bold tracking-tight text-theme-text">
+                          {heroSpotlightSlot.startTime} – {heroSpotlightSlot.endTime}
+                        </span>
+                        <span className="text-xs font-semibold px-2 py-0.5 rounded-md bg-black/[0.04] dark:bg-white/[0.06] text-theme-muted font-display">
+                          {heroSpotlightSlot.dateLabel}
+                        </span>
                       </div>
 
-                      <div className="flex items-center gap-1.5 shrink-0 ml-auto">
-                        <button
-                          onClick={() => onOpenTaskModal(undefined, heroSpotlightSlot.date, heroSpotlightSlot.startTime)}
-                          className="h-8 px-4 rounded-full bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white text-xs font-bold shadow-xs shadow-emerald-500/30 transition-all flex items-center gap-1.5 cursor-pointer whitespace-nowrap"
-                          title={`Schedule task starting at ${heroSpotlightSlot.startTime}`}
-                        >
-                          <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
-                          <span>Schedule Slot</span>
-                        </button>
-
-                        <button
-                          onClick={() => openBufferNoteModal({
-                            date: heroSpotlightSlot.date,
-                            startTime: heroSpotlightSlot.startTime,
-                            endTime: heroSpotlightSlot.endTime,
-                            durationMinutes: heroSpotlightSlot.durationMinutes,
-                            activityTag: heroSpotlightSlot.durationMinutes < 20 ? 'Break / Rest' : 'Deep Focus Buffer'
-                          })}
-                          className="w-8 h-8 rounded-full bg-theme-card-hover hover:bg-theme-border border border-theme-border/70 text-theme-muted hover:text-amber-500 transition-all flex items-center justify-center cursor-pointer active:scale-95"
-                          title={`Log buffer note on ${heroSpotlightSlot.dateLabel}`}
-                        >
-                          <Coffee className="w-3.5 h-3.5" />
-                        </button>
+                      {/* Rhythm & Focus Tag Pills (Full Width - Zero Awkward Wrapping) */}
+                      <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
+                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg bg-amber-500/10 text-amber-800 dark:text-amber-300 border border-amber-500/20 text-xs font-semibold">
+                          <span>{heroSpotlightSlot.ultradianEmoji || '⚡'}</span>
+                          <span>{heroSpotlightSlot.ultradianLabel}</span>
+                        </span>
+                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg bg-blue-500/10 text-blue-800 dark:text-blue-300 border border-blue-500/20 text-xs font-semibold">
+                          <span>{heroSpotlightSlot.circadianEmoji}</span>
+                          <span>{heroSpotlightSlot.circadianLabel}</span>
+                        </span>
+                        {heroSpotlightSlot.isLateNight && (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg bg-indigo-500/10 text-indigo-700 dark:text-indigo-300 border border-indigo-500/20 text-xs font-semibold">
+                            <span>🌙</span>
+                            <span>Late Night</span>
+                          </span>
+                        )}
                       </div>
+                    </div>
+
+                    {/* Dedicated Full-Width Action Row (No Crowding / No Text Squishing) */}
+                    <div className="flex items-center gap-2 pt-2.5 border-t border-emerald-500/20 relative z-10">
+                      <button
+                        onClick={() => onOpenTaskModal(undefined, heroSpotlightSlot.date, heroSpotlightSlot.startTime)}
+                        className="flex-1 h-9 px-4 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 active:scale-[0.98] text-white text-xs font-bold shadow-md shadow-emerald-500/25 transition-all flex items-center justify-center gap-2 cursor-pointer"
+                        title={`Schedule task starting at ${heroSpotlightSlot.startTime}`}
+                      >
+                        <Plus className="w-4 h-4 stroke-[2.5]" />
+                        <span>Schedule In This Slot</span>
+                      </button>
+
+                      <button
+                        onClick={() => openBufferNoteModal({
+                          date: heroSpotlightSlot.date,
+                          startTime: heroSpotlightSlot.startTime,
+                          endTime: heroSpotlightSlot.endTime,
+                          durationMinutes: heroSpotlightSlot.durationMinutes,
+                          activityTag: heroSpotlightSlot.durationMinutes < 20 ? 'Break / Rest' : 'Deep Focus Buffer'
+                        })}
+                        className="h-9 px-3.5 rounded-xl bg-white/70 dark:bg-white/[0.08] hover:bg-white dark:hover:bg-white/[0.14] text-theme-muted hover:text-amber-600 dark:hover:text-amber-400 border border-theme-border/60 transition-all flex items-center gap-1.5 text-xs font-semibold cursor-pointer active:scale-95 shadow-2xs"
+                        title={`Log buffer note on ${heroSpotlightSlot.dateLabel}`}
+                      >
+                        <Coffee className="w-3.5 h-3.5" />
+                        <span className="hidden xs:inline">Quick Note</span>
+                      </button>
                     </div>
                   </div>
                 )}
@@ -2040,7 +2009,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
                               <div
                                 key={item.slotId}
                                 onClick={() => onOpenTaskModal(undefined, item.date, item.startTime)}
-                                className="group p-2.5 sm:px-3 sm:py-2.5 rounded-xl border border-theme-border/60 hover:border-blue-500/40 bg-theme-card/80 hover:bg-theme-card-hover/90 transition-all cursor-pointer shadow-2xs hover:shadow-xs active:scale-[0.99] flex items-center justify-between gap-3"
+                                className="group p-2.5 sm:px-3 sm:py-2.5 rounded-xl border border-theme-border/60 hover:border-blue-500/40 bg-theme-card/70 hover:bg-theme-card-hover transition-all cursor-pointer shadow-2xs hover:shadow-xs active:scale-[0.99] flex items-center justify-between gap-3"
                               >
                                 {/* Left: Time Interval + Focus Type */}
                                 <div className="min-w-0 flex-1">
@@ -2052,12 +2021,12 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
                                       {humanDur}
                                     </span>
                                     {item.isLateNight && (
-                                      <span className="text-[9px] font-bold px-1.5 py-0.2 rounded-full bg-indigo-500/10 text-indigo-700 dark:text-indigo-300">
+                                      <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-indigo-500/10 text-indigo-700 dark:text-indigo-300">
                                         🌙 Night
                                       </span>
                                     )}
                                     {item.isSimultaneous && (
-                                      <span className="text-[9px] font-bold px-1.5 py-0.2 rounded-full bg-purple-500/10 text-purple-700 dark:text-purple-300">
+                                      <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-purple-500/10 text-purple-700 dark:text-purple-300">
                                         🔀 Co-run
                                       </span>
                                     )}
@@ -2073,7 +2042,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
                                 <div className="flex items-center gap-1.5 shrink-0" onClick={(e) => e.stopPropagation()}>
                                   <button
                                     onClick={() => onOpenTaskModal(undefined, item.date, item.startTime)}
-                                    className="h-7 px-3 rounded-full text-xs font-semibold text-white bg-blue-600 hover:bg-blue-500 active:scale-95 transition-all flex items-center gap-1 shadow-2xs cursor-pointer"
+                                    className="h-7 px-3 rounded-full text-xs font-semibold text-blue-600 dark:text-blue-400 bg-blue-500/10 hover:bg-blue-600 hover:text-white dark:bg-blue-500/15 dark:hover:bg-blue-500 dark:hover:text-white border border-blue-500/20 active:scale-95 transition-all flex items-center gap-1 cursor-pointer"
                                     title={`Schedule task on ${item.dateLabel} at ${item.startTime}`}
                                   >
                                     <Plus className="w-3 h-3 stroke-[2.5]" />
