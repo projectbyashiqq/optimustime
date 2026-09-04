@@ -206,6 +206,7 @@ export interface CapacitySettings {
   sleepEndTime?: string; // Estimated Wake-up (e.g. "06:00 AM")
   defaultBufferMinutes: number; // Automated Buffer Time between tasks (Default: 15 min)
   autoSleepScheduleEnabled?: boolean; // When true, 24-hour tracker auto-schedules sleep; when false, no automatic sleep blocks
+  isManualMode?: boolean; // When true, capacity and shift windows are managed completely manually without auto-balance forced overrides
 }
 
 export interface NamedTimePeriod {

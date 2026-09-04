@@ -400,15 +400,17 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
     return parse12HourToMinutes(a.startTime) - parse12HourToMinutes(b.startTime);
   });
 
-  // Find Gaps in today's schedule (strictly bounded to waking hours, never inside sleep window)
-  const wakingStart = capacitySettings.sleepEndTime || capacitySettings.dayStartTime || '06:00 AM';
-  const wakingEnd = capacitySettings.sleepStartTime || capacitySettings.dayEndTime || '11:00 PM';
+  // Find Gaps in today's schedule (strictly bounded to working hours, protecting sleep window)
+  const wakingStart = capacitySettings.dayStartTime || '06:00 AM';
+  const wakingEnd = capacitySettings.dayEndTime || '11:00 PM';
   const gaps: TimeGap[] = findScheduleGaps(
     tasks.filter(t => isTaskScheduledForDate(t, selectedDate)),
     wakingStart,
     wakingEnd,
     bufferNotes.filter(n => n.date === selectedDate),
-    capacitySettings.defaultBufferMinutes ?? 0
+    capacitySettings.defaultBufferMinutes ?? 0,
+    capacitySettings.sleepStartTime,
+    capacitySettings.sleepEndTime
   );
 
   return (

@@ -107,7 +107,8 @@ export const DEFAULT_CAPACITY: CapacitySettings = {
   sleepStartTime: '11:00 PM',
   sleepEndTime: '06:00 AM',
   defaultBufferMinutes: 15,
-  autoSleepScheduleEnabled: false
+  autoSleepScheduleEnabled: false,
+  isManualMode: true
 };
 
 export const DEFAULT_TASK_PRESETS: DefaultTaskSettings = {

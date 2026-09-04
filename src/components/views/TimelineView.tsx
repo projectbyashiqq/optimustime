@@ -122,16 +122,20 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
   // Capacity boundaries
   const startDayMin = parse12HourToMinutes(capacitySettings.dayStartTime || '06:00 AM');
   const endDayMin = parse12HourToMinutes(capacitySettings.dayEndTime || '11:00 PM');
-  const totalDaySpan = Math.max(60, endDayMin - startDayMin);
+  let rawDaySpan = endDayMin - startDayMin;
+  if (rawDaySpan <= 0) rawDaySpan += 1440;
+  const totalDaySpan = Math.max(60, rawDaySpan);
 
   // Find Gaps in schedule (automatically adjusted when buffer notes are present)
   const gaps: TimeGap[] = useMemo(() => {
     return findScheduleGaps(
       dayTasks, 
-      capacitySettings.dayStartTime, 
-      capacitySettings.dayEndTime,
+      capacitySettings.dayStartTime || '06:00 AM', 
+      capacitySettings.dayEndTime || '11:00 PM',
       dayBufferNotes,
-      capacitySettings.defaultBufferMinutes ?? 0
+      capacitySettings.defaultBufferMinutes ?? 0,
+      capacitySettings.sleepStartTime,
+      capacitySettings.sleepEndTime
     );
   }, [dayTasks, capacitySettings, dayBufferNotes]);
 

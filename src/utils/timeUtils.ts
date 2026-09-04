@@ -212,7 +212,9 @@ export function findScheduleGaps(
   dayStartTime = '06:00 AM',
   dayEndTime = '11:00 PM',
   bufferNotes: Array<{ startTime: string; endTime: string; date?: string }> = [],
-  defaultBuffer = 15
+  defaultBuffer = 15,
+  sleepStartTime?: string,
+  sleepEndTime?: string
 ): TimeGap[] {
   const dayStartMin = parse12HourToMinutes(dayStartTime);
   let dayEndMin = parse12HourToMinutes(dayEndTime);
@@ -277,7 +279,25 @@ export function findScheduleGaps(
     return { start: s, end: e };
   });
 
-  const intervals = [...taskIntervals, ...bufferIntervals].sort((a, b) => a.start - b.start);
+  // Block out sleep window intervals so that no work gaps are suggested during sleep
+  const sleepIntervals: { start: number; end: number }[] = [];
+  if (sleepStartTime && sleepEndTime) {
+    const sStart = parse12HourToMinutes(sleepStartTime);
+    const sEnd = parse12HourToMinutes(sleepEndTime);
+    if (sStart < sEnd) {
+      // Sleep entirely within same day (e.g. 02:15 AM to 09:00 AM)
+      sleepIntervals.push({ start: sStart, end: sEnd });
+    } else if (sStart > sEnd) {
+      // Sleep spans across midnight (e.g. 11:00 PM to 06:00 AM)
+      sleepIntervals.push({ start: sStart, end: 1440 });
+      sleepIntervals.push({ start: 0, end: sEnd });
+      if (dayEndMin > 1440) {
+        sleepIntervals.push({ start: sStart + 1440, end: 2880 });
+      }
+    }
+  }
+
+  const intervals = [...taskIntervals, ...bufferIntervals, ...sleepIntervals].sort((a, b) => a.start - b.start);
 
   if (intervals.length === 0) {
     if (dayEndMin > dayStartMin) {

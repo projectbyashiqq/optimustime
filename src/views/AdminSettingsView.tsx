@@ -101,7 +101,7 @@ export const AdminSettingsView: React.FC = () => {
   const [testTimeInput, setTestTimeInput] = useState<string>('01:30 PM');
   const [editingBoundaries, setEditingBoundaries] = useState<Record<string, string>>({});
 
-  // Local editing states (24-Hours Locked System Tools)
+  // Local editing states (Daily Capacity & Circadian Red-Line Protocol)
   const [maxWorkHours, setMaxWorkHours] = useState(capacitySettings.maxWorkHours);
   const [sleepHours, setSleepHours] = useState(capacitySettings.sleepHours);
   const [bufferHours, setBufferHours] = useState(capacitySettings.bufferHours);
@@ -111,11 +111,30 @@ export const AdminSettingsView: React.FC = () => {
   const [sleepEndTime, setSleepEndTime] = useState(capacitySettings.sleepEndTime || capacitySettings.dayStartTime || '06:00 AM');
   const [defaultBufferMinutes, setDefaultBufferMinutes] = useState(capacitySettings.defaultBufferMinutes ?? 0);
   const [autoSleepScheduleEnabled, setAutoSleepScheduleEnabled] = useState(Boolean(capacitySettings.autoSleepScheduleEnabled));
+  const [isManualMode, setIsManualMode] = useState<boolean>(capacitySettings.isManualMode !== undefined ? Boolean(capacitySettings.isManualMode) : true);
   const [capacityStatusMsg, setCapacityStatusMsg] = useState<string | null>(null);
 
-  // Fast 24-Hours Auto-Balancing Engine (Strict 24h Invariant: Work + Buffer + Sleep = 24.0h)
+  // Fast 24-Hours Auto-Balancing Engine & Manual Control
   const clamp = (val: number, min: number, max: number) => Math.min(Math.max(val, min), max);
+  const roundQuarter = (val: number) => Math.round(val * 4) / 4;
   const roundHalf = (val: number) => Math.round(val * 2) / 2;
+
+  const updateValue = (
+    type: 'work' | 'sleep' | 'buffer',
+    newValue: number
+  ) => {
+    const cleanVal = roundQuarter(newValue);
+    if (isManualMode) {
+      // 100% Manual Freedom Mode: user directly configures each pillar with zero forced cross-overwrites
+      if (type === 'work') setMaxWorkHours(clamp(cleanVal, 0, 24));
+      else if (type === 'sleep') setSleepHours(clamp(cleanVal, 0, 24));
+      else if (type === 'buffer') setBufferHours(clamp(cleanVal, 0, 24));
+      return;
+    }
+
+    // Auto-balance mode (strict 24h invariant helper)
+    updateWithAutoBalance(type, newValue);
+  };
 
   const updateWithAutoBalance = (
     type: 'work' | 'sleep' | 'buffer',
@@ -228,7 +247,7 @@ export const AdminSettingsView: React.FC = () => {
     cloudSyncConfig.autoRealtimeSync
   ]);
 
-  // Keep 24H Capacity editing state synced when capacitySettings updates in context
+  // Keep Capacity editing state synced when capacitySettings updates in context
   React.useEffect(() => {
     setMaxWorkHours(capacitySettings.maxWorkHours);
     setSleepHours(capacitySettings.sleepHours);
@@ -239,6 +258,7 @@ export const AdminSettingsView: React.FC = () => {
     setSleepEndTime(capacitySettings.sleepEndTime || capacitySettings.dayStartTime || '06:00 AM');
     setDefaultBufferMinutes(capacitySettings.defaultBufferMinutes ?? 0);
     setAutoSleepScheduleEnabled(Boolean(capacitySettings.autoSleepScheduleEnabled));
+    setIsManualMode(capacitySettings.isManualMode !== undefined ? Boolean(capacitySettings.isManualMode) : true);
   }, [capacitySettings]);
 
   // Keep task defaults synced when context updates
@@ -623,7 +643,8 @@ export const AdminSettingsView: React.FC = () => {
       sleepStartTime,
       sleepEndTime,
       defaultBufferMinutes: Number(chosenBuffer),
-      autoSleepScheduleEnabled
+      autoSleepScheduleEnabled,
+      isManualMode
     });
 
     updateDefaultTaskSettings({
@@ -631,7 +652,7 @@ export const AdminSettingsView: React.FC = () => {
       defaultBufferMinutes: Number(chosenBuffer)
     });
 
-    setCapacityStatusMsg('24-Hour Capacity & Red-Line Protocol saved successfully! ✅');
+    setCapacityStatusMsg('Capacity & Circadian Red-Line Protocol saved successfully! ✅');
     setTimeout(() => setCapacityStatusMsg(null), 4000);
   };
 
@@ -834,14 +855,132 @@ export const AdminSettingsView: React.FC = () => {
               </p>
             </div>
             
-            {/* 24h Lock Balance Status Badge */}
-            <div className="px-3 py-1.5 rounded-full text-xs font-black flex items-center gap-1.5 shadow-xs bg-emerald-100 text-emerald-800 dark:bg-emerald-950/80 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-700">
-              <Lock className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
-              <span>24.0h Auto-Balanced Protocol</span>
+            {/* Mode Switcher & Allocation Summary Badge */}
+            <div className="flex items-center gap-2 flex-wrap">
+              <button
+                type="button"
+                onClick={() => setIsManualMode(!isManualMode)}
+                className={`px-3 py-1.5 rounded-full text-xs font-black flex items-center gap-1.5 shadow-xs transition-all cursor-pointer ${
+                  isManualMode
+                    ? 'bg-blue-100 text-blue-900 dark:bg-blue-950/80 dark:text-blue-300 border border-blue-300 dark:border-blue-700'
+                    : 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/80 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-700'
+                }`}
+                title={isManualMode ? "Switch to 24.0h Auto-Balanced Protocol" : "Switch to Full Manual Control Mode"}
+              >
+                {isManualMode ? (
+                  <>
+                    <Sliders className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
+                    <span>⚙️ Manual Control Mode (Unlocked)</span>
+                  </>
+                ) : (
+                  <>
+                    <Lock className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                    <span>🔒 24.0h Auto-Balanced Protocol</span>
+                  </>
+                )}
+              </button>
+              
+              {/* Live Hours Sum Pill */}
+              <div className={`px-2.5 py-1 rounded-full font-mono text-[11px] font-black border ${
+                Math.abs((maxWorkHours + bufferHours + sleepHours) - 24) < 0.05
+                  ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300 border-emerald-300 dark:border-emerald-800'
+                  : 'bg-amber-50 text-amber-800 dark:bg-amber-950/50 dark:text-amber-300 border-amber-300 dark:border-amber-700'
+              }`}>
+                {(maxWorkHours + bufferHours + sleepHours).toFixed(1)}h / 24h
+              </div>
             </div>
           </div>
 
           <div className="space-y-5 text-xs">
+
+            {/* Dedicated Split Routine Blueprint: Specifically crafted for user's night-owl schedule */}
+            <div className="p-4 rounded-2xl bg-gradient-to-br from-indigo-500/10 via-purple-500/10 to-blue-500/10 border-2 border-indigo-300/80 dark:border-indigo-800/80 space-y-3 shadow-xs">
+              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                <div className="space-y-0.5">
+                  <div className="flex items-center gap-2">
+                    <span className="text-base">🌙</span>
+                    <h4 className="font-black text-theme-text text-xs uppercase tracking-wide flex items-center gap-1.5">
+                      <span>Split Night-Owl Schedule Blueprint</span>
+                      <span className="px-2 py-0.5 rounded-full bg-indigo-600 text-white font-mono font-bold text-[9px]">
+                        Master Routine
+                      </span>
+                    </h4>
+                  </div>
+                  <p className="text-[11px] text-theme-muted">
+                    Engineered for: <strong className="text-theme-text">12:01 AM – 2:15 AM</strong> Night Work • <strong className="text-theme-text">2:15 AM – 9:00 AM</strong> Sleep (6.75h) • <strong className="text-theme-text">9:00 AM – 11:59 PM</strong> Daytime Work.
+                  </p>
+                </div>
+                
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsManualMode(true);
+                    setDayStartTime('12:01 AM');
+                    setDayEndTime('11:59 PM');
+                    setSleepStartTime('02:15 AM');
+                    setSleepEndTime('09:00 AM');
+                    setMaxWorkHours(15);
+                    setSleepHours(6.75);
+                    setBufferHours(2.25);
+                  }}
+                  className="px-3.5 py-2 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white font-bold text-xs shadow-md active:scale-95 transition-all flex items-center gap-2 shrink-0 cursor-pointer"
+                >
+                  <Sparkles className="w-3.5 h-3.5" />
+                  <span>1-Click Apply Split Schedule</span>
+                </button>
+              </div>
+
+              {/* 3 Continuous Timeline Segments */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 pt-1">
+                <div className="p-2.5 rounded-xl bg-blue-50/80 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-900/60">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-blue-700 dark:text-blue-300 text-[11px] flex items-center gap-1">
+                      <Zap className="w-3.5 h-3.5 text-blue-500" />
+                      Session 1 (Night Focus)
+                    </span>
+                    <span className="text-[10px] font-mono font-black text-blue-600 dark:text-blue-400">2h 15m</span>
+                  </div>
+                  <div className="text-xs font-mono font-bold text-theme-text mt-1">
+                    12:01 AM → 02:15 AM
+                  </div>
+                  <div className="text-[10px] text-theme-muted mt-0.5">
+                    Late night deep uninterrupted focus
+                  </div>
+                </div>
+
+                <div className="p-2.5 rounded-xl bg-indigo-50/80 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-900/60">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-indigo-700 dark:text-indigo-300 text-[11px] flex items-center gap-1">
+                      <Moon className="w-3.5 h-3.5 text-indigo-500" />
+                      Sleep Window
+                    </span>
+                    <span className="text-[10px] font-mono font-black text-indigo-600 dark:text-indigo-400">6h 45m</span>
+                  </div>
+                  <div className="text-xs font-mono font-bold text-theme-text mt-1">
+                    02:15 AM → 09:00 AM
+                  </div>
+                  <div className="text-[10px] text-theme-muted mt-0.5">
+                    4.5 Ultradian 90m Restorative Cycles
+                  </div>
+                </div>
+
+                <div className="p-2.5 rounded-xl bg-emerald-50/80 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-900/60">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-emerald-700 dark:text-emerald-300 text-[11px] flex items-center gap-1">
+                      <Sun className="w-3.5 h-3.5 text-emerald-500" />
+                      Session 2 (Main Continuum)
+                    </span>
+                    <span className="text-[10px] font-mono font-black text-emerald-600 dark:text-emerald-400">15h 00m</span>
+                  </div>
+                  <div className="text-xs font-mono font-bold text-theme-text mt-1">
+                    09:00 AM → 11:59 PM
+                  </div>
+                  <div className="text-[10px] text-theme-muted mt-0.5">
+                    Waking execution + meals & buffers
+                  </div>
+                </div>
+              </div>
+            </div>
 
             {/* Pillar 1: Work Time Target & Shift Window */}
             <div className="p-4 rounded-xl bg-blue-50/50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-900/60 space-y-3.5">
@@ -868,11 +1007,11 @@ export const AdminSettingsView: React.FC = () => {
               {/* Work Target Quick Presets */}
               <div className="flex items-center gap-2 flex-wrap">
                 <span className="text-[11px] font-semibold text-theme-muted">Target Presets:</span>
-                {[10, 12, 14, 16].map((targetH) => (
+                {[10, 12, 14, 15, 16].map((targetH) => (
                   <button
                     key={targetH}
                     type="button"
-                    onClick={() => updateWithAutoBalance('work', targetH)}
+                    onClick={() => updateValue('work', targetH)}
                     className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer ${
                       maxWorkHours === targetH
                         ? 'bg-blue-600 text-white shadow-sm'
@@ -893,7 +1032,7 @@ export const AdminSettingsView: React.FC = () => {
                   <div className="flex items-center">
                     <button
                       type="button"
-                      onClick={() => updateWithAutoBalance('work', maxWorkHours - 0.5)}
+                      onClick={() => updateValue('work', maxWorkHours - 0.5)}
                       className="h-9 px-2.5 rounded-l-xl bg-blue-100 hover:bg-blue-200 dark:bg-blue-900/60 dark:hover:bg-blue-800 text-blue-700 dark:text-blue-300 border border-r-0 border-blue-300 dark:border-blue-700 transition-colors flex items-center justify-center font-bold active:scale-95 cursor-pointer"
                       title="Decrease Work (-0.5h)"
                     >
@@ -901,16 +1040,16 @@ export const AdminSettingsView: React.FC = () => {
                     </button>
                     <input
                       type="number"
-                      min="1"
-                      max="19.5"
-                      step="0.5"
+                      min="0"
+                      max="24"
+                      step="0.25"
                       value={maxWorkHours}
-                      onChange={(e) => updateWithAutoBalance('work', Number(e.target.value))}
+                      onChange={(e) => updateValue('work', Number(e.target.value))}
                       className="w-full h-9 bg-theme-card border-y border-blue-300 dark:border-blue-700 text-blue-600 dark:text-blue-400 font-mono font-bold text-center text-xs focus:outline-none"
                     />
                     <button
                       type="button"
-                      onClick={() => updateWithAutoBalance('work', maxWorkHours + 0.5)}
+                      onClick={() => updateValue('work', maxWorkHours + 0.5)}
                       className="h-9 px-2.5 rounded-r-xl bg-blue-100 hover:bg-blue-200 dark:bg-blue-900/60 dark:hover:bg-blue-800 text-blue-700 dark:text-blue-300 border border-l-0 border-blue-300 dark:border-blue-700 transition-colors flex items-center justify-center font-bold active:scale-95 cursor-pointer"
                       title="Increase Work (+0.5h)"
                     >
@@ -925,7 +1064,9 @@ export const AdminSettingsView: React.FC = () => {
                     value={dayStartTime}
                     onChange={(val) => {
                       setDayStartTime(val);
-                      setSleepEndTime(val);
+                      if (!isManualMode) {
+                        setSleepEndTime(val);
+                      }
                     }}
                     align="right"
                   />
@@ -937,7 +1078,9 @@ export const AdminSettingsView: React.FC = () => {
                     value={dayEndTime}
                     onChange={(val) => {
                       setDayEndTime(val);
-                      setSleepStartTime(val);
+                      if (!isManualMode) {
+                        setSleepStartTime(val);
+                      }
                     }}
                     align="right"
                   />
@@ -981,11 +1124,16 @@ export const AdminSettingsView: React.FC = () => {
                       key={preset.name}
                       type="button"
                       onClick={() => {
-                        updateWithAutoBalance('sleep', preset.hours);
-                        setDayStartTime(preset.start);
-                        setDayEndTime(preset.end);
-                        setSleepStartTime(preset.end);
-                        setSleepEndTime(preset.start);
+                        updateValue('sleep', preset.hours);
+                        if (!isManualMode) {
+                          setDayStartTime(preset.start);
+                          setDayEndTime(preset.end);
+                          setSleepStartTime(preset.end);
+                          setSleepEndTime(preset.start);
+                        } else {
+                          setSleepStartTime(preset.end);
+                          setSleepEndTime(preset.start);
+                        }
                       }}
                       className={`p-2.5 rounded-xl border text-left transition-all cursor-pointer ${
                         isSelected
@@ -1021,26 +1169,26 @@ export const AdminSettingsView: React.FC = () => {
                   <div className="flex items-center">
                     <button
                       type="button"
-                      onClick={() => updateWithAutoBalance('sleep', sleepHours - 0.5)}
+                      onClick={() => updateValue('sleep', sleepHours - 0.25)}
                       className="h-9 px-2.5 rounded-l-xl bg-indigo-100 hover:bg-indigo-200 dark:bg-indigo-900/60 dark:hover:bg-indigo-800 text-indigo-700 dark:text-indigo-300 border border-r-0 border-indigo-300 dark:border-indigo-700 transition-colors flex items-center justify-center font-bold active:scale-95 cursor-pointer"
-                      title="Decrease Sleep (-0.5h)"
+                      title="Decrease Sleep (-0.25h)"
                     >
                       <Minus className="w-3.5 h-3.5" />
                     </button>
                     <input
                       type="number"
-                      min="4"
-                      max="12"
-                      step="0.5"
+                      min="0"
+                      max="24"
+                      step="0.25"
                       value={sleepHours}
-                      onChange={(e) => updateWithAutoBalance('sleep', Number(e.target.value))}
+                      onChange={(e) => updateValue('sleep', Number(e.target.value))}
                       className="w-full h-9 bg-theme-card border-y border-indigo-300 dark:border-indigo-700 text-indigo-600 dark:text-indigo-400 font-mono font-bold text-center text-xs focus:outline-none"
                     />
                     <button
                       type="button"
-                      onClick={() => updateWithAutoBalance('sleep', sleepHours + 0.5)}
+                      onClick={() => updateValue('sleep', sleepHours + 0.25)}
                       className="h-9 px-2.5 rounded-r-xl bg-indigo-100 hover:bg-indigo-200 dark:bg-indigo-900/60 dark:hover:bg-indigo-800 text-indigo-700 dark:text-indigo-300 border border-l-0 border-indigo-300 dark:border-indigo-700 transition-colors flex items-center justify-center font-bold active:scale-95 cursor-pointer"
-                      title="Increase Sleep (+0.5h)"
+                      title="Increase Sleep (+0.25h)"
                     >
                       <Plus className="w-3.5 h-3.5" />
                     </button>
@@ -1053,7 +1201,9 @@ export const AdminSettingsView: React.FC = () => {
                     value={sleepStartTime}
                     onChange={(val) => {
                       setSleepStartTime(val);
-                      setDayEndTime(val);
+                      if (!isManualMode) {
+                        setDayEndTime(val);
+                      }
                     }}
                     align="right"
                   />
@@ -1065,7 +1215,9 @@ export const AdminSettingsView: React.FC = () => {
                     value={sleepEndTime}
                     onChange={(val) => {
                       setSleepEndTime(val);
-                      setDayStartTime(val);
+                      if (!isManualMode) {
+                        setDayStartTime(val);
+                      }
                     }}
                     align="right"
                   />
@@ -1099,7 +1251,7 @@ export const AdminSettingsView: React.FC = () => {
               </div>
             </div>
 
-            {/* Pillar 3: Daily Buffer & Leisure Budget (Macro 24h Allocation) */}
+            {/* Pillar 3: Daily Buffer & Leisure Budget (Macro Allocation) */}
             <div className="p-4 rounded-xl bg-amber-50/50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-900/60 space-y-3.5">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
@@ -1127,6 +1279,7 @@ export const AdminSettingsView: React.FC = () => {
                 {[
                   { label: '1.5 Hours', hours: 1.5 },
                   { label: '2.0 Hours', hours: 2.0 },
+                  { label: '2.25 Hours', hours: 2.25 },
                   { label: '3.0 Hours', hours: 3.0 },
                   { label: '4.0 Hours', hours: 4.0 },
                   { label: '5.0 Hours', hours: 5.0 },
@@ -1134,7 +1287,7 @@ export const AdminSettingsView: React.FC = () => {
                   <button
                     key={preset.label}
                     type="button"
-                    onClick={() => updateWithAutoBalance('buffer', preset.hours)}
+                    onClick={() => updateValue('buffer', preset.hours)}
                     className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer ${
                       bufferHours === preset.hours
                         ? 'bg-amber-500 text-white shadow-sm'
@@ -1154,26 +1307,26 @@ export const AdminSettingsView: React.FC = () => {
                 <div className="flex items-center max-w-xs">
                   <button
                     type="button"
-                    onClick={() => updateWithAutoBalance('buffer', bufferHours - 0.5)}
+                    onClick={() => updateValue('buffer', bufferHours - 0.25)}
                     className="h-9 px-2.5 rounded-l-xl bg-amber-100 hover:bg-amber-200 dark:bg-amber-900/60 dark:hover:bg-amber-800 text-amber-700 dark:text-amber-300 border border-r-0 border-amber-300 dark:border-amber-700 transition-colors flex items-center justify-center font-bold active:scale-95 cursor-pointer"
-                    title="Decrease Buffer (-0.5h)"
+                    title="Decrease Buffer (-0.25h)"
                   >
                     <Minus className="w-3.5 h-3.5" />
                   </button>
                   <input
                     type="number"
-                    min="0.5"
-                    max="12"
-                    step="0.5"
+                    min="0"
+                    max="24"
+                    step="0.25"
                     value={bufferHours}
-                    onChange={(e) => updateWithAutoBalance('buffer', Number(e.target.value))}
+                    onChange={(e) => updateValue('buffer', Number(e.target.value))}
                     className="w-full h-9 bg-theme-card border-y border-amber-300 dark:border-amber-700 text-amber-600 dark:text-amber-400 font-mono font-bold text-center text-xs focus:outline-none"
                   />
                   <button
                     type="button"
-                    onClick={() => updateWithAutoBalance('buffer', bufferHours + 0.5)}
+                    onClick={() => updateValue('buffer', bufferHours + 0.25)}
                     className="h-9 px-2.5 rounded-r-xl bg-amber-100 hover:bg-amber-200 dark:bg-amber-900/60 dark:hover:bg-amber-800 text-amber-700 dark:text-amber-300 border border-l-0 border-amber-300 dark:border-amber-700 transition-colors flex items-center justify-center font-bold active:scale-95 cursor-pointer"
-                    title="Increase Buffer (+0.5h)"
+                    title="Increase Buffer (+0.25h)"
                   >
                     <Plus className="w-3.5 h-3.5" />
                   </button>
@@ -1184,13 +1337,13 @@ export const AdminSettingsView: React.FC = () => {
               </div>
             </div>
 
-            {/* 4. 24-Hour Locked Allocation Bar & Presets */}
+            {/* 4. Daily Allocation Bar & Presets */}
             <div className="space-y-3 p-4 rounded-2xl bg-theme-card/60 dark:bg-theme-card/40 border border-theme-border/80 shadow-xs">
               <div className="flex items-center justify-between flex-wrap gap-2 text-xs">
                 <div className="flex items-center gap-2">
                   <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
                   <span className="font-bold text-theme-text text-[11px] uppercase tracking-wider">
-                    24h Daily Allocation
+                    Daily Capacity Distribution
                   </span>
                 </div>
                 <div className="flex items-center gap-3 font-mono text-[11px] font-bold">
@@ -1211,40 +1364,47 @@ export const AdminSettingsView: React.FC = () => {
                 </div>
               </div>
 
-              {/* Visual 24h Segmented Bar */}
-              <div className="w-full h-5 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden flex p-0.5 border border-theme-border/60 shadow-inner gap-0.5">
-                <div
-                  className="bg-gradient-to-r from-blue-600 to-blue-500 h-full rounded-l-full transition-all duration-300 flex items-center justify-center text-[10px] text-white font-black tracking-tight"
-                  style={{ width: `${(maxWorkHours / 24) * 100}%` }}
-                  title={`Work Target: ${maxWorkHours}h (${Math.round((maxWorkHours / 24) * 100)}%)`}
-                >
-                  {maxWorkHours >= 3 ? `${maxWorkHours}h` : ''}
-                </div>
-                <div
-                  className="bg-gradient-to-r from-amber-500 to-amber-400 h-full transition-all duration-300 flex items-center justify-center text-[10px] text-white font-black tracking-tight"
-                  style={{ width: `${(bufferHours / 24) * 100}%` }}
-                  title={`Buffer & Leisure: ${bufferHours}h (${Math.round((bufferHours / 24) * 100)}%)`}
-                >
-                  {bufferHours >= 2 ? `${bufferHours}h` : ''}
-                </div>
-                <div
-                  className="bg-gradient-to-r from-indigo-600 to-indigo-500 h-full rounded-r-full transition-all duration-300 flex items-center justify-center text-[10px] text-white font-black tracking-tight"
-                  style={{ width: `${(sleepHours / 24) * 100}%` }}
-                  title={`Sleep Target: ${sleepHours}h (${Math.round((sleepHours / 24) * 100)}%)`}
-                >
-                  {sleepHours >= 3 ? `${sleepHours}h` : ''}
-                </div>
-              </div>
+              {/* Visual Segmented Bar */}
+              {(() => {
+                const totalHours = Math.max(0.1, maxWorkHours + bufferHours + sleepHours);
+                const denom = Math.max(24, totalHours);
+                return (
+                  <div className="w-full h-5 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden flex p-0.5 border border-theme-border/60 shadow-inner gap-0.5">
+                    <div
+                      className="bg-gradient-to-r from-blue-600 to-blue-500 h-full rounded-l-full transition-all duration-300 flex items-center justify-center text-[10px] text-white font-black tracking-tight"
+                      style={{ width: `${(maxWorkHours / denom) * 100}%` }}
+                      title={`Work Target: ${maxWorkHours}h (${Math.round((maxWorkHours / totalHours) * 100)}%)`}
+                    >
+                      {maxWorkHours >= 3 ? `${maxWorkHours}h` : ''}
+                    </div>
+                    <div
+                      className="bg-gradient-to-r from-amber-500 to-amber-400 h-full transition-all duration-300 flex items-center justify-center text-[10px] text-white font-black tracking-tight"
+                      style={{ width: `${(bufferHours / denom) * 100}%` }}
+                      title={`Buffer & Leisure: ${bufferHours}h (${Math.round((bufferHours / totalHours) * 100)}%)`}
+                    >
+                      {bufferHours >= 2 ? `${bufferHours}h` : ''}
+                    </div>
+                    <div
+                      className="bg-gradient-to-r from-indigo-600 to-indigo-500 h-full rounded-r-full transition-all duration-300 flex items-center justify-center text-[10px] text-white font-black tracking-tight"
+                      style={{ width: `${(sleepHours / denom) * 100}%` }}
+                      title={`Sleep Target: ${sleepHours}h (${Math.round((sleepHours / totalHours) * 100)}%)`}
+                    >
+                      {sleepHours >= 3 ? `${sleepHours}h` : ''}
+                    </div>
+                  </div>
+                );
+              })()}
 
               {/* Clean Presets */}
               <div className="flex items-center justify-between gap-2 flex-wrap pt-0.5">
                 <span className="text-[10px] font-bold text-theme-muted uppercase tracking-wider">Presets:</span>
                 <div className="flex items-center gap-1.5 flex-wrap">
                   {[
-                    { label: 'Standard', sub: '14h / 3h / 7h', w: 14, b: 3, s: 7 },
-                    { label: 'Deep Focus', sub: '13h / 3h / 8h', w: 13, b: 3, s: 8 },
-                    { label: 'Sprint', sub: '16h / 2h / 6h', w: 16, b: 2, s: 6 },
-                    { label: 'Wellness', sub: '11h / 5h / 8h', w: 11, b: 5, s: 8 },
+                    { label: '🌙 Split Routine', sub: '15h / 2.25h / 6.75h', w: 15, b: 2.25, s: 6.75, dStart: '12:01 AM', dEnd: '11:59 PM', sStart: '02:15 AM', sEnd: '09:00 AM' },
+                    { label: 'Standard', sub: '14h / 3h / 7h', w: 14, b: 3, s: 7, dStart: '06:00 AM', dEnd: '11:00 PM', sStart: '11:00 PM', sEnd: '06:00 AM' },
+                    { label: 'Deep Focus', sub: '13h / 3h / 8h', w: 13, b: 3, s: 8, dStart: '07:00 AM', dEnd: '11:00 PM', sStart: '11:00 PM', sEnd: '07:00 AM' },
+                    { label: 'Sprint', sub: '16h / 2h / 6h', w: 16, b: 2, s: 6, dStart: '06:00 AM', dEnd: '12:00 AM', sStart: '12:00 AM', sEnd: '06:00 AM' },
+                    { label: 'Wellness', sub: '11h / 5h / 8h', w: 11, b: 5, s: 8, dStart: '07:00 AM', dEnd: '10:00 PM', sStart: '10:00 PM', sEnd: '07:00 AM' },
                   ].map((p) => {
                     const isActive = maxWorkHours === p.w && bufferHours === p.b && sleepHours === p.s;
                     return (
@@ -1255,6 +1415,10 @@ export const AdminSettingsView: React.FC = () => {
                           setMaxWorkHours(p.w);
                           setBufferHours(p.b);
                           setSleepHours(p.s);
+                          if (p.dStart) setDayStartTime(p.dStart);
+                          if (p.dEnd) setDayEndTime(p.dEnd);
+                          if (p.sStart) setSleepStartTime(p.sStart);
+                          if (p.sEnd) setSleepEndTime(p.sEnd);
                         }}
                         className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
                           isActive
