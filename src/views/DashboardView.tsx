@@ -110,6 +110,14 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
   const [nowTime, setNowTime] = useState<Date>(new Date());
   const [showPastGaps, setShowPastGaps] = useState(false);
 
+  // Live timer tick every second for live pro clock
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setNowTime(new Date());
+    }, 1000);
+    return () => clearInterval(timer);
+  }, []);
+
   // Morning Rollover Review States
   const [isMorningReviewOpen, setIsMorningReviewOpen] = useState(true);
   const [dismissedRolloverTaskIds, setDismissedRolloverTaskIds] = useState<string[]>(() => {
@@ -316,7 +324,15 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
 
   const dayOfWeek = getDayOfWeekFromDate(selectedDate);
 
-  // Live clock formatted as 12h AM/PM with seconds
+  // Live clock formatted with pro typography
+  const liveHoursMinutes = nowTime.toLocaleTimeString('en-US', {
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: true
+  });
+  const liveSeconds = nowTime.getSeconds().toString().padStart(2, '0');
+  const livePeriod = nowTime.getHours() >= 12 ? 'PM' : 'AM';
+  const liveTimeClean = liveHoursMinutes.replace(/\s*(AM|PM)$/i, '');
   const liveTimeStr = nowTime.toLocaleTimeString('en-US', {
     hour: '2-digit',
     minute: '2-digit',
@@ -391,9 +407,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
       {/* Sleek Compact Top Bar: Responsive & Multi-Device Optimized */}
       <div className="glass-panel p-2.5 sm:px-3 sm:py-2 rounded-2xl flex flex-col md:flex-row items-stretch md:items-center justify-between gap-2.5 border border-theme-border shadow-sm">
         
-        {/* Left Side: Date Selector, Quick Chips & Action */}
-        <div className="flex items-center gap-2 overflow-x-auto no-scrollbar py-0.5 max-w-full">
-          {/* Prominent & Elegant Date Selector */}
+        {/* Left Side: Apple-Graded Unified Date & Live Time Control */}
+        <div className="flex items-center gap-2 overflow-x-auto no-scrollbar py-0.5 max-w-full shrink-0">
+          {/* Unified Apple Glass Date & Live Pro Time Capsule */}
           <div 
             onClick={() => {
               try {
@@ -402,63 +418,79 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
                 dateInputRef.current?.focus();
               }
             }}
-            className="flex items-center gap-2.5 bg-theme-card-hover hover:bg-theme-card hover:border-blue-500/80 px-3.5 py-1.5 rounded-xl border border-theme-border shrink-0 cursor-pointer transition-all shadow-sm group active:scale-98 relative select-none whitespace-nowrap"
-            title="Click to open full calendar"
+            className="flex items-center gap-2 bg-theme-card/90 dark:bg-slate-900/80 hover:bg-theme-card hover:border-blue-500/60 px-3 py-1.5 rounded-xl border border-theme-border/80 shrink-0 cursor-pointer transition-all shadow-2xs hover:shadow-xs group active:scale-98 relative select-none whitespace-nowrap"
+            title="Click to select date"
           >
-            <div className="p-1 rounded-lg bg-blue-500/10 text-blue-500 group-hover:bg-blue-500/20 group-hover:scale-110 transition-all shrink-0">
-              <Calendar className="w-4 h-4" />
+            {/* Calendar Icon */}
+            <div className="p-1 rounded-lg bg-blue-500/10 text-blue-500 group-hover:bg-blue-500/20 group-hover:scale-105 transition-all shrink-0">
+              <Calendar className="w-3.5 h-3.5" />
             </div>
-            <span className="font-extrabold text-sm sm:text-base text-theme-text font-mono tracking-tight whitespace-nowrap">
+
+            {/* Date in Crisp Typography */}
+            <span className="font-display font-black text-sm text-theme-text tracking-tight whitespace-nowrap">
               {formatDisplayDate(selectedDate)}
             </span>
+
+            {/* Day Badge */}
+            <span className="text-[10px] font-black px-1.5 py-0.5 rounded-md bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20 font-mono uppercase tracking-wider whitespace-nowrap shrink-0">
+              {dayOfWeek.slice(0, 3)}
+            </span>
+
+            {/* Apple Hairline Separator */}
+            <div className="h-3.5 w-px bg-theme-border/80 shrink-0 mx-0.5" />
+
+            {/* Live Clock with Pro Typography ("show the time nicely other pro font") */}
+            <div className="flex items-center gap-1.5 shrink-0" title="Live Clock">
+              <div className="relative flex h-2 w-2 shrink-0">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+              </div>
+              <div className="flex items-baseline font-mono tabular-nums font-black text-xs sm:text-sm text-theme-text tracking-tight whitespace-nowrap">
+                <span>{liveTimeClean}</span>
+                <span className="text-[9px] font-bold text-theme-muted opacity-80 ml-0.5">:{liveSeconds}</span>
+                <span className="text-[9px] font-black text-blue-600 dark:text-blue-400 ml-1 uppercase">{livePeriod}</span>
+              </div>
+            </div>
+
             <input
               ref={dateInputRef}
               type="date"
               value={selectedDate}
               onChange={(e) => setSelectedDate(e.target.value)}
-              className="absolute inset-0 opacity-0 pointer-events-none w-full h-full cursor-pointer"
+              className="!absolute inset-0 opacity-0 pointer-events-none w-full h-full cursor-pointer"
+              style={{ position: 'absolute' }}
             />
-            <span className="text-xs font-bold px-2 py-0.5 rounded-md bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/25 font-mono uppercase tracking-wider whitespace-nowrap">
-              {dayOfWeek.slice(0, 3)}
-            </span>
           </div>
 
-          <div className="flex items-center gap-1 shrink-0">
+          {/* Apple-Style Segmented Today / Tomorrow Switcher */}
+          <div className="flex items-center gap-0.5 p-0.5 bg-theme-card-hover/90 rounded-xl border border-theme-border/70 shadow-2xs shrink-0">
             <button
-              onClick={() => {
-                const d = new Date();
-                setSelectedDate(toISODateString(d));
-              }}
-              className={`btn-pro px-3 py-1.5 rounded-xl text-xs whitespace-nowrap shrink-0 ${
+              type="button"
+              onClick={() => setSelectedDate(toISODateString(new Date()))}
+              className={`px-2.5 py-1 rounded-lg text-xs font-bold whitespace-nowrap shrink-0 transition-all ${
                 selectedDate === toISODateString(new Date())
-                  ? 'btn-pro-primary'
-                  : 'btn-pro-glass text-theme-muted hover:text-theme-text'
+                  ? 'bg-blue-600 text-white shadow-xs shadow-blue-500/25'
+                  : 'text-theme-muted hover:text-theme-text hover:bg-theme-card/50'
               }`}
             >
               Today
             </button>
 
             <button
+              type="button"
               onClick={() => {
                 const d = new Date();
                 d.setDate(d.getDate() + 1);
                 setSelectedDate(toISODateString(d));
               }}
-              className="btn-pro btn-pro-glass px-3 py-1.5 rounded-xl text-xs text-theme-muted hover:text-theme-text font-semibold whitespace-nowrap shrink-0"
+              className={`px-2.5 py-1 rounded-lg text-xs font-bold whitespace-nowrap shrink-0 transition-all ${
+                selectedDate === toISODateString(new Date(Date.now() + 86400000))
+                  ? 'bg-blue-600 text-white shadow-xs shadow-blue-500/25'
+                  : 'text-theme-muted hover:text-theme-text hover:bg-theme-card/50'
+              }`}
             >
               Tomorrow
             </button>
-
-            {timePeriodSettings?.isEnabled && currentPeriod && selectedDate === toISODateString(new Date()) && (
-              <div 
-                className="hidden lg:flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-amber-500/10 text-amber-900 dark:text-amber-200 border border-amber-300 dark:border-amber-800 text-xs font-bold shrink-0 shadow-2xs animate-fade-in"
-                title={`Active Day Zone: ${currentPeriod.name} (${currentPeriod.startTime} - ${currentPeriod.endTime})`}
-              >
-                <span>{currentPeriod.emoji || '⏰'}</span>
-                <span className="font-extrabold">{currentPeriod.name}</span>
-                <span className="text-[10px] font-mono opacity-80">({currentPeriod.startTime} - {currentPeriod.endTime})</span>
-              </div>
-            )}
           </div>
 
           {/* Morning Rollover Review Quick-Pill */}

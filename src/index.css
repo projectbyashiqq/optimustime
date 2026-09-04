@@ -146,7 +146,7 @@ html, body {
 }
 
 /* Full clickable calendar input styles */
-input[type="date"] {
+input[type="date"]:not(.absolute):not([class*="!absolute"]) {
   position: relative;
   cursor: pointer;
 }
