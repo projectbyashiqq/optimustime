@@ -112,6 +112,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
   const [reschedulingTask, setReschedulingTask] = useState<Task | null>(null);
   const [nowTime, setNowTime] = useState<Date>(new Date());
   const [showPastGaps, setShowPastGaps] = useState(false);
+  const [gapDateFilter, setGapDateFilter] = useState<'all' | 'today' | 'tomorrow' | 'upcoming'>('all');
 
   // Live timer tick every second for live pro clock
   useEffect(() => {
@@ -1739,24 +1740,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
 
                   const earliestPlanningStr = formatMinutesTo12Hour(earliestPlanningMin);
 
-                  let firstSuggestion: {
-                    startTime: string;
-                    endTime: string;
-                    availableMin: number;
-                    isCurrentOverlap: boolean;
-                    originalGap: TimeGap;
-                  } | null = null;
-
-                  const upcomingGaps: Array<{
-                    gap: TimeGap;
-                    effectiveStart: string;
-                    effectiveMin: number;
-                    targetDate?: string;
-                    isFutureDay?: boolean;
-                  }> = [];
-                  const pastGaps: TimeGap[] = [];
-
+                  const todayDateStr = toISODateString(nowTime);
                   const [sYear, sMonth, sDay] = selectedDate.split('-').map(Number);
+                  const baseDateObj = new Date(sYear, sMonth - 1, sDay);
                   const tomorrowDateObj = new Date(sYear, sMonth - 1, sDay + 1);
                   const tomorrowDateStr = toISODateString(tomorrowDateObj);
 
@@ -1774,6 +1760,65 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
                     normalizedPlanningMin += 1440;
                   }
 
+                  interface AnalyzedGapSlot {
+                    slotId: string;
+                    gap: TimeGap;
+                    date: string;
+                    dateLabel: string;
+                    dayOfWeek: string;
+                    isToday: boolean;
+                    isTomorrow: boolean;
+                    startTime: string;
+                    endTime: string;
+                    durationMinutes: number;
+                    isSimultaneous?: boolean;
+                    simultaneousTaskTitle?: string;
+                    period?: { name: string; emoji?: string } | null;
+                  }
+
+                  let firstSuggestion: {
+                    startTime: string;
+                    endTime: string;
+                    availableMin: number;
+                    isCurrentOverlap: boolean;
+                    originalGap: TimeGap;
+                    targetDate: string;
+                  } | null = null;
+
+                  const pastGaps: TimeGap[] = [];
+                  const todayUpcomingSlots: AnalyzedGapSlot[] = [];
+                  const tomorrowSlots: AnalyzedGapSlot[] = [];
+                  const upcomingDaysSlots: AnalyzedGapSlot[] = [];
+
+                  // Helper: compute genuine non-overlapping schedule gaps for any given date
+                  const getScheduleGapsForDate = (dateStr: string): TimeGap[] => {
+                    const dTasks = tasks.filter(t => isTaskScheduledForDate(t, dateStr));
+                    const dTasksForGaps = dTasks.map(t => {
+                      const simList = findSimultaneousTasks(t, dTasks);
+                      const isSimul = Boolean(
+                        (t as any).isSimultaneous ||
+                        (t.simultaneousWithIds && t.simultaneousWithIds.length > 0) ||
+                        simList.length > 0
+                      );
+                      return {
+                        ...t,
+                        isSimultaneous: isSimul,
+                        simultaneousWithIds: isSimul ? (t.simultaneousWithIds?.length ? t.simultaneousWithIds : ['simultaneous-active']) : []
+                      };
+                    });
+                    const dBuffers = bufferNotes.filter(n => n.date === dateStr);
+                    return findScheduleGaps(
+                      dTasksForGaps,
+                      wakingStart,
+                      wakingEnd,
+                      dBuffers,
+                      capacitySettings.defaultBufferMinutes ?? 0,
+                      capacitySettings.sleepStartTime,
+                      capacitySettings.sleepEndTime
+                    );
+                  };
+
+                  // 1. ANALYZE TODAY (or selectedDate)
                   if (isSelectedToday) {
                     for (const gap of gaps) {
                       let gStartMin = parse12HourToMinutes(gap.startTime);
@@ -1784,11 +1829,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
                         gEndMin += 1440;
                       }
 
-                      if (gEndMin <= normalizedCurrentMin || (activeRunningTask && gEndMin <= normalizedPlanningMin)) {
-                        // Past gap or gap fully occupied by running task
+                      if (gEndMin <= normalizedPlanningMin) {
                         pastGaps.push(gap);
                       } else if (gStartMin <= normalizedPlanningMin && normalizedPlanningMin < gEndMin) {
-                        // Active / upcoming window right after current moment or running work!
                         const remainingFromEarliest = gEndMin - normalizedPlanningMin;
                         if (remainingFromEarliest >= 5) {
                           firstSuggestion = {
@@ -1796,165 +1839,270 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
                             endTime: gap.endTime,
                             availableMin: remainingFromEarliest,
                             isCurrentOverlap: !activeRunningTask,
-                            originalGap: gap
+                            originalGap: gap,
+                            targetDate: selectedDate
                           };
                         } else {
                           pastGaps.push(gap);
                         }
-                      } else {
-                        // Future gap starting after normalizedPlanningMin
-                        upcomingGaps.push({
+                      } else if (gStartMin >= normalizedPlanningMin) {
+                        todayUpcomingSlots.push({
+                          slotId: `today-${todayUpcomingSlots.length}`,
                           gap,
-                          effectiveStart: gap.startTime,
-                          effectiveMin: gap.durationMinutes,
-                          targetDate: selectedDate
+                          date: selectedDate,
+                          dateLabel: 'Today',
+                          dayOfWeek: getDayOfWeekFromDate(selectedDate),
+                          isToday: true,
+                          isTomorrow: false,
+                          startTime: gap.startTime,
+                          endTime: gap.endTime,
+                          durationMinutes: gap.durationMinutes,
+                          isSimultaneous: gap.isSimultaneousSlot,
+                          simultaneousTaskTitle: gap.simultaneousTaskTitle,
+                          period: getTimePeriodForTime(gap.startTime, timePeriodSettings)
                         });
                       }
                     }
 
-                    // If not currently in a free gap, the first upcoming gap becomes the 1st suggestion!
-                    if (!firstSuggestion && upcomingGaps.length > 0) {
-                      const firstUp = upcomingGaps.shift()!;
-                      let sMin = parse12HourToMinutes(firstUp.gap.startTime);
-                      let eMin = parse12HourToMinutes(firstUp.gap.endTime);
+                    // If not currently inside a free gap, the earliest upcoming slot becomes the #01 Spotlight Suggestion!
+                    if (!firstSuggestion && todayUpcomingSlots.length > 0) {
+                      const firstUp = todayUpcomingSlots.shift()!;
+                      let sMin = parse12HourToMinutes(firstUp.startTime);
+                      let eMin = parse12HourToMinutes(firstUp.endTime);
                       if (eMin < sMin) eMin += 1440;
                       if (wakingEndMin > 1440 && sMin < wakingStartMin) {
                         sMin += 1440;
                         eMin += 1440;
                       }
 
-                      // Start at max(gap.startTime, normalizedPlanningMin)
                       const effStartMin = Math.max(sMin, normalizedPlanningMin);
                       const effStartStr = formatMinutesTo12Hour(effStartMin);
-                      const remaining = Math.max(1, eMin - effStartMin);
+                      const remaining = eMin - effStartMin;
 
-                      firstSuggestion = {
-                        startTime: effStartStr,
-                        endTime: firstUp.gap.endTime,
-                        availableMin: remaining,
-                        isCurrentOverlap: false,
-                        originalGap: firstUp.gap
-                      };
+                      if (remaining >= 5) {
+                        firstSuggestion = {
+                          startTime: effStartStr,
+                          endTime: firstUp.endTime,
+                          availableMin: remaining,
+                          isCurrentOverlap: false,
+                          originalGap: firstUp.gap,
+                          targetDate: selectedDate
+                        };
+                      }
                     }
-                  } else if (selectedDate < toISODateString(nowTime)) {
-                    // Past date: recent times first (latest evening down to morning)
+                  } else if (selectedDate < todayDateStr) {
                     pastGaps.push(...[...gaps].reverse());
                   } else {
-                    // Future date: upcoming times from morning forward
                     for (const gap of gaps) {
-                      upcomingGaps.push({
+                      todayUpcomingSlots.push({
+                        slotId: `sel-${todayUpcomingSlots.length}`,
                         gap,
-                        effectiveStart: gap.startTime,
-                        effectiveMin: gap.durationMinutes,
-                        targetDate: selectedDate
+                        date: selectedDate,
+                        dateLabel: formatDisplayDate(selectedDate),
+                        dayOfWeek: getDayOfWeekFromDate(selectedDate),
+                        isToday: false,
+                        isTomorrow: selectedDate === tomorrowDateStr,
+                        startTime: gap.startTime,
+                        endTime: gap.endTime,
+                        durationMinutes: gap.durationMinutes,
+                        isSimultaneous: gap.isSimultaneousSlot,
+                        simultaneousTaskTitle: gap.simultaneousTaskTitle,
+                        period: getTimePeriodForTime(gap.startTime, timePeriodSettings)
                       });
                     }
                   }
 
-                  // GUARANTEE AT LEAST 10 UPCOMING SLOTS
-                  // Step 1: Expand existing large gaps with 60m focus milestone sub-slots if needed
-                  const currentUpcomingCount = (firstSuggestion ? 1 : 0) + upcomingGaps.length;
-                  if (currentUpcomingCount < 10) {
-                    const expandedGaps: typeof upcomingGaps = [];
-                    for (const item of upcomingGaps) {
-                      expandedGaps.push(item);
-                      let sM = parse12HourToMinutes(item.gap.startTime);
-                      let eM = parse12HourToMinutes(item.gap.endTime);
-                      if (eM <= sM) eM += 1440;
-                      let step = sM + 60;
-                      while (step + 15 <= eM && (firstSuggestion ? 1 : 0) + expandedGaps.length < 10) {
-                        const stepStr = formatMinutesTo12Hour(step);
-                        expandedGaps.push({
-                          gap: {
-                            startTime: stepStr,
-                            endTime: item.gap.endTime,
-                            durationMinutes: eM - step
-                          },
-                          effectiveStart: stepStr,
-                          effectiveMin: eM - step,
-                          targetDate: item.targetDate || selectedDate,
-                          isFutureDay: item.isFutureDay
-                        });
-                        step += 60;
-                      }
-                    }
-                    upcomingGaps.length = 0;
-                    upcomingGaps.push(...expandedGaps);
+                  // 2. ANALYZE TOMORROW
+                  const rawTomorrowGaps = getScheduleGapsForDate(tomorrowDateStr);
+                  for (const tg of rawTomorrowGaps) {
+                    tomorrowSlots.push({
+                      slotId: `tomorrow-${tomorrowSlots.length}`,
+                      gap: tg,
+                      date: tomorrowDateStr,
+                      dateLabel: 'Tomorrow',
+                      dayOfWeek: getDayOfWeekFromDate(tomorrowDateStr),
+                      isToday: false,
+                      isTomorrow: true,
+                      startTime: tg.startTime,
+                      endTime: tg.endTime,
+                      durationMinutes: tg.durationMinutes,
+                      isSimultaneous: tg.isSimultaneousSlot,
+                      simultaneousTaskTitle: tg.simultaneousTaskTitle,
+                      period: getTimePeriodForTime(tg.startTime, timePeriodSettings)
+                    });
                   }
 
-                  // Step 2: Multi-day lookahead (scan subsequent days until at least 10 slots are achieved)
-                  if ((firstSuggestion ? 1 : 0) + upcomingGaps.length < 10) {
-                    const baseDateObj = new Date(sYear, sMonth - 1, sDay);
-                    for (let offset = 1; offset <= 7 && (firstSuggestion ? 1 : 0) + upcomingGaps.length < 10; offset++) {
+                  // 3. MULTI-DAY LOOKAHEAD (Guarantee at least 10 genuine non-overlapping slots)
+                  let totalGathered = (firstSuggestion ? 1 : 0) + todayUpcomingSlots.length + tomorrowSlots.length;
+                  if (totalGathered < 10) {
+                    for (let offset = 2; offset <= 7 && totalGathered < 10; offset++) {
                       const nextDate = new Date(baseDateObj);
                       nextDate.setDate(baseDateObj.getDate() + offset);
                       const nextDateStr = toISODateString(nextDate);
 
-                      const nextDayTasks = tasks.filter(t => isTaskScheduledForDate(t, nextDateStr));
-                      const nextDayTasksForGaps = nextDayTasks.map(t => {
-                        const simList = findSimultaneousTasks(t, nextDayTasks);
-                        const isSimul = Boolean(
-                          (t as any).isSimultaneous ||
-                          (t.simultaneousWithIds && t.simultaneousWithIds.length > 0) ||
-                          simList.length > 0
-                        );
-                        return {
-                          ...t,
-                          isSimultaneous: isSimul,
-                          simultaneousWithIds: isSimul ? (t.simultaneousWithIds?.length ? t.simultaneousWithIds : ['simultaneous-active']) : []
-                        };
-                      });
-                      const nextDayBuffers = bufferNotes.filter(n => n.date === nextDateStr);
-                      const nextDayGaps = findScheduleGaps(
-                        nextDayTasksForGaps,
-                        wakingStart,
-                        wakingEnd,
-                        nextDayBuffers,
-                        capacitySettings.defaultBufferMinutes ?? 0,
-                        capacitySettings.sleepStartTime,
-                        capacitySettings.sleepEndTime
-                      );
-
-                      for (const ng of nextDayGaps) {
-                        if ((firstSuggestion ? 1 : 0) + upcomingGaps.length >= 10) break;
-                        upcomingGaps.push({
-                          gap: ng,
-                          effectiveStart: ng.startTime,
-                          effectiveMin: ng.durationMinutes,
-                          targetDate: nextDateStr,
-                          isFutureDay: true
+                      const futureDayGaps = getScheduleGapsForDate(nextDateStr);
+                      for (const fg of futureDayGaps) {
+                        upcomingDaysSlots.push({
+                          slotId: `upcoming-${nextDateStr}-${upcomingDaysSlots.length}`,
+                          gap: fg,
+                          date: nextDateStr,
+                          dateLabel: formatDisplayDate(nextDateStr),
+                          dayOfWeek: getDayOfWeekFromDate(nextDateStr),
+                          isToday: false,
+                          isTomorrow: false,
+                          startTime: fg.startTime,
+                          endTime: fg.endTime,
+                          durationMinutes: fg.durationMinutes,
+                          isSimultaneous: fg.isSimultaneousSlot,
+                          simultaneousTaskTitle: fg.simultaneousTaskTitle,
+                          period: getTimePeriodForTime(fg.startTime, timePeriodSettings)
                         });
-
-                        let ngStart = parse12HourToMinutes(ng.startTime);
-                        let ngEnd = parse12HourToMinutes(ng.endTime);
-                        if (ngEnd <= ngStart) ngEnd += 1440;
-                        let nextStep = ngStart + 60;
-                        while (nextStep + 15 <= ngEnd && (firstSuggestion ? 1 : 0) + upcomingGaps.length < 10) {
-                          const candStr = formatMinutesTo12Hour(nextStep);
-                          upcomingGaps.push({
-                            gap: {
-                              startTime: candStr,
-                              endTime: ng.endTime,
-                              durationMinutes: ngEnd - nextStep
-                            },
-                            effectiveStart: candStr,
-                            effectiveMin: ngEnd - nextStep,
-                            targetDate: nextDateStr,
-                            isFutureDay: true
-                          });
-                          nextStep += 60;
-                        }
+                        totalGathered++;
+                        if (totalGathered >= 10) break;
                       }
                     }
                   }
 
+                  // 4. GROUP SLOTS DATEWISE
+                  const datewiseGroups: Array<{
+                    date: string;
+                    dateLabel: string;
+                    dayOfWeek: string;
+                    isToday: boolean;
+                    isTomorrow: boolean;
+                    slots: AnalyzedGapSlot[];
+                    totalFreeMinutes: number;
+                  }> = [];
+
+                  const todayTotalFree = todayUpcomingSlots.reduce((sum, s) => sum + s.durationMinutes, 0) +
+                    (firstSuggestion && firstSuggestion.targetDate === selectedDate ? firstSuggestion.availableMin : 0);
+
+                  if (todayUpcomingSlots.length > 0) {
+                    datewiseGroups.push({
+                      date: selectedDate,
+                      dateLabel: isSelectedToday ? 'Today' : formatDisplayDate(selectedDate),
+                      dayOfWeek: getDayOfWeekFromDate(selectedDate),
+                      isToday: isSelectedToday,
+                      isTomorrow: false,
+                      slots: todayUpcomingSlots,
+                      totalFreeMinutes: todayTotalFree
+                    });
+                  }
+
+                  if (tomorrowSlots.length > 0) {
+                    datewiseGroups.push({
+                      date: tomorrowDateStr,
+                      dateLabel: 'Tomorrow',
+                      dayOfWeek: getDayOfWeekFromDate(tomorrowDateStr),
+                      isToday: false,
+                      isTomorrow: true,
+                      slots: tomorrowSlots,
+                      totalFreeMinutes: tomorrowSlots.reduce((sum, s) => sum + s.durationMinutes, 0)
+                    });
+                  }
+
+                  const futureByDate = new Map<string, AnalyzedGapSlot[]>();
+                  for (const s of upcomingDaysSlots) {
+                    const existing = futureByDate.get(s.date) || [];
+                    existing.push(s);
+                    futureByDate.set(s.date, existing);
+                  }
+                  for (const [dStr, dSlots] of futureByDate.entries()) {
+                    datewiseGroups.push({
+                      date: dStr,
+                      dateLabel: formatDisplayDate(dStr),
+                      dayOfWeek: getDayOfWeekFromDate(dStr),
+                      isToday: false,
+                      isTomorrow: false,
+                      slots: dSlots,
+                      totalFreeMinutes: dSlots.reduce((sum, s) => sum + s.durationMinutes, 0)
+                    });
+                  }
+
+                  // Global sequential slot counter #01, #02, #03...
+                  let slotCounter = firstSuggestion ? 2 : 1;
+                  const slotNumberMap = new Map<string, number>();
+                  for (const group of datewiseGroups) {
+                    for (const s of group.slots) {
+                      slotNumberMap.set(s.slotId, slotCounter++);
+                    }
+                  }
+
+                  const totalSlotsCount = (firstSuggestion ? 1 : 0) + todayUpcomingSlots.length + tomorrowSlots.length + upcomingDaysSlots.length;
+                  const todayCount = (firstSuggestion && firstSuggestion.targetDate === selectedDate ? 1 : 0) + todayUpcomingSlots.length;
+
+                  // Filtered groups according to tab selection
+                  const visibleGroups = datewiseGroups.filter(g => {
+                    if (gapDateFilter === 'all') return true;
+                    if (gapDateFilter === 'today') return g.isToday;
+                    if (gapDateFilter === 'tomorrow') return g.isTomorrow;
+                    if (gapDateFilter === 'upcoming') return !g.isToday && !g.isTomorrow;
+                    return true;
+                  });
+
+                  const showHeroSpotlight = firstSuggestion && (
+                    gapDateFilter === 'all' ||
+                    (gapDateFilter === 'today' && firstSuggestion.targetDate === selectedDate) ||
+                    (gapDateFilter === 'tomorrow' && firstSuggestion.targetDate === tomorrowDateStr)
+                  );
+
                   return (
-                    <div className="space-y-3">
+                    <div className="space-y-3.5">
                       
+                      {/* Datewise Quick Filter Tabs */}
+                      <div className="flex items-center gap-1.5 p-1 rounded-xl bg-slate-100/90 dark:bg-white/[0.06] border border-slate-200/60 dark:border-white/10 overflow-x-auto no-scrollbar">
+                        <button
+                          type="button"
+                          onClick={() => setGapDateFilter('all')}
+                          className={`px-3 py-1 rounded-lg text-xs font-bold transition-all whitespace-nowrap cursor-pointer ${
+                            gapDateFilter === 'all'
+                              ? 'bg-white dark:bg-slate-800 text-slate-900 dark:text-white shadow-xs font-display'
+                              : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                          }`}
+                        >
+                          All Dates ({totalSlotsCount})
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setGapDateFilter('today')}
+                          className={`px-3 py-1 rounded-lg text-xs font-bold transition-all whitespace-nowrap cursor-pointer ${
+                            gapDateFilter === 'today'
+                              ? 'bg-white dark:bg-slate-800 text-slate-900 dark:text-white shadow-xs font-display'
+                              : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                          }`}
+                        >
+                          Today ({todayCount})
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setGapDateFilter('tomorrow')}
+                          className={`px-3 py-1 rounded-lg text-xs font-bold transition-all whitespace-nowrap cursor-pointer ${
+                            gapDateFilter === 'tomorrow'
+                              ? 'bg-white dark:bg-slate-800 text-slate-900 dark:text-white shadow-xs font-display'
+                              : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                          }`}
+                        >
+                          Tomorrow ({tomorrowSlots.length})
+                        </button>
+                        {upcomingDaysSlots.length > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => setGapDateFilter('upcoming')}
+                            className={`px-3 py-1 rounded-lg text-xs font-bold transition-all whitespace-nowrap cursor-pointer ${
+                              gapDateFilter === 'upcoming'
+                                ? 'bg-white dark:bg-slate-800 text-slate-900 dark:text-white shadow-xs font-display'
+                                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                            }`}
+                          >
+                            Upcoming ({upcomingDaysSlots.length})
+                          </button>
+                        )}
+                      </div>
+
                       {/* 1st Suggestion Card (Apple Dynamic Spotlight) */}
-                      {firstSuggestion && (() => {
+                      {showHeroSpotlight && firstSuggestion && (() => {
                         const isFirstAfterMidnight = wakingEndMin > 1440 && parse12HourToMinutes(firstSuggestion.startTime) < wakingStartMin;
-                        const targetFirstDate = isFirstAfterMidnight ? tomorrowDateStr : selectedDate;
+                        const targetFirstDate = isFirstAfterMidnight ? tomorrowDateStr : firstSuggestion.targetDate;
                         const humanDur = formatDurationHuman(firstSuggestion.availableMin);
                         const isSimul = firstSuggestion.originalGap.isSimultaneousSlot;
 
@@ -1971,7 +2119,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
                                   <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
                                 </span>
                                 <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-800 dark:text-emerald-300">
-                                  {activeRunningTask ? 'Next Window • After Work' : 'Spotlight Slot • Starts in 5m'}
+                                  #01 Immediate Window • {activeRunningTask ? 'After Work' : 'Starts Now'}
                                 </span>
                               </div>
 
@@ -2037,98 +2185,118 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
                         );
                       })()}
 
-                      {/* Remaining Upcoming Gaps (Apple Inset Precision List) */}
-                      {upcomingGaps.length > 0 && (
-                        <div className="rounded-2xl border border-slate-200/80 dark:border-white/10 bg-slate-50/60 dark:bg-slate-900/40 divide-y divide-slate-200/60 dark:divide-white/[0.06] overflow-hidden max-h-[460px] overflow-y-auto custom-scrollbar">
-                          {upcomingGaps.map((item, idx) => {
-                            const gap = item.gap;
-                            const isAfterMidnight = wakingEndMin > 1440 && parse12HourToMinutes(gap.startTime) < wakingStartMin;
-                            const targetGapDate = item.targetDate || (isAfterMidnight ? tomorrowDateStr : selectedDate);
-                            const isFutureDay = targetGapDate !== selectedDate;
-                            const slotNum = firstSuggestion ? idx + 2 : idx + 1;
-                            const humanDur = formatDurationHuman(gap.durationMinutes);
-                            const period = getTimePeriodForTime(gap.startTime, timePeriodSettings);
-                            const isSimul = gap.isSimultaneousSlot;
-
-                            return (
-                              <div
-                                key={`upcoming-${idx}`}
-                                className="group p-3 hover:bg-white/90 dark:hover:bg-slate-800/60 transition-colors space-y-1.5"
-                              >
-                                {/* Row 1: Slot Index + Clean Non-wrapping Time Range + Apple Duration Badge */}
-                                <div className="flex items-center justify-between gap-2">
-                                  <div className="flex items-center gap-2 min-w-0">
-                                    <span className="text-[11px] font-mono font-medium text-slate-400 dark:text-slate-500 shrink-0">
-                                      #{String(slotNum).padStart(2, '0')}
-                                    </span>
-                                    <span className="font-mono text-xs font-bold text-slate-900 dark:text-slate-100 tracking-tight whitespace-nowrap">
-                                      {gap.startTime}
-                                      <span className="text-slate-400 font-light mx-1.5">→</span>
-                                      {gap.endTime}
-                                    </span>
-                                  </div>
-
-                                  {/* Apple Health style duration pill */}
-                                  <div className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border border-emerald-500/20 text-[11px] font-bold font-mono shrink-0 whitespace-nowrap">
-                                    <span>{humanDur}</span>
-                                    <span className="text-[9px] uppercase tracking-wider font-semibold opacity-75">free</span>
-                                  </div>
+                      {/* Datewise Grouped Free Slots */}
+                      {visibleGroups.length > 0 ? (
+                        <div className="space-y-3">
+                          {visibleGroups.map((group) => (
+                            <div
+                              key={group.date}
+                              className="rounded-2xl border border-slate-200/80 dark:border-white/10 bg-slate-50/70 dark:bg-slate-900/40 p-2.5 space-y-2"
+                            >
+                              {/* Date Header */}
+                              <div className="flex items-center justify-between px-2.5 py-1.5 rounded-xl bg-slate-200/50 dark:bg-slate-800/60 border border-slate-200/60 dark:border-white/5 text-xs font-bold text-slate-800 dark:text-slate-200">
+                                <div className="flex items-center gap-1.5 font-display">
+                                  <Calendar className="w-3.5 h-3.5 text-blue-500" />
+                                  <span>{group.dateLabel}</span>
+                                  <span className="text-[10px] font-normal text-slate-500 dark:text-slate-400">({group.dayOfWeek})</span>
                                 </div>
-
-                                {/* Row 2: Badges (Simultaneous Marked Sign, Date, Period) + Apple Capsule Action Buttons */}
-                                <div className="flex items-center justify-between gap-2 pt-0.5">
-                                  <div className="flex items-center gap-1.5 flex-wrap min-w-0">
-                                    {/* Marked Sign for Simultaneous Slot */}
-                                    {isSimul && (
-                                      <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-purple-500/15 text-purple-700 dark:text-purple-300 border border-purple-500/25 shrink-0 animate-pulse">
-                                        <Shuffle className="w-2.5 h-2.5 text-purple-600 dark:text-purple-400" />
-                                        <span>Simultaneous • {gap.simultaneousTaskTitle || 'Co-run Slot'}</span>
-                                      </span>
-                                    )}
-
-                                    {isFutureDay && (
-                                      <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border border-indigo-500/20 shrink-0 font-mono">
-                                        {formatDisplayDate(targetGapDate)}
-                                      </span>
-                                    )}
-
-                                    {period && (
-                                      <span className="text-[10px] text-slate-500 dark:text-slate-400 flex items-center gap-1 shrink-0">
-                                        <span>{period.emoji}</span>
-                                        <span>{period.name}</span>
-                                      </span>
-                                    )}
-                                  </div>
-
-                                  {/* Action Buttons: Apple Capsule Schedule + Buffer */}
-                                  <div className="flex items-center gap-1.5 shrink-0">
-                                    <button
-                                      onClick={() => onOpenTaskModal(undefined, targetGapDate, gap.startTime)}
-                                      className="h-6 px-3 rounded-full text-[11px] font-semibold tracking-tight text-white bg-slate-900 hover:bg-slate-800 dark:bg-white dark:text-slate-900 dark:hover:bg-slate-100 shadow-2xs active:scale-95 transition-all flex items-center gap-1 cursor-pointer shrink-0"
-                                      title={`Plan task on ${formatDisplayDate(targetGapDate)} starting at ${gap.startTime}`}
-                                    >
-                                      <Plus className="w-3 h-3 stroke-[2.5]" />
-                                      <span>Schedule</span>
-                                    </button>
-
-                                    <button
-                                      onClick={() => openBufferNoteModal({
-                                        date: targetGapDate,
-                                        startTime: gap.startTime,
-                                        endTime: gap.endTime,
-                                        durationMinutes: gap.durationMinutes,
-                                        activityTag: 'Deep Focus Buffer'
-                                      })}
-                                      className="w-6 h-6 rounded-full text-slate-400 hover:text-amber-500 hover:bg-slate-200/60 dark:hover:bg-white/10 transition-colors flex items-center justify-center cursor-pointer shrink-0"
-                                      title={`Log buffer note on ${formatDisplayDate(targetGapDate)}`}
-                                    >
-                                      <Coffee className="w-3 h-3" />
-                                    </button>
-                                  </div>
+                                <div className="flex items-center gap-2">
+                                  <span className="text-[10px] font-mono font-medium px-2 py-0.5 rounded-full bg-white/70 dark:bg-white/10 text-slate-700 dark:text-slate-300">
+                                    {group.slots.length} {group.slots.length === 1 ? 'slot' : 'slots'}
+                                  </span>
+                                  <span className="text-[10px] font-mono font-bold text-emerald-700 dark:text-emerald-400">
+                                    {formatDurationHuman(group.totalFreeMinutes)} free
+                                  </span>
                                 </div>
                               </div>
-                            );
-                          })}
+
+                              {/* Slot Rows */}
+                              <div className="space-y-1.5">
+                                {group.slots.map((item) => {
+                                  const slotNum = slotNumberMap.get(item.slotId) || 1;
+                                  const humanDur = formatDurationHuman(item.durationMinutes);
+                                  const isSimul = item.isSimultaneous;
+
+                                  return (
+                                    <div
+                                      key={item.slotId}
+                                      className="group p-2.5 hover:bg-white/90 dark:hover:bg-slate-800/70 transition-colors space-y-1.5 rounded-xl border border-slate-200/60 dark:border-white/[0.06] bg-white/60 dark:bg-slate-900/40"
+                                    >
+                                      {/* Row 1: Slot Index + Clean Non-wrapping Time Range + Apple Duration Badge */}
+                                      <div className="flex items-center justify-between gap-2">
+                                        <div className="flex items-center gap-2 min-w-0">
+                                          <span className="text-[11px] font-mono font-bold text-slate-400 dark:text-slate-500 shrink-0">
+                                            #{String(slotNum).padStart(2, '0')}
+                                          </span>
+                                          <span className="font-mono text-xs font-bold text-slate-900 dark:text-slate-100 tracking-tight whitespace-nowrap">
+                                            {item.startTime}
+                                            <span className="text-slate-400 font-light mx-1.5">→</span>
+                                            {item.endTime}
+                                          </span>
+                                        </div>
+
+                                        {/* Apple Health style duration pill */}
+                                        <div className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border border-emerald-500/20 text-[11px] font-bold font-mono shrink-0 whitespace-nowrap">
+                                          <span>{humanDur}</span>
+                                          <span className="text-[9px] uppercase tracking-wider font-semibold opacity-75">free</span>
+                                        </div>
+                                      </div>
+
+                                      {/* Row 2: Badges (Simultaneous Marked Sign, Period) + Apple Action Buttons */}
+                                      <div className="flex items-center justify-between gap-2 pt-0.5">
+                                        <div className="flex items-center gap-1.5 flex-wrap min-w-0">
+                                          {/* Marked Sign for Simultaneous Slot */}
+                                          {isSimul && (
+                                            <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-purple-500/15 text-purple-700 dark:text-purple-300 border border-purple-500/25 shrink-0 animate-pulse">
+                                              <Shuffle className="w-2.5 h-2.5 text-purple-600 dark:text-purple-400" />
+                                              <span>Simultaneous • {item.simultaneousTaskTitle || 'Co-run Slot'}</span>
+                                            </span>
+                                          )}
+
+                                          {item.period && (
+                                            <span className="text-[10px] text-slate-500 dark:text-slate-400 flex items-center gap-1 shrink-0 font-medium">
+                                              <span>{item.period.emoji}</span>
+                                              <span>{item.period.name}</span>
+                                            </span>
+                                          )}
+                                        </div>
+
+                                        {/* Action Buttons: Apple Capsule Schedule + Buffer */}
+                                        <div className="flex items-center gap-1.5 shrink-0">
+                                          <button
+                                            onClick={() => onOpenTaskModal(undefined, item.date, item.startTime)}
+                                            className="h-6 px-3 rounded-full text-[11px] font-semibold tracking-tight text-white bg-slate-900 hover:bg-slate-800 dark:bg-white dark:text-slate-900 dark:hover:bg-slate-100 shadow-2xs active:scale-95 transition-all flex items-center gap-1 cursor-pointer shrink-0"
+                                            title={`Plan task on ${formatDisplayDate(item.date)} starting at ${item.startTime}`}
+                                          >
+                                            <Plus className="w-3 h-3 stroke-[2.5]" />
+                                            <span>Schedule</span>
+                                          </button>
+
+                                          <button
+                                            onClick={() => openBufferNoteModal({
+                                              date: item.date,
+                                              startTime: item.startTime,
+                                              endTime: item.endTime,
+                                              durationMinutes: item.durationMinutes,
+                                              activityTag: 'Deep Focus Buffer'
+                                            })}
+                                            className="w-6 h-6 rounded-full text-slate-400 hover:text-amber-500 hover:bg-slate-200/60 dark:hover:bg-white/10 transition-colors flex items-center justify-center cursor-pointer shrink-0"
+                                            title={`Log buffer note on ${formatDisplayDate(item.date)}`}
+                                          >
+                                            <Coffee className="w-3 h-3" />
+                                          </button>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="p-4 rounded-xl bg-slate-100/60 dark:bg-slate-900/40 border border-slate-200/60 dark:border-white/10 text-center text-xs text-theme-muted">
+                          No upcoming free slots found for the selected filter.
                         </div>
                       )}
 
