@@ -17,32 +17,36 @@ export function generateProjectCode(prefix = 'OPT'): string {
   return `${prefix}-${yearShort}${month}-${randomPart}`;
 }
 
-// Convert "09:30 AM", "2:15 PM", "14:30", "09:30:00 AM", etc. to minutes from midnight (0..1439)
+// Convert "09:30 AM", "2:15 PM", "12:pm", "12:00 Am", "14:30", "09:30:00 AM", etc. to minutes from midnight (0..1439)
+// In Bangladesh timing:
+// - 12:00 AM / 12:am / 12am -> 0 minutes (Midnight, Night, begins new date)
+// - 12:00 PM / 12:pm / 12pm -> 720 minutes (Noon, Midday, Day time)
 export function parse12HourToMinutes(timeStr: string): number {
   if (!timeStr) return 0;
   const cleaned = timeStr.trim().toUpperCase();
 
-  // 1. Standard 12-hour with optional seconds: "09:30 AM", "9:30AM", "09:30:00 AM", "9 AM"
-  const match12 = cleaned.match(/^(\d{1,2})(?::(\d{2}))?(?::\d{2})?\s*(AM|PM)$/);
+  // 1. Flexible 12-hour: supports "12:00 AM", "12:00 PM", "12:pm", "12:am", "12pm", "12am", "12 PM", "12 AM", "12.00 PM", "12:00:00 AM", etc.
+  const match12 = cleaned.match(/^(\d{1,2})(?:[:.](\d{1,2}))?(?:[:.]\d{1,2})?\s*:?\s*(AM|PM)$/);
   if (match12) {
     let hours = parseInt(match12[1], 10);
     const minutes = match12[2] ? parseInt(match12[2], 10) : 0;
     const period = match12[3];
 
     if (period === 'AM') {
-      if (hours === 12) hours = 0;
+      if (hours === 12) hours = 0; // 12:00 AM is 00:00 (Midnight, Night, New date)
     } else if (period === 'PM') {
-      if (hours !== 12) hours += 12;
+      if (hours !== 12) hours += 12; // 12:00 PM remains 12:00 (720 min, Day time)
     }
     return ((hours * 60 + minutes) % 1440 + 1440) % 1440;
   }
 
-  // 2. 24-hour military/ISO: "14:30", "09:00", "23:59:00"
+  // 2. 24-hour military/ISO: "14:30", "09:00", "12:00", "00:00", "24:00", "23:59:00"
   const match24 = cleaned.match(/^(\d{1,2}):(\d{2})/);
   if (match24) {
-    const hours = parseInt(match24[1], 10);
+    let hours = parseInt(match24[1], 10);
     const minutes = parseInt(match24[2], 10);
-    if (hours >= 0 && hours <= 24 && minutes >= 0 && minutes <= 59) {
+    if (hours === 24) hours = 0;
+    if (hours >= 0 && hours <= 23 && minutes >= 0 && minutes <= 59) {
       return ((hours * 60 + minutes) % 1440 + 1440) % 1440;
     }
   }
@@ -84,9 +88,99 @@ export function addMinutesToTime(timeStr: string, minutesToAdd: number): string 
   return formatMinutesTo12Hour(currentMin + minutesToAdd);
 }
 
-// Get current local time in 12-hour AM/PM format, rounded to nearest step (default: 15 minutes)
+export const BANGLADESH_TIMEZONE = 'Asia/Dhaka';
+
+export type CircadianPeriodName = 'Night' | 'Morning' | 'Afternoon' | 'Evening';
+
+/**
+ * Resolves standard circadian period according to Bangladesh timing understanding:
+ * - 12:00 AM (0 min) up to 04:59 AM (299 min): 'Night' (Deep Night & Rest, starts the new calendar date)
+ * - 05:00 AM (300 min) up to 11:59 AM (719 min): 'Morning' (Dawn to Midday)
+ * - 12:00 PM (720 min) up to 04:59 PM (1019 min): 'Afternoon' (Day time & Nutrition/Work)
+ * - 05:00 PM (1020 min) up to 07:59 PM (1199 min): 'Evening' (Dusk & Wind-Down)
+ * - 08:00 PM (1200 min) up to 11:59 PM (1439 min): 'Night' (Evening to Midnight)
+ */
+export function getStandardCircadianPeriod(minutesOrTimeStr: number | string): CircadianPeriodName {
+  const mins = typeof minutesOrTimeStr === 'string'
+    ? parse12HourToMinutes(minutesOrTimeStr)
+    : ((minutesOrTimeStr % 1440) + 1440) % 1440;
+
+  if (mins < 300) return 'Night';       // 12:00 AM - 04:59 AM: Night (New calendar date!)
+  if (mins < 720) return 'Morning';     // 05:00 AM - 11:59 AM: Morning
+  if (mins < 1020) return 'Afternoon';  // 12:00 PM - 04:59 PM: Afternoon (Day time!)
+  if (mins < 1200) return 'Evening';    // 05:00 PM - 07:59 PM: Evening
+  return 'Night';                       // 08:00 PM - 11:59 PM: Night
+}
+
+/**
+ * Returns a Date object strictly adjusted to Bangladesh Standard Time (BST, Asia/Dhaka, UTC+6).
+ * Ensures uniform Bangladesh Time precision irrespective of host OS or browser timezone settings.
+ */
+export function getBangladeshNow(date: Date = new Date()): Date {
+  const formatter = new Intl.DateTimeFormat('en-US', {
+    timeZone: BANGLADESH_TIMEZONE,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false
+  });
+  const parts = formatter.formatToParts(date);
+  const getPart = (type: string) => parts.find(p => p.type === type)?.value || '0';
+
+  const year = parseInt(getPart('year'), 10);
+  const month = parseInt(getPart('month'), 10) - 1;
+  const day = parseInt(getPart('day'), 10);
+  let hour = parseInt(getPart('hour'), 10);
+  if (hour === 24) hour = 0;
+  const minute = parseInt(getPart('minute'), 10);
+  const second = parseInt(getPart('second'), 10);
+
+  return new Date(year, month, day, hour, minute, second);
+}
+
+/**
+ * Formats time components in Bangladesh Standard Time (BST).
+ * Accurately recognizes 12:00 AM as Night (starts new date) and 12:00 PM as Day time.
+ */
+export function formatBangladeshTime(date: Date = new Date()): {
+  hoursMinutes: string;
+  seconds: string;
+  period: 'AM' | 'PM';
+  timeClean: string;
+  full12Hour: string;
+  circadianPeriod: CircadianPeriodName;
+  isNight: boolean;
+  isDay: boolean;
+} {
+  const bdNow = getBangladeshNow(date);
+  const hours = bdNow.getHours();
+  const minutes = bdNow.getMinutes().toString().padStart(2, '0');
+  const seconds = bdNow.getSeconds().toString().padStart(2, '0');
+  const period = hours >= 12 ? 'PM' : 'AM';
+  const displayHours = (hours % 12 || 12).toString().padStart(2, '0');
+  const full12Hour = `${displayHours}:${minutes} ${period}`;
+  const circadianPeriod = getStandardCircadianPeriod(hours * 60 + bdNow.getMinutes());
+  const isNight = circadianPeriod === 'Night';
+  const isDay = !isNight;
+
+  return {
+    hoursMinutes: full12Hour,
+    seconds,
+    period,
+    timeClean: `${displayHours}:${minutes}`,
+    full12Hour,
+    circadianPeriod,
+    isNight,
+    isDay
+  };
+}
+
+// Get current Bangladesh local time in 12-hour AM/PM format, rounded to nearest step (default: 15 minutes)
 export function getCurrentRoundedTime12Hour(stepMinutes = 15): string {
-  const now = new Date();
+  const now = getBangladeshNow();
   const totalMinutes = now.getHours() * 60 + now.getMinutes();
   const rounded = Math.ceil(totalMinutes / stepMinutes) * stepMinutes;
   return formatMinutesTo12Hour(rounded % 1440);
@@ -148,11 +242,24 @@ export function formatDisplayDate(dateInput: string | Date | undefined | null, i
   return dateStr;
 }
 
-// Format date to YYYY-MM-DD
-export function toISODateString(date: Date = new Date()): string {
-  const year = date.getFullYear();
-  const month = (date.getMonth() + 1).toString().padStart(2, '0');
-  const day = date.getDate().toString().padStart(2, '0');
+// Format date to YYYY-MM-DD anchored in Bangladesh Standard Time by default
+export function toISODateString(date?: Date): string {
+  const target = date ? date : getBangladeshNow();
+  const year = target.getFullYear();
+  const month = (target.getMonth() + 1).toString().padStart(2, '0');
+  const day = target.getDate().toString().padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+/**
+ * Returns today's date (YYYY-MM-DD) strictly in Bangladesh Standard Time (BST, UTC+6).
+ * At 12:00 AM midnight in Bangladesh, this immediately rolls over to the new date!
+ */
+export function getBangladeshTodayStr(): string {
+  const bd = getBangladeshNow();
+  const year = bd.getFullYear();
+  const month = (bd.getMonth() + 1).toString().padStart(2, '0');
+  const day = bd.getDate().toString().padStart(2, '0');
   return `${year}-${month}-${day}`;
 }
 
@@ -778,7 +885,7 @@ export interface AvailableSlotResult {
   scheduledMinutesOnDay: number;
   remainingCapacityMinutes: number;
   isRedLine: boolean;
-  period?: 'Morning' | 'Afternoon' | 'Evening';
+  period?: CircadianPeriodName;
   reason?: string;
   isSimultaneousSlot?: boolean;
   simultaneousTaskTitle?: string;
@@ -985,8 +1092,7 @@ export function findAllAvailableSlotsOnDate(
       return checkOverlap(startStr, endStr, t.startTime, t.endTime);
     });
 
-    const period: 'Morning' | 'Afternoon' | 'Evening' = 
-      (startMin % 1440) < 720 ? 'Morning' : (startMin % 1440) < 1020 ? 'Afternoon' : 'Evening';
+    const period: CircadianPeriodName = getStandardCircadianPeriod(startMin);
 
     // Calculate effective calendar date for the slot:
     // If startMin >= 1440 (e.g. 12:00 AM after midnight), the slot belongs to the NEXT calendar day!
@@ -2279,7 +2385,7 @@ export interface SuggestedNextSlotResult {
   startTime: string;
   endTime: string;
   durationMinutes: number;
-  period: 'Morning' | 'Afternoon' | 'Evening';
+  period: CircadianPeriodName;
   isNextDay: boolean;
   daysOffset: number;
   reason: string;
@@ -2490,8 +2596,7 @@ export function findNextAvailableSlot(
 
       const startStr = formatMinutesTo12Hour(foundSlot.start);
       const endStr = formatMinutesTo12Hour(foundSlot.end);
-      const period: 'Morning' | 'Afternoon' | 'Evening' = 
-        (foundSlot.start % 1440) < 720 ? 'Morning' : (foundSlot.start % 1440) < 1020 ? 'Afternoon' : 'Evening';
+      const period: CircadianPeriodName = getStandardCircadianPeriod(foundSlot.start);
       const isNextDay = slotDateStr > todayStr;
       const actualOffset = Math.round((new Date(slotDateStr + 'T00:00:00').getTime() - new Date(todayStr + 'T00:00:00').getTime()) / (1000 * 60 * 60 * 24));
 
@@ -2672,9 +2777,11 @@ export function getRecommendedDayFreeSlots(
       if (!isTimeInSleepWindow(candidateStart, candidateEnd, sleepStartStr, sleepEndStr)) {
         if (!slots.some(s => s.startTime === candidateStart) && slots.length < limit) {
           const normHour = ((usableStart % 1440) + 1440) % 1440;
+          const cp = getStandardCircadianPeriod(normHour);
           let label = 'Free Gap';
-          if (normHour < 720) label = '☀️ Morning (AM)';
-          else if (normHour < 1020) label = '🌤️ Afternoon (PM)';
+          if (cp === 'Night') label = '🌙 Night (AM)';
+          else if (cp === 'Morning') label = '☀️ Morning (AM)';
+          else if (cp === 'Afternoon') label = '🌤️ Afternoon (PM)';
           else label = '🌆 Evening (PM)';
 
           slots.push({
@@ -2695,9 +2802,11 @@ export function getRecommendedDayFreeSlots(
         if (!isTimeInSleepWindow(candStart, candEnd, sleepStartStr, sleepEndStr)) {
           if (!slots.some(s => s.startTime === candStart)) {
             const normHour = ((nextStep % 1440) + 1440) % 1440;
+            const cp = getStandardCircadianPeriod(normHour);
             let label = 'Free Slot';
-            if (normHour < 720) label = '☀️ Morning (AM)';
-            else if (normHour < 1020) label = '🌤️ Afternoon (PM)';
+            if (cp === 'Night') label = '🌙 Night (AM)';
+            else if (cp === 'Morning') label = '☀️ Morning (AM)';
+            else if (cp === 'Afternoon') label = '🌤️ Afternoon (PM)';
             else label = '🌆 Evening (PM)';
 
             slots.push({

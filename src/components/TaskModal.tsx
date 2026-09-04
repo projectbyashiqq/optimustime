@@ -27,7 +27,9 @@ import {
   getTimePeriodForTime,
   formatDisplayDate,
   taskCrossesMidnight,
-  getTaskEndDate
+  getTaskEndDate,
+  getBangladeshNow,
+  parse12HourToMinutes
 } from '../utils/timeUtils';
 import { ConflictModal } from './ConflictModal';
 import { TimePicker } from './TimePicker';
@@ -388,18 +390,21 @@ export const TaskModal: React.FC<TaskModalProps> = ({
     }
   };
 
-  // 1-Click AM / PM Period Toggle
+  // 1-Click AM / PM Period Toggle (accurately supports 12:pm, 12:00 Am, etc.)
   const handleTogglePeriod = (targetPeriod: 'AM' | 'PM') => {
-    if (!startTime) return;
-    const match = startTime.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
-    if (match) {
-      const hours = match[1].padStart(2, '0');
-      const minutes = match[2];
-      const newStartTime = `${hours}:${minutes} ${targetPeriod}`;
-      setStartTime(newStartTime);
-      setEndTime(addMinutesToTime(newStartTime, appointedMinutes));
-      setValidationError(null);
+    if (!startTime || startTime === 'All Day') return;
+    const totalMin = parse12HourToMinutes(startTime);
+    let h = Math.floor(totalMin / 60);
+    const m = totalMin % 60;
+    if (targetPeriod === 'AM') {
+      if (h >= 12) h -= 12;
+    } else {
+      if (h < 12) h += 12;
     }
+    const newStartTime = formatMinutesTo12Hour(h * 60 + m);
+    setStartTime(newStartTime);
+    setEndTime(addMinutesToTime(newStartTime, appointedMinutes));
+    setValidationError(null);
   };
 
   // Resolution handlers for past time warning dialog
@@ -1406,34 +1411,41 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                         </label>
 
                         {/* 1-Click AM / PM Quick Switcher */}
-                        <div className="flex items-center p-0.5 bg-theme-card-hover rounded-lg border border-theme-border text-[10px] font-black shadow-inner">
-                          <button
-                            type="button"
-                            onClick={() => handleTogglePeriod('AM')}
-                            className={`px-2 py-0.5 rounded-md transition-all flex items-center gap-1 cursor-pointer ${
-                              startTime.includes('AM')
-                                ? 'bg-amber-500 text-white shadow-xs'
-                                : 'text-theme-muted hover:text-theme-text'
-                            }`}
-                            title="Switch to Morning (AM)"
-                          >
-                            <Sun className="w-2.5 h-2.5" />
-                            <span>AM</span>
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleTogglePeriod('PM')}
-                            className={`px-2 py-0.5 rounded-md transition-all flex items-center gap-1 cursor-pointer ${
-                              startTime.includes('PM')
-                                ? 'bg-indigo-600 text-white shadow-xs'
-                                : 'text-theme-muted hover:text-theme-text'
-                            }`}
-                            title="Switch to Afternoon / Evening (PM)"
-                          >
-                            <Moon className="w-2.5 h-2.5" />
-                            <span>PM</span>
-                          </button>
-                        </div>
+                        {(() => {
+                          const isStart12 = startTime.trim().startsWith('12:') || startTime.trim().toUpperCase().startsWith('12PM') || startTime.trim().toUpperCase().startsWith('12AM');
+                          const isAmActive = startTime.toUpperCase().includes('AM');
+                          const isPmActive = startTime.toUpperCase().includes('PM');
+                          return (
+                            <div className="flex items-center p-0.5 bg-theme-card-hover rounded-lg border border-theme-border text-[10px] font-black shadow-inner">
+                              <button
+                                type="button"
+                                onClick={() => handleTogglePeriod('AM')}
+                                className={`px-2 py-0.5 rounded-md transition-all flex items-center gap-1 cursor-pointer ${
+                                  isAmActive
+                                    ? isStart12 ? 'bg-indigo-600 text-white shadow-xs' : 'bg-amber-500 text-white shadow-xs'
+                                    : 'text-theme-muted hover:text-theme-text'
+                                }`}
+                                title={isStart12 ? '12:00 AM • Night & New Date (Midnight)' : 'Switch to Morning (AM)'}
+                              >
+                                {isStart12 ? <Moon className="w-2.5 h-2.5" /> : <Sun className="w-2.5 h-2.5" />}
+                                <span>AM</span>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleTogglePeriod('PM')}
+                                className={`px-2 py-0.5 rounded-md transition-all flex items-center gap-1 cursor-pointer ${
+                                  isPmActive
+                                    ? isStart12 ? 'bg-amber-500 text-white shadow-xs' : 'bg-indigo-600 text-white shadow-xs'
+                                    : 'text-theme-muted hover:text-theme-text'
+                                }`}
+                                title={isStart12 ? '12:00 PM • Day Time (Midday / Lunch)' : 'Switch to Afternoon / Evening (PM)'}
+                              >
+                                {isStart12 ? <Sun className="w-2.5 h-2.5" /> : <Moon className="w-2.5 h-2.5" />}
+                                <span>PM</span>
+                              </button>
+                            </div>
+                          );
+                        })()}
                       </div>
 
                       <TimePicker

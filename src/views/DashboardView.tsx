@@ -23,7 +23,10 @@ import {
   formatDisplayDate,
   taskCrossesMidnight,
   getTaskEndDate,
-  getTaskIntervalForDate
+  getTaskIntervalForDate,
+  getBangladeshNow,
+  formatBangladeshTime,
+  BANGLADESH_TIMEZONE
 } from '../utils/timeUtils';
 import { 
   Play, 
@@ -105,19 +108,19 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
   } = useApp();
 
   const [dashboardMode, setDashboardMode] = useState<DashboardMode>('time');
-  const [selectedDate, setSelectedDate] = useState<string>(toISODateString(new Date()));
+  const [selectedDate, setSelectedDate] = useState<string>(() => toISODateString(getBangladeshNow()));
   const dateInputRef = useRef<HTMLInputElement>(null);
   const [showPriorityBacklog, setShowPriorityBacklog] = useState(false);
   const [showCompletedSection, setShowCompletedSection] = useState(true);
   const [reschedulingTask, setReschedulingTask] = useState<Task | null>(null);
-  const [nowTime, setNowTime] = useState<Date>(new Date());
+  const [nowTime, setNowTime] = useState<Date>(() => getBangladeshNow());
   const [showPastGaps, setShowPastGaps] = useState(false);
   const [gapDateFilter, setGapDateFilter] = useState<'all' | 'today' | 'tomorrow' | 'upcoming'>('all');
 
-  // Live timer tick every second for live pro clock
+  // Live timer tick every second strictly anchored to Bangladesh Standard Time (BST • Asia/Dhaka)
   useEffect(() => {
     const timer = setInterval(() => {
-      setNowTime(new Date());
+      setNowTime(getBangladeshNow());
     }, 1000);
     return () => clearInterval(timer);
   }, []);
@@ -213,13 +216,6 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
     });
   };
 
-  // Live timer tick every second for accurate countdowns
-  useEffect(() => {
-    const timer = setInterval(() => {
-      setNowTime(new Date());
-    }, 1000);
-    return () => clearInterval(timer);
-  }, []);
 
   // Morning Rollover Review tasks (all past unfinished / incomplete tasks from yesterday or earlier)
   const todayStr = toISODateString(nowTime);
@@ -336,21 +332,13 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
 
   const dayOfWeek = getDayOfWeekFromDate(selectedDate);
 
-  // Live clock formatted with pro typography
-  const liveHoursMinutes = nowTime.toLocaleTimeString('en-US', {
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: true
-  });
-  const liveSeconds = nowTime.getSeconds().toString().padStart(2, '0');
-  const livePeriod = nowTime.getHours() >= 12 ? 'PM' : 'AM';
-  const liveTimeClean = liveHoursMinutes.replace(/\s*(AM|PM)$/i, '');
-  const liveTimeStr = nowTime.toLocaleTimeString('en-US', {
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-    hour12: true
-  });
+  // Live clock strictly formatted in Bangladesh Standard Time (BST, Asia/Dhaka • UTC+6)
+  const bdTime = formatBangladeshTime(nowTime);
+  const liveHoursMinutes = bdTime.hoursMinutes;
+  const liveSeconds = bdTime.seconds;
+  const livePeriod = bdTime.period;
+  const liveTimeClean = bdTime.timeClean;
+  const liveTimeStr = bdTime.full12Hour;
 
   // Derive current time period from rules
   const currentPeriod = getTimePeriodForTime(liveTimeStr, timePeriodSettings);
@@ -469,7 +457,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
             <div className="h-3.5 w-px bg-theme-border/80 shrink-0 mx-0.5" />
 
             {/* Live Clock with Pro Typography ("show the time nicely other pro font") */}
-            <div className="flex items-center gap-1.5 shrink-0" title="Live Clock">
+            {/* Live Clock with Pro Typography & Bangladesh Time Indicator */}
+            <div className="flex items-center gap-2 shrink-0" title="Bangladesh Standard Time (BST • Asia/Dhaka • UTC+6)">
               <div className="relative flex h-2 w-2 shrink-0">
                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
                 <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
@@ -479,6 +468,12 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
                 <span className="text-[9px] font-bold text-theme-muted opacity-80 ml-0.5">:{liveSeconds}</span>
                 <span className="text-[9px] font-black text-blue-600 dark:text-blue-400 ml-1 uppercase">{livePeriod}</span>
               </div>
+
+              {/* Dedicated Bangladesh Time Badge */}
+              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border border-emerald-500/20 text-[9px] font-black uppercase tracking-wider font-mono shrink-0">
+                <span>🇧🇩</span>
+                <span>BST (UTC+6)</span>
+              </span>
             </div>
 
             <input
@@ -492,35 +487,40 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
           </div>
 
           {/* Apple-Style Segmented Today / Tomorrow Switcher */}
-          <div className="flex items-center gap-0.5 p-0.5 bg-theme-card-hover/90 rounded-xl border border-theme-border/70 shadow-2xs shrink-0">
-            <button
-              type="button"
-              onClick={() => setSelectedDate(toISODateString(new Date()))}
-              className={`px-2.5 py-1 rounded-lg text-xs font-bold whitespace-nowrap shrink-0 transition-all ${
-                selectedDate === toISODateString(new Date())
-                  ? 'bg-blue-600 text-white shadow-xs shadow-blue-500/25'
-                  : 'text-theme-muted hover:text-theme-text hover:bg-theme-card/50'
-              }`}
-            >
-              Today
-            </button>
+          {(() => {
+            const todayBdStr = toISODateString(getBangladeshNow());
+            const tomorrowBdDate = getBangladeshNow();
+            tomorrowBdDate.setDate(tomorrowBdDate.getDate() + 1);
+            const tomorrowBdStr = toISODateString(tomorrowBdDate);
 
-            <button
-              type="button"
-              onClick={() => {
-                const d = new Date();
-                d.setDate(d.getDate() + 1);
-                setSelectedDate(toISODateString(d));
-              }}
-              className={`px-2.5 py-1 rounded-lg text-xs font-bold whitespace-nowrap shrink-0 transition-all ${
-                selectedDate === toISODateString(new Date(Date.now() + 86400000))
-                  ? 'bg-blue-600 text-white shadow-xs shadow-blue-500/25'
-                  : 'text-theme-muted hover:text-theme-text hover:bg-theme-card/50'
-              }`}
-            >
-              Tomorrow
-            </button>
-          </div>
+            return (
+              <div className="flex items-center gap-0.5 p-0.5 bg-theme-card-hover/90 rounded-xl border border-theme-border/70 shadow-2xs shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setSelectedDate(todayBdStr)}
+                  className={`px-2.5 py-1 rounded-lg text-xs font-bold whitespace-nowrap shrink-0 transition-all cursor-pointer ${
+                    selectedDate === todayBdStr
+                      ? 'bg-blue-600 text-white shadow-xs shadow-blue-500/25'
+                      : 'text-theme-muted hover:text-theme-text hover:bg-theme-card/50'
+                  }`}
+                >
+                  Today
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setSelectedDate(tomorrowBdStr)}
+                  className={`px-2.5 py-1 rounded-lg text-xs font-bold whitespace-nowrap shrink-0 transition-all cursor-pointer ${
+                    selectedDate === tomorrowBdStr
+                      ? 'bg-blue-600 text-white shadow-xs shadow-blue-500/25'
+                      : 'text-theme-muted hover:text-theme-text hover:bg-theme-card/50'
+                  }`}
+                >
+                  Tomorrow
+                </button>
+              </div>
+            );
+          })()}
 
           {/* Morning Rollover Review Quick-Pill */}
           {morningReviewTasks.length > 0 && (

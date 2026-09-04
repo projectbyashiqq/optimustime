@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
-import { formatHeaderDate, toISODateString } from '../utils/timeUtils';
+import { formatHeaderDate, toISODateString, getBangladeshNow, formatBangladeshTime } from '../utils/timeUtils';
 import { 
   Clock, 
   AlertTriangle, 
@@ -9,14 +9,16 @@ import {
   Palette, 
   Flame, 
   CheckCircle2, 
-  Sparkles,
-  Layers,
-  ChevronDown,
-  Lock,
-  Cloud,
-  CloudOff,
-  RefreshCw,
-  Repeat
+  Sparkles, 
+  Layers, 
+  ChevronDown, 
+  Lock, 
+  Cloud, 
+  CloudOff, 
+  RefreshCw, 
+  Repeat,
+  Sun,
+  Moon
 } from 'lucide-react';
 import { ThemeName } from '../types';
 
@@ -43,17 +45,18 @@ export const Header: React.FC<HeaderProps> = ({ onOpenNewTaskModal }) => {
     setActiveTab
   } = useApp();
 
-  const [currentTime, setCurrentTime] = useState<Date>(new Date());
+  const [currentTime, setCurrentTime] = useState<Date>(() => getBangladeshNow());
   const [showThemeMenu, setShowThemeMenu] = useState(false);
 
-  // Live 12h clock with seconds
+  // Live 12h clock with seconds anchored to Bangladesh Standard Time (Asia/Dhaka)
   useEffect(() => {
     const timer = setInterval(() => {
-      setCurrentTime(new Date());
+      setCurrentTime(getBangladeshNow());
     }, 1000);
     return () => clearInterval(timer);
   }, []);
 
+  const bdTime = formatBangladeshTime(currentTime);
   const todayStr = toISODateString(currentTime);
   const scheduledMinutesToday = dailyScheduledMinutes(todayStr);
   const maxCapacityMinutes = capacitySettings.maxWorkHours * 60;
@@ -63,13 +66,8 @@ export const Header: React.FC<HeaderProps> = ({ onOpenNewTaskModal }) => {
   const formattedHours = Math.floor(scheduledMinutesToday / 60);
   const formattedRemainingMinutes = scheduledMinutesToday % 60;
 
-  // Format 12-hour AM/PM with seconds
-  const formattedTimeStr = currentTime.toLocaleTimeString('en-US', {
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-    hour12: true
-  });
+  // Format 12-hour AM/PM with seconds in Bangladesh time
+  const formattedTimeStr = `${bdTime.timeClean}:${bdTime.seconds} ${bdTime.period}`;
 
   const themesList: { id: ThemeName; name: string; badge: string; color: string }[] = [
     { id: 'light', name: 'Light White & Bluish', badge: 'Default', color: '#2563EB' },
@@ -104,16 +102,32 @@ export const Header: React.FC<HeaderProps> = ({ onOpenNewTaskModal }) => {
               </div>
             </div>
 
-            {/* Big Live Clock Badge */}
+            {/* Big Live Clock Badge in Bangladesh Time */}
             <div className="hidden sm:flex items-center gap-2 bg-gradient-to-r from-blue-50/90 via-sky-50/50 to-theme-card dark:from-blue-950/50 dark:via-sky-950/30 dark:to-theme-card px-3.5 py-1.5 rounded-xl border border-blue-200 dark:border-blue-800/80 shadow-sm ml-2 ring-1 ring-blue-500/20">
               <div className="relative flex h-2.5 w-2.5">
                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
                 <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-blue-600 dark:bg-blue-400"></span>
               </div>
-              <Clock className="w-4 h-4 text-blue-600 dark:text-blue-400" />
-              <span className="font-mono text-sm sm:text-base font-black tracking-wider text-theme-text font-display">
-                {formattedTimeStr}
-              </span>
+              {bdTime.isNight ? (
+                <Moon className="w-4 h-4 text-indigo-500 dark:text-indigo-400" />
+              ) : (
+                <Sun className="w-4 h-4 text-amber-500" />
+              )}
+              <div className="flex items-center gap-1.5">
+                <span className="font-mono text-sm sm:text-base font-black tracking-wider text-theme-text font-display">
+                  {formattedTimeStr}
+                </span>
+                <span className="text-[9px] font-extrabold px-1.5 py-0.5 rounded bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-300 border border-blue-300 dark:border-blue-800">
+                  BST
+                </span>
+                <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${
+                  bdTime.isNight 
+                    ? 'bg-indigo-100 dark:bg-indigo-950/80 text-indigo-700 dark:text-indigo-300 border border-indigo-300 dark:border-indigo-800' 
+                    : 'bg-amber-100 dark:bg-amber-950/80 text-amber-700 dark:text-amber-300 border border-amber-300 dark:border-amber-800'
+                }`}>
+                  {bdTime.circadianPeriod}
+                </span>
+              </div>
             </div>
           </div>
 

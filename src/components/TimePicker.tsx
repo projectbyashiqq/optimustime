@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Clock, Check, Sun, Moon, ChevronUp, ChevronDown, Sparkles } from 'lucide-react';
-import { formatMinutesTo12Hour, parse12HourToMinutes } from '../utils/timeUtils';
+import { formatMinutesTo12Hour, parse12HourToMinutes, getBangladeshNow, getStandardCircadianPeriod } from '../utils/timeUtils';
 
 interface TimePickerProps {
   value: string; // e.g. "09:30 AM"
@@ -41,20 +41,18 @@ export const TimePicker: React.FC<TimePickerProps> = ({
     }
   }, [isOpen, align]);
 
-  // Parse incoming value "09:30 AM"
+  // Robustly parse incoming value ("09:30 AM", "12:pm", "12:00 Am", etc.) strictly in Bangladesh context
   const parseCurrentValue = () => {
-    const isNowPm = new Date().getHours() >= 12;
+    const bdNow = getBangladeshNow();
+    const isNowPm = bdNow.getHours() >= 12;
     const defaultTime = isNowPm ? '02:00 PM' : '09:00 AM';
-    const cleaned = (value || defaultTime).trim().toUpperCase();
-    const match = cleaned.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/);
-    if (match) {
-      return {
-        hours: parseInt(match[1], 10),
-        minutes: parseInt(match[2], 10),
-        period: match[3] as 'AM' | 'PM'
-      };
-    }
-    return { hours: isNowPm ? 2 : 9, minutes: 0, period: (isNowPm ? 'PM' : 'AM') as 'AM' | 'PM' };
+    const totalMinutes = parse12HourToMinutes(value || defaultTime);
+    let h = Math.floor(totalMinutes / 60);
+    const m = totalMinutes % 60;
+    const p: 'AM' | 'PM' = h >= 12 ? 'PM' : 'AM';
+    if (h === 0) h = 12;
+    else if (h > 12) h -= 12;
+    return { hours: h, minutes: m, period: p };
   };
 
   const parsed = parseCurrentValue();
@@ -107,10 +105,10 @@ export const TimePicker: React.FC<TimePickerProps> = ({
   };
 
   const handleSetCurrentTime = () => {
-    const now = new Date();
-    let h = now.getHours();
-    const m = Math.round(now.getMinutes() / 5) * 5 % 60;
-    const p = h >= 12 ? 'PM' : 'AM';
+    const bdNow = getBangladeshNow();
+    let h = bdNow.getHours();
+    const m = Math.round(bdNow.getMinutes() / 5) * 5 % 60;
+    const p: 'AM' | 'PM' = h >= 12 ? 'PM' : 'AM';
     if (h === 0) h = 12;
     else if (h > 12) h -= 12;
 
@@ -130,6 +128,26 @@ export const TimePicker: React.FC<TimePickerProps> = ({
   const hoursList = [12, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11];
   const minuteList = [0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55];
 
+  // Accurate Circadian understanding for Bangladesh:
+  // 12:00 AM is Night & New Date (Midnight)
+  // 12:00 PM is Day Time (Midday / Lunch)
+  const isCurrently12Am = selectedHours === 12 && selectedPeriod === 'AM';
+  const isCurrently12Pm = selectedHours === 12 && selectedPeriod === 'PM';
+
+  // Compute standard period for currently selected time
+  const currentTotalMins = (
+    selectedPeriod === 'AM' 
+      ? (selectedHours === 12 ? 0 : selectedHours * 60)
+      : (selectedHours === 12 ? 720 : (selectedHours + 12) * 60)
+  ) + selectedMinutes;
+  const circadianPeriod = getStandardCircadianPeriod(currentTotalMins);
+  const isNightTime = circadianPeriod === 'Night';
+
+  // Contextual icon for AM: 12 AM is Night (Moon), 6-11 AM is Morning (Sun)
+  const amIsNight = selectedHours === 12 || (selectedHours >= 1 && selectedHours <= 4);
+  // Contextual icon for PM: 12 PM is Day (Sun), 8-11 PM is Night (Moon)
+  const pmIsNight = selectedHours >= 8 && selectedHours <= 11;
+
   return (
     <div className={`relative ${isOpen ? 'z-50' : 'z-10'} ${className}`} ref={containerRef}>
       {label && (
@@ -146,8 +164,9 @@ export const TimePicker: React.FC<TimePickerProps> = ({
         onClick={() => setIsOpen(!isOpen)}
         className="w-full text-xs px-3 py-2 rounded-xl bg-theme-card border border-theme-border text-theme-text hover:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 font-mono font-bold flex items-center justify-between gap-2 shadow-sm transition-all text-left cursor-pointer"
       >
-        <span className="text-xs sm:text-sm tracking-wide text-blue-600 dark:text-blue-400 whitespace-nowrap">
-          {value || (new Date().getHours() >= 12 ? '02:00 PM' : '09:00 AM')}
+        <span className="text-xs sm:text-sm tracking-wide text-blue-600 dark:text-blue-400 whitespace-nowrap flex items-center gap-1.5">
+          {isNightTime ? <Moon className="w-3 h-3 text-indigo-500 shrink-0" /> : <Sun className="w-3 h-3 text-amber-500 shrink-0" />}
+          <span>{value || formatMinutesTo12Hour(currentTotalMins)}</span>
         </span>
         <Clock className="w-4 h-4 text-theme-muted shrink-0" />
       </button>
@@ -158,8 +177,29 @@ export const TimePicker: React.FC<TimePickerProps> = ({
           
           {/* Digital Time Header + AM/PM Toggle */}
           <div className="flex items-center justify-between bg-blue-50/80 dark:bg-blue-950/50 p-2.5 rounded-xl border border-blue-200 dark:border-blue-900 gap-2">
-            <div className="font-mono text-xl sm:text-2xl font-black tracking-wider text-blue-700 dark:text-blue-300 whitespace-nowrap shrink-0">
-              {selectedHours.toString().padStart(2, '0')} : {selectedMinutes.toString().padStart(2, '0')}
+            <div>
+              <div className="font-mono text-xl sm:text-2xl font-black tracking-wider text-blue-700 dark:text-blue-300 whitespace-nowrap">
+                {selectedHours.toString().padStart(2, '0')} : {selectedMinutes.toString().padStart(2, '0')}
+              </div>
+              <div className="text-[10px] font-bold flex items-center gap-1 mt-0.5">
+                {isCurrently12Am ? (
+                  <span className="text-indigo-600 dark:text-indigo-400 flex items-center gap-0.5">
+                    <Moon className="w-2.5 h-2.5" /> 12:00 AM • Night & New Date
+                  </span>
+                ) : isCurrently12Pm ? (
+                  <span className="text-amber-600 dark:text-amber-400 flex items-center gap-0.5">
+                    <Sun className="w-2.5 h-2.5" /> 12:00 PM • Day Time (Midday)
+                  </span>
+                ) : isNightTime ? (
+                  <span className="text-indigo-600 dark:text-indigo-400 flex items-center gap-0.5">
+                    <Moon className="w-2.5 h-2.5" /> {circadianPeriod}
+                  </span>
+                ) : (
+                  <span className="text-amber-600 dark:text-amber-400 flex items-center gap-0.5">
+                    <Sun className="w-2.5 h-2.5" /> {circadianPeriod}
+                  </span>
+                )}
+              </div>
             </div>
 
             {/* Clickable AM / PM Switcher */}
@@ -169,24 +209,30 @@ export const TimePicker: React.FC<TimePickerProps> = ({
                 onClick={() => handlePeriodSelect('AM')}
                 className={`px-2 py-1 rounded-lg text-xs font-black transition-all flex items-center gap-1 cursor-pointer ${
                   selectedPeriod === 'AM'
-                    ? 'bg-amber-500 text-white shadow-md'
+                    ? amIsNight
+                      ? 'bg-indigo-600 text-white shadow-md'
+                      : 'bg-amber-500 text-white shadow-md'
                     : 'text-theme-muted hover:text-theme-text'
                 }`}
+                title={selectedHours === 12 ? '12:00 AM • Night & New Date' : 'AM'}
               >
-                <Sun className="w-3 h-3" />
+                {amIsNight ? <Moon className="w-3 h-3" /> : <Sun className="w-3 h-3" />}
                 <span>AM</span>
               </button>
 
               <button
                 type="button"
                 onClick={() => handlePeriodSelect('PM')}
-                className={`px-2.5 py-1 rounded-lg text-xs font-black transition-all flex items-center gap-1 ${
+                className={`px-2.5 py-1 rounded-lg text-xs font-black transition-all flex items-center gap-1 cursor-pointer ${
                   selectedPeriod === 'PM'
-                    ? 'bg-indigo-600 text-white shadow-md'
+                    ? pmIsNight
+                      ? 'bg-indigo-600 text-white shadow-md'
+                      : 'bg-amber-500 text-white shadow-md'
                     : 'text-theme-muted hover:text-theme-text'
                 }`}
+                title={selectedHours === 12 ? '12:00 PM • Day Time (Midday)' : 'PM'}
               >
-                <Moon className="w-3 h-3" />
+                {pmIsNight ? <Moon className="w-3 h-3" /> : <Sun className="w-3 h-3" />}
                 <span>PM</span>
               </button>
             </div>

@@ -517,7 +517,7 @@ export const NotesView: React.FC<NotesViewProps> = ({ onOpenTaskModal }) => {
                   onChange={(e) => {
                     const newT = e.target.value;
                     setTime(newT);
-                    if (newT.trim().match(/^\d{1,2}:\d{2}\s*(AM|PM)$/i)) {
+                    if (newT.trim().match(/^(\d{1,2})(?:[:.](\d{1,2}))?(?:[:.]\d{1,2})?\s*:?\s*(AM|PM)$/i)) {
                       const rollover = shouldRolloverToNextDay(date, newT.trim(), undefined, tasks);
                       if (rollover.shouldRollover && date !== rollover.nextDateStr) {
                         setDate(rollover.nextDateStr);

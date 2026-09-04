@@ -7,7 +7,8 @@ import {
   getDayOfWeekFromDate, 
   parse12HourToMinutes, 
   formatDisplayDate,
-  addMinutesToTime
+  addMinutesToTime,
+  getBangladeshNow
 } from '../utils/timeUtils';
 import { 
   generateDailyLifeSynthesis, 
@@ -52,7 +53,7 @@ export const TimeTracker24View: React.FC<TimeTracker24ViewProps> = ({ onOpenTask
     toggleSliceSignalNoise
   } = useApp();
 
-  const [selectedDate, setSelectedDate] = useState<string>(toISODateString(new Date()));
+  const [selectedDate, setSelectedDate] = useState<string>(() => toISODateString(getBangladeshNow()));
   const dateInputRef = useRef<HTMLInputElement>(null);
   const nowIndicatorRef = useRef<HTMLDivElement>(null);
   const timelineContainerRef = useRef<HTMLDivElement>(null);
@@ -60,11 +61,11 @@ export const TimeTracker24View: React.FC<TimeTracker24ViewProps> = ({ onOpenTask
   const [filterType, setFilterType] = useState<'ALL' | 'SIGNAL' | 'NOISE' | 'WORK' | 'BUFFERS' | 'GAPS'>('ALL');
   const [viewMode, setViewMode] = useState<'spine' | 'grid' | 'diary'>('spine');
   const [searchQuery, setSearchQuery] = useState('');
-  const [nowTime, setNowTime] = useState(new Date());
+  const [nowTime, setNowTime] = useState<Date>(() => getBangladeshNow());
 
-  // Real-time clock tick
+  // Real-time clock tick in Bangladesh Standard Time
   useEffect(() => {
-    const timer = setInterval(() => setNowTime(new Date()), 1000);
+    const timer = setInterval(() => setNowTime(getBangladeshNow()), 1000);
     return () => clearInterval(timer);
   }, []);
 
@@ -259,7 +260,7 @@ export const TimeTracker24View: React.FC<TimeTracker24ViewProps> = ({ onOpenTask
             {/* Today Button */}
             <button
               type="button"
-              onClick={() => setSelectedDate(toISODateString(new Date()))}
+              onClick={() => setSelectedDate(toISODateString(getBangladeshNow()))}
               className={`px-3 py-2 rounded-2xl text-xs font-bold transition-all flex items-center gap-1.5 ${
                 isToday
                   ? 'bg-blue-600 text-white shadow-sm'
@@ -546,7 +547,7 @@ export const TimeTracker24View: React.FC<TimeTracker24ViewProps> = ({ onOpenTask
                     <Moon className="w-3.5 h-3.5" />
                   </div>
                   <span className="font-mono text-xs font-black uppercase tracking-wider text-theme-text bg-theme-card px-2.5 py-1 rounded-xl border border-theme-border shadow-2xs">
-                    12:00 AM • Day Starts (Midnight)
+                    12:00 AM • Night & New Date (Midnight)
                   </span>
                 </div>
 

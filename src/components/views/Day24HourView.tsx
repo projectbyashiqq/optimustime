@@ -11,7 +11,8 @@ import {
   isTaskInSleepWindow,
   getTimePeriodForTime,
   getTaskIntervalForDate,
-  taskCrossesMidnight
+  taskCrossesMidnight,
+  getBangladeshNow
 } from '../../utils/timeUtils';
 import { 
   Play, 
@@ -59,7 +60,7 @@ export const Day24HourView: React.FC<Day24HourViewProps> = ({
   } = useApp();
 
   const scrollContainerRef = useRef<HTMLDivElement>(null);
-  const now = new Date();
+  const now = getBangladeshNow();
   const currentMinutes = now.getHours() * 60 + now.getMinutes();
   const isSelectedDateToday = selectedDate === toISODateString(now);
 
