@@ -59,7 +59,8 @@ import {
   Moon,
   Volume2,
   Target,
-  Sunrise
+  Sunrise,
+  Shuffle
 } from 'lucide-react';
 import { RescheduleModal } from '../components/RescheduleModal';
 import { MorningRolloverBanner } from '../components/MorningRolloverBanner';
@@ -403,8 +404,23 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
   // Find Gaps in today's schedule (strictly bounded to working hours, protecting sleep window)
   const wakingStart = capacitySettings.dayStartTime || '06:00 AM';
   const wakingEnd = capacitySettings.dayEndTime || '11:00 PM';
+  const scheduledDateTasks = tasks.filter(t => isTaskScheduledForDate(t, selectedDate));
+  const tasksForGaps = scheduledDateTasks.map(t => {
+    const simList = findSimultaneousTasks(t, scheduledDateTasks);
+    const isSimul = Boolean(
+      (t as any).isSimultaneous ||
+      (t.simultaneousWithIds && t.simultaneousWithIds.length > 0) ||
+      simList.length > 0
+    );
+    return {
+      ...t,
+      isSimultaneous: isSimul,
+      simultaneousWithIds: isSimul ? (t.simultaneousWithIds?.length ? t.simultaneousWithIds : ['simultaneous-active']) : []
+    };
+  });
+
   const gaps: TimeGap[] = findScheduleGaps(
-    tasks.filter(t => isTaskScheduledForDate(t, selectedDate)),
+    tasksForGaps,
     wakingStart,
     wakingEnd,
     bufferNotes.filter(n => n.date === selectedDate),
@@ -1875,9 +1891,22 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
                       const nextDateStr = toISODateString(nextDate);
 
                       const nextDayTasks = tasks.filter(t => isTaskScheduledForDate(t, nextDateStr));
+                      const nextDayTasksForGaps = nextDayTasks.map(t => {
+                        const simList = findSimultaneousTasks(t, nextDayTasks);
+                        const isSimul = Boolean(
+                          (t as any).isSimultaneous ||
+                          (t.simultaneousWithIds && t.simultaneousWithIds.length > 0) ||
+                          simList.length > 0
+                        );
+                        return {
+                          ...t,
+                          isSimultaneous: isSimul,
+                          simultaneousWithIds: isSimul ? (t.simultaneousWithIds?.length ? t.simultaneousWithIds : ['simultaneous-active']) : []
+                        };
+                      });
                       const nextDayBuffers = bufferNotes.filter(n => n.date === nextDateStr);
                       const nextDayGaps = findScheduleGaps(
-                        nextDayTasks,
+                        nextDayTasksForGaps,
                         wakingStart,
                         wakingEnd,
                         nextDayBuffers,
@@ -1927,46 +1956,61 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
                         const isFirstAfterMidnight = wakingEndMin > 1440 && parse12HourToMinutes(firstSuggestion.startTime) < wakingStartMin;
                         const targetFirstDate = isFirstAfterMidnight ? tomorrowDateStr : selectedDate;
                         const humanDur = formatDurationHuman(firstSuggestion.availableMin);
+                        const isSimul = firstSuggestion.originalGap.isSimultaneousSlot;
 
                         return (
-                          <div className="p-3.5 rounded-2xl border border-emerald-500/30 dark:border-emerald-500/40 bg-gradient-to-br from-emerald-500/10 via-teal-500/5 to-transparent dark:from-emerald-500/15 dark:via-teal-950/20 dark:to-transparent shadow-xs space-y-2.5 animate-fade-in relative overflow-hidden group">
+                          <div className="p-3.5 rounded-2xl border border-emerald-500/30 dark:border-emerald-500/40 bg-gradient-to-br from-emerald-500/[0.09] via-teal-500/[0.04] to-transparent dark:from-emerald-500/[0.14] dark:via-teal-500/[0.05] dark:to-transparent shadow-xs space-y-2.5 animate-fade-in relative overflow-hidden group">
                             {/* Ambient Top Glow */}
-                            <div className="absolute -right-6 -top-6 w-20 h-20 bg-emerald-500/15 rounded-full blur-xl pointer-events-none" />
+                            <div className="absolute -right-6 -top-6 w-24 h-24 bg-emerald-500/15 rounded-full blur-xl pointer-events-none" />
 
+                            {/* Top Row: Eyebrow + Available Duration Display */}
                             <div className="flex items-center justify-between gap-2 relative z-10">
-                              <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-emerald-600 text-white shadow-xs flex items-center gap-1.5">
-                                <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />
-                                <span>
-                                  {activeRunningTask 
-                                    ? `1st Suggestion • After Current Work`
-                                    : `1st Suggestion • Starts in 5m`
-                                  }
+                              <div className="flex items-center gap-1.5">
+                                <span className="relative flex h-2 w-2">
+                                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+                                  <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
                                 </span>
-                              </span>
+                                <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-800 dark:text-emerald-300">
+                                  {activeRunningTask ? 'Next Window • After Work' : 'Spotlight Slot • Starts in 5m'}
+                                </span>
+                              </div>
 
-                              <span className="text-[11px] font-mono font-bold px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-800 dark:text-emerald-300 border border-emerald-500/20">
-                                {humanDur} Available
-                              </span>
+                              {/* Apple Health style Available Badge */}
+                              <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-500/15 text-emerald-800 dark:text-emerald-200 border border-emerald-500/30 text-xs font-bold font-mono shrink-0">
+                                <span>{humanDur}</span>
+                                <span className="text-[9px] uppercase tracking-wider font-semibold opacity-75">free</span>
+                              </div>
                             </div>
 
-                            <div className="flex items-center justify-between gap-2 relative z-10">
+                            {/* Marked Sign for Simultaneous Slot */}
+                            {isSimul && (
+                              <div className="relative z-10">
+                                <span className="inline-flex items-center gap-1.5 text-[10px] font-bold px-2.5 py-1 rounded-full bg-purple-500/15 text-purple-700 dark:text-purple-300 border border-purple-500/30">
+                                  <Shuffle className="w-3 h-3 text-purple-600 dark:text-purple-400" />
+                                  <span>Simultaneous • {firstSuggestion.originalGap.simultaneousTaskTitle || 'Parallel Free Slot'}</span>
+                                </span>
+                              </div>
+                            )}
+
+                            {/* Main Row: Non-wrapping Time Range + Modern Apple Buttons */}
+                            <div className="flex items-center justify-between gap-2 relative z-10 pt-0.5">
                               <div className="flex items-center gap-2">
-                                <span className="font-mono text-sm font-bold text-theme-text tracking-tight">
+                                <span className="font-mono text-sm font-bold text-slate-900 dark:text-white tracking-tight whitespace-nowrap">
                                   {firstSuggestion.startTime}
-                                  <span className="text-theme-muted font-light mx-1.5">→</span>
+                                  <span className="text-slate-400 font-normal mx-1.5">→</span>
                                   {firstSuggestion.endTime}
                                 </span>
                                 {isFirstAfterMidnight && (
-                                  <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-md bg-purple-500/10 text-purple-700 dark:text-purple-300 border border-purple-500/20 font-mono">
-                                    📅 Tomorrow
+                                  <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-purple-500/10 text-purple-700 dark:text-purple-300 border border-purple-500/20 font-mono shrink-0">
+                                    Tomorrow
                                   </span>
                                 )}
                               </div>
 
-                              <div className="flex items-center gap-1.5">
+                              <div className="flex items-center gap-1.5 shrink-0">
                                 <button
                                   onClick={() => onOpenTaskModal(undefined, targetFirstDate, firstSuggestion.startTime)}
-                                  className="px-3 py-1.5 rounded-full bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold shadow-xs shadow-emerald-500/25 transition-all active:scale-95 flex items-center gap-1 cursor-pointer"
+                                  className="h-7 px-3.5 rounded-full bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white text-xs font-semibold shadow-xs shadow-emerald-500/25 transition-all flex items-center gap-1.5 cursor-pointer"
                                   title={`Plan task on ${formatDisplayDate(targetFirstDate)} starting at ${firstSuggestion.startTime}`}
                                 >
                                   <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
@@ -1982,7 +2026,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
                                     activityTag: firstSuggestion.availableMin < 10 ? 'Break / Rest' : 'Deep Focus Buffer',
                                     notes: firstSuggestion.availableMin < 10 ? 'Quick noise work / micro-break' : 'Dedicated focus buffer'
                                   })}
-                                  className="p-1.5 rounded-full bg-theme-card hover:bg-theme-card-hover border border-theme-border text-theme-muted hover:text-amber-500 text-xs transition-colors cursor-pointer"
+                                  className="w-7 h-7 rounded-full bg-slate-100 hover:bg-slate-200 dark:bg-white/10 dark:hover:bg-white/15 text-slate-600 dark:text-slate-300 transition-colors flex items-center justify-center cursor-pointer"
                                   title={`Log buffer note on ${formatDisplayDate(targetFirstDate)}`}
                                 >
                                   <Coffee className="w-3.5 h-3.5" />
@@ -1993,94 +2037,94 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
                         );
                       })()}
 
-                      {/* Remaining Upcoming Gaps (Apple-Grade Inset List) */}
+                      {/* Remaining Upcoming Gaps (Apple Inset Precision List) */}
                       {upcomingGaps.length > 0 && (
-                        <div className="space-y-1.5 max-h-[420px] overflow-y-auto pr-1">
+                        <div className="rounded-2xl border border-slate-200/80 dark:border-white/10 bg-slate-50/60 dark:bg-slate-900/40 divide-y divide-slate-200/60 dark:divide-white/[0.06] overflow-hidden max-h-[460px] overflow-y-auto custom-scrollbar">
                           {upcomingGaps.map((item, idx) => {
                             const gap = item.gap;
-                            const isLess15 = gap.durationMinutes < 15;
-                            const isDeep = gap.durationMinutes >= 60;
                             const isAfterMidnight = wakingEndMin > 1440 && parse12HourToMinutes(gap.startTime) < wakingStartMin;
                             const targetGapDate = item.targetDate || (isAfterMidnight ? tomorrowDateStr : selectedDate);
                             const isFutureDay = targetGapDate !== selectedDate;
                             const slotNum = firstSuggestion ? idx + 2 : idx + 1;
                             const humanDur = formatDurationHuman(gap.durationMinutes);
                             const period = getTimePeriodForTime(gap.startTime, timePeriodSettings);
+                            const isSimul = gap.isSimultaneousSlot;
 
                             return (
                               <div
                                 key={`upcoming-${idx}`}
-                                className="group flex items-center justify-between gap-3 p-2.5 rounded-2xl bg-white/70 dark:bg-slate-800/40 hover:bg-white dark:hover:bg-slate-800/80 border border-slate-200/80 dark:border-white/[0.08] shadow-2xs hover:shadow-xs transition-all duration-150"
+                                className="group p-3 hover:bg-white/90 dark:hover:bg-slate-800/60 transition-colors space-y-1.5"
                               >
-                                {/* Left Side: Squircle Slot Number + Structured Meta */}
-                                <div className="flex items-center gap-2.5 min-w-0">
-                                  {/* Apple Squircle Slot Index */}
-                                  <div className="w-7 h-7 rounded-xl bg-blue-500/10 text-blue-600 dark:text-blue-400 text-[11px] font-mono font-bold flex items-center justify-center shrink-0 border border-blue-500/15 group-hover:bg-blue-600 group-hover:text-white transition-colors">
-                                    #{slotNum}
+                                {/* Row 1: Slot Index + Clean Non-wrapping Time Range + Apple Duration Badge */}
+                                <div className="flex items-center justify-between gap-2">
+                                  <div className="flex items-center gap-2 min-w-0">
+                                    <span className="text-[11px] font-mono font-medium text-slate-400 dark:text-slate-500 shrink-0">
+                                      #{String(slotNum).padStart(2, '0')}
+                                    </span>
+                                    <span className="font-mono text-xs font-bold text-slate-900 dark:text-slate-100 tracking-tight whitespace-nowrap">
+                                      {gap.startTime}
+                                      <span className="text-slate-400 font-light mx-1.5">→</span>
+                                      {gap.endTime}
+                                    </span>
                                   </div>
 
-                                  {/* 2-Tier Clean Alignment: Line 1 Time, Line 2 Badges */}
-                                  <div className="min-w-0 flex flex-col justify-center">
-                                    <div className="flex items-center gap-1.5 leading-none">
-                                      <span className="font-mono text-xs font-bold text-theme-text tracking-tight">
-                                        {gap.startTime}
-                                        <span className="text-theme-muted font-light mx-1">→</span>
-                                        {gap.endTime}
-                                      </span>
-                                    </div>
-
-                                    {/* Meta Badges Row: Duration pill, Date tag, Period */}
-                                    <div className="flex items-center gap-1.5 mt-1 flex-wrap">
-                                      <span className={`text-[10px] font-mono font-semibold px-1.5 py-0.2 rounded-md leading-tight ${
-                                        isLess15
-                                          ? 'bg-amber-500/10 text-amber-700 dark:text-amber-300 border border-amber-500/20'
-                                          : isDeep
-                                          ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border border-emerald-500/20'
-                                          : 'bg-blue-500/10 text-blue-700 dark:text-blue-300 border border-blue-500/20'
-                                      }`}>
-                                        {humanDur}
-                                      </span>
-
-                                      {isFutureDay && (
-                                        <span className="text-[9px] font-bold px-1.5 py-0.2 rounded-md bg-purple-500/10 text-purple-700 dark:text-purple-300 border border-purple-500/20 font-mono">
-                                          📅 {formatDisplayDate(targetGapDate)}
-                                        </span>
-                                      )}
-
-                                      {period && (
-                                        <span className="text-[10px] text-theme-muted hidden sm:inline-flex items-center gap-0.5">
-                                          <span>{period.emoji}</span>
-                                          <span className="text-[9px] font-medium">{period.name}</span>
-                                        </span>
-                                      )}
-                                    </div>
+                                  {/* Apple Health style duration pill */}
+                                  <div className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border border-emerald-500/20 text-[11px] font-bold font-mono shrink-0 whitespace-nowrap">
+                                    <span>{humanDur}</span>
+                                    <span className="text-[9px] uppercase tracking-wider font-semibold opacity-75">free</span>
                                   </div>
                                 </div>
 
-                                {/* Right Side: Apple Pill Action Buttons */}
-                                <div className="flex items-center gap-1.5 shrink-0">
-                                  <button
-                                    onClick={() => onOpenTaskModal(undefined, targetGapDate, gap.startTime)}
-                                    className="px-3 py-1.5 rounded-full bg-blue-600 hover:bg-blue-500 active:scale-95 text-white text-xs font-semibold shadow-xs shadow-blue-500/20 transition-all flex items-center gap-1 cursor-pointer"
-                                    title={`Plan task on ${formatDisplayDate(targetGapDate)} starting at ${gap.startTime}`}
-                                  >
-                                    <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
-                                    <span>Schedule</span>
-                                  </button>
+                                {/* Row 2: Badges (Simultaneous Marked Sign, Date, Period) + Apple Capsule Action Buttons */}
+                                <div className="flex items-center justify-between gap-2 pt-0.5">
+                                  <div className="flex items-center gap-1.5 flex-wrap min-w-0">
+                                    {/* Marked Sign for Simultaneous Slot */}
+                                    {isSimul && (
+                                      <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-purple-500/15 text-purple-700 dark:text-purple-300 border border-purple-500/25 shrink-0 animate-pulse">
+                                        <Shuffle className="w-2.5 h-2.5 text-purple-600 dark:text-purple-400" />
+                                        <span>Simultaneous • {gap.simultaneousTaskTitle || 'Co-run Slot'}</span>
+                                      </span>
+                                    )}
 
-                                  <button
-                                    onClick={() => openBufferNoteModal({
-                                      date: targetGapDate,
-                                      startTime: gap.startTime,
-                                      endTime: gap.endTime,
-                                      durationMinutes: gap.durationMinutes,
-                                      activityTag: isLess15 ? 'Break / Rest' : 'Deep Focus Buffer'
-                                    })}
-                                    className="p-1.5 rounded-full bg-theme-card-hover hover:bg-theme-border border border-theme-border text-theme-muted hover:text-amber-500 transition-colors cursor-pointer"
-                                    title={`Pre-log planned buffer note on ${formatDisplayDate(targetGapDate)}`}
-                                  >
-                                    <Coffee className="w-3.5 h-3.5" />
-                                  </button>
+                                    {isFutureDay && (
+                                      <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border border-indigo-500/20 shrink-0 font-mono">
+                                        {formatDisplayDate(targetGapDate)}
+                                      </span>
+                                    )}
+
+                                    {period && (
+                                      <span className="text-[10px] text-slate-500 dark:text-slate-400 flex items-center gap-1 shrink-0">
+                                        <span>{period.emoji}</span>
+                                        <span>{period.name}</span>
+                                      </span>
+                                    )}
+                                  </div>
+
+                                  {/* Action Buttons: Apple Capsule Schedule + Buffer */}
+                                  <div className="flex items-center gap-1.5 shrink-0">
+                                    <button
+                                      onClick={() => onOpenTaskModal(undefined, targetGapDate, gap.startTime)}
+                                      className="h-6 px-3 rounded-full text-[11px] font-semibold tracking-tight text-white bg-slate-900 hover:bg-slate-800 dark:bg-white dark:text-slate-900 dark:hover:bg-slate-100 shadow-2xs active:scale-95 transition-all flex items-center gap-1 cursor-pointer shrink-0"
+                                      title={`Plan task on ${formatDisplayDate(targetGapDate)} starting at ${gap.startTime}`}
+                                    >
+                                      <Plus className="w-3 h-3 stroke-[2.5]" />
+                                      <span>Schedule</span>
+                                    </button>
+
+                                    <button
+                                      onClick={() => openBufferNoteModal({
+                                        date: targetGapDate,
+                                        startTime: gap.startTime,
+                                        endTime: gap.endTime,
+                                        durationMinutes: gap.durationMinutes,
+                                        activityTag: 'Deep Focus Buffer'
+                                      })}
+                                      className="w-6 h-6 rounded-full text-slate-400 hover:text-amber-500 hover:bg-slate-200/60 dark:hover:bg-white/10 transition-colors flex items-center justify-center cursor-pointer shrink-0"
+                                      title={`Log buffer note on ${formatDisplayDate(targetGapDate)}`}
+                                    >
+                                      <Coffee className="w-3 h-3" />
+                                    </button>
+                                  </div>
                                 </div>
                               </div>
                             );

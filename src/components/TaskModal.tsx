@@ -145,7 +145,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
   
   // Simultaneous execution option (Co-working / Parallel Slot)
   const [isSimultaneous, setIsSimultaneous] = useState<boolean>(
-    Boolean(taskToEdit?.simultaneousWithIds && taskToEdit.simultaneousWithIds.length > 0)
+    Boolean(taskToEdit?.isSimultaneous || (taskToEdit?.simultaneousWithIds && taskToEdit.simultaneousWithIds.length > 0))
   );
 
   // Plan / Project Folder Grouping
@@ -556,7 +556,8 @@ export const TaskModal: React.FC<TaskModalProps> = ({
       recurrence,
       selectedDays: recurrence === 'Selected Days' ? selectedDays : [],
       isMandatorySchedule,
-      simultaneousWithIds: isSimultaneous ? liveOverlaps.map(t => t.id) : [],
+      isSimultaneous,
+      simultaneousWithIds: isSimultaneous ? (liveOverlaps.length > 0 ? liveOverlaps.map(t => t.id) : (taskToEdit?.simultaneousWithIds || [])) : [],
       planProjectId: planProjectId || undefined,
       notes,
       links,

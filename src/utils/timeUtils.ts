@@ -204,11 +204,14 @@ export interface TimeGap {
   startTime: string;
   endTime: string;
   durationMinutes: number;
+  isSimultaneousSlot?: boolean;
+  simultaneousTaskTitle?: string;
+  simultaneousTaskId?: string;
 }
 
 // Find empty gaps between scheduled tasks, post-task buffers, and logged buffer notes for a day
 export function findScheduleGaps(
-  tasks: Array<{ startTime: string; endTime: string; status: string; bufferMinutes?: number }>,
+  tasks: Array<{ startTime: string; endTime: string; status: string; bufferMinutes?: number; simultaneousWithIds?: string[]; title?: string; id?: string }>,
   dayStartTime = '06:00 AM',
   dayEndTime = '11:00 PM',
   bufferNotes: Array<{ startTime: string; endTime: string; date?: string }> = [],
@@ -230,8 +233,9 @@ export function findScheduleGaps(
   
   // Combine task intervals (including task + bufferMinutes) and logged bufferNotes intervals
   const taskIntervals: { start: number; end: number }[] = [];
+  const simultaneousGaps: TimeGap[] = [];
 
-  for (const t of activeTasks as Array<{ startTime: string; endTime: string; status: string; bufferMinutes?: number; actualEndTime?: string; completedBeforeTimeOccurred?: boolean; totalActualMinutes?: number }>) {
+  for (const t of activeTasks as Array<{ startTime: string; endTime: string; status: string; bufferMinutes?: number; actualEndTime?: string; completedBeforeTimeOccurred?: boolean; totalActualMinutes?: number; simultaneousWithIds?: string[]; title?: string; id?: string }>) {
     // If task was completed before its scheduled window even occurred:
     // The scheduled slot is NOT occupied by work—the entire scheduled slot is FREE TIME!
     if (t.status === 'Done' && t.completedBeforeTimeOccurred) {
@@ -240,6 +244,26 @@ export function findScheduleGaps(
 
     let s = parse12HourToMinutes(t.startTime);
     let e = parse12HourToMinutes(t.endTime);
+
+    // Simultaneous tasks allow parallel concurrent work!
+    // They DO NOT block the calendar, and are considered as available free slots with a marked sign.
+    const isSimul = Boolean((t as any).isSimultaneous || (t.simultaneousWithIds && t.simultaneousWithIds.length > 0));
+    if (isSimul) {
+      if (e < s) e += 1440;
+      if (dayEndMin > 1440 && s < dayStartMin) {
+        s += 1440;
+        e += 1440;
+      }
+      simultaneousGaps.push({
+        startTime: t.startTime,
+        endTime: t.endTime,
+        durationMinutes: Math.max(0, e - s),
+        isSimultaneousSlot: true,
+        simultaneousTaskTitle: t.title,
+        simultaneousTaskId: t.id
+      });
+      continue;
+    }
 
     // If task is Done and finished early, only occupy up to its actual completion time + buffer!
     // The rest of its scheduled window is freed up as FREE TIME!
@@ -353,6 +377,17 @@ export function findScheduleGaps(
         durationMinutes: gapDuration
       });
     }
+  }
+
+  if (simultaneousGaps.length > 0) {
+    gaps.push(...simultaneousGaps);
+    gaps.sort((a, b) => {
+      let aStart = parse12HourToMinutes(a.startTime);
+      let bStart = parse12HourToMinutes(b.startTime);
+      if (dayEndMin > 1440 && aStart < dayStartMin) aStart += 1440;
+      if (dayEndMin > 1440 && bStart < dayStartMin) bStart += 1440;
+      return aStart - bStart;
+    });
   }
 
   return gaps;

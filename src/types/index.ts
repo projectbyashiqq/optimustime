@@ -81,6 +81,7 @@ export interface Task {
   subtasks: SubTask[];
   
   // Simultaneous execution tracking
+  isSimultaneous?: boolean;
   simultaneousWithIds?: string[];
 
   // Emergency Buffer Flag
