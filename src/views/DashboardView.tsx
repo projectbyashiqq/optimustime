@@ -1589,22 +1589,33 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
                   return sMin <= currentMinutesFromMidnight;
                 })
               : [];
+            const formatDurationHuman = (mins: number) => {
+              if (mins < 60) return `${mins}m`;
+              const h = Math.floor(mins / 60);
+              const m = mins % 60;
+              return m > 0 ? `${h}h ${m}m` : `${h}h`;
+            };
 
             return (
-              <div className="glass-panel p-5 rounded-2xl border border-theme-border space-y-3">
-                <div className="flex items-center justify-between">
-                  <h3 className="text-xs font-bold text-theme-text uppercase tracking-wider flex items-center gap-1.5 font-display">
-                    <Sparkles className="w-4 h-4 text-amber-500" />
-                    Dynamic Gap Finder
-                  </h3>
-                  <span className="text-[10px] font-bold px-2 py-0.5 bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-300 rounded-full">
+              <div className="glass-panel p-5 rounded-3xl border border-slate-200/80 dark:border-white/10 bg-white/70 dark:bg-slate-900/70 backdrop-blur-2xl shadow-sm space-y-4">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-7 h-7 rounded-xl bg-gradient-to-br from-amber-400 to-amber-600 text-white flex items-center justify-center shadow-xs shadow-amber-500/30 shrink-0">
+                      <Sparkles className="w-3.5 h-3.5 fill-white" />
+                    </div>
+                    <div>
+                      <h3 className="text-xs font-bold text-theme-text uppercase tracking-wider font-display">
+                        Dynamic Gap Finder
+                      </h3>
+                      <span className="text-[10px] text-theme-muted font-medium block">
+                        Real-time intelligent capacity analysis
+                      </span>
+                    </div>
+                  </div>
+                  <span className="text-[10px] font-semibold px-2.5 py-0.5 bg-amber-500/10 text-amber-700 dark:text-amber-300 border border-amber-500/25 rounded-full shrink-0">
                     10+ Available Slots
                   </span>
                 </div>
-                
-                <p className="text-xs text-theme-muted leading-relaxed">
-                  Real-time slot analysis. Before current time: suggests buffer notes. Unstarted tasks: suggests shift or buffer. After current time: suggests scheduling tasks.
-                </p>
 
                 {/* Unstarted Task Alert in Current Slot */}
                 {isSelectedToday && unstartedCurrentTasks.length > 0 && (
@@ -1911,54 +1922,54 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
                   return (
                     <div className="space-y-3">
                       
-                      {/* 1st Suggestion Card (Sleek, Compact, High-Density) */}
+                      {/* 1st Suggestion Card (Apple Dynamic Spotlight) */}
                       {firstSuggestion && (() => {
                         const isFirstAfterMidnight = wakingEndMin > 1440 && parse12HourToMinutes(firstSuggestion.startTime) < wakingStartMin;
                         const targetFirstDate = isFirstAfterMidnight ? tomorrowDateStr : selectedDate;
+                        const humanDur = formatDurationHuman(firstSuggestion.availableMin);
 
                         return (
-                          <div className="p-3 rounded-xl border-2 border-emerald-500/50 bg-gradient-to-br from-emerald-500/10 via-teal-500/5 to-blue-500/5 shadow-xs space-y-2 animate-fade-in">
-                            <div className="flex items-center justify-between gap-2 flex-wrap">
-                              <div className="flex items-center gap-1.5 flex-wrap">
-                                <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-emerald-600 text-white shadow-2xs flex items-center gap-1">
-                                  <Sparkles className="w-3 h-3 fill-white" />
-                                  <span>
-                                    {activeRunningTask 
-                                      ? `1st Suggestion • After Current Work`
-                                      : `1st Suggestion • Starts in 5m`
-                                    }
-                                  </span>
-                                </span>
-                                <span className="font-mono text-xs font-bold text-theme-text">
-                                  {firstSuggestion.startTime} - {firstSuggestion.endTime}
-                                </span>
-                              </div>
+                          <div className="p-3.5 rounded-2xl border border-emerald-500/30 dark:border-emerald-500/40 bg-gradient-to-br from-emerald-500/10 via-teal-500/5 to-transparent dark:from-emerald-500/15 dark:via-teal-950/20 dark:to-transparent shadow-xs space-y-2.5 animate-fade-in relative overflow-hidden group">
+                            {/* Ambient Top Glow */}
+                            <div className="absolute -right-6 -top-6 w-20 h-20 bg-emerald-500/15 rounded-full blur-xl pointer-events-none" />
 
-                              <span className="text-xs font-black font-mono px-2 py-0.5 rounded-md bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300">
-                                {firstSuggestion.availableMin}m Available
+                            <div className="flex items-center justify-between gap-2 relative z-10">
+                              <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-emerald-600 text-white shadow-xs flex items-center gap-1.5">
+                                <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />
+                                <span>
+                                  {activeRunningTask 
+                                    ? `1st Suggestion • After Current Work`
+                                    : `1st Suggestion • Starts in 5m`
+                                  }
+                                </span>
+                              </span>
+
+                              <span className="text-[11px] font-mono font-bold px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-800 dark:text-emerald-300 border border-emerald-500/20">
+                                {humanDur} Available
                               </span>
                             </div>
 
-                            <div className="flex items-center justify-between gap-2 pt-1.5 border-t border-emerald-500/20 flex-wrap">
-                              <span className="text-[11px] text-theme-muted flex items-center gap-1">
-                                {firstSuggestion.availableMin < 10 ? (
-                                  <span className="text-amber-600 dark:text-amber-400 font-medium flex items-center gap-1">
-                                    <Volume2 className="w-3 h-3 shrink-0" /> Quick noise / break (&lt;10m)
-                                  </span>
-                                ) : (
-                                  <span className="text-emerald-600 dark:text-emerald-400 font-medium flex items-center gap-1">
-                                    <Target className="w-3 h-3 text-emerald-500 shrink-0" /> Deep Signal execution window
+                            <div className="flex items-center justify-between gap-2 relative z-10">
+                              <div className="flex items-center gap-2">
+                                <span className="font-mono text-sm font-bold text-theme-text tracking-tight">
+                                  {firstSuggestion.startTime}
+                                  <span className="text-theme-muted font-light mx-1.5">→</span>
+                                  {firstSuggestion.endTime}
+                                </span>
+                                {isFirstAfterMidnight && (
+                                  <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-md bg-purple-500/10 text-purple-700 dark:text-purple-300 border border-purple-500/20 font-mono">
+                                    📅 Tomorrow
                                   </span>
                                 )}
-                              </span>
+                              </div>
 
                               <div className="flex items-center gap-1.5">
                                 <button
                                   onClick={() => onOpenTaskModal(undefined, targetFirstDate, firstSuggestion.startTime)}
-                                  className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-bold shadow-2xs transition-transform active:scale-95 flex items-center gap-1 cursor-pointer"
+                                  className="px-3 py-1.5 rounded-full bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold shadow-xs shadow-emerald-500/25 transition-all active:scale-95 flex items-center gap-1 cursor-pointer"
                                   title={`Plan task on ${formatDisplayDate(targetFirstDate)} starting at ${firstSuggestion.startTime}`}
                                 >
-                                  <Plus className="w-3 h-3 stroke-[3]" />
+                                  <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
                                   <span>Schedule</span>
                                 </button>
 
@@ -1971,10 +1982,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
                                     activityTag: firstSuggestion.availableMin < 10 ? 'Break / Rest' : 'Deep Focus Buffer',
                                     notes: firstSuggestion.availableMin < 10 ? 'Quick noise work / micro-break' : 'Dedicated focus buffer'
                                   })}
-                                  className="p-1 rounded-lg bg-theme-card hover:bg-theme-card-hover border border-theme-border text-theme-muted hover:text-amber-500 text-[11px] transition-colors cursor-pointer"
+                                  className="p-1.5 rounded-full bg-theme-card hover:bg-theme-card-hover border border-theme-border text-theme-muted hover:text-amber-500 text-xs transition-colors cursor-pointer"
                                   title={`Log buffer note on ${formatDisplayDate(targetFirstDate)}`}
                                 >
-                                  <Coffee className="w-3 h-3" />
+                                  <Coffee className="w-3.5 h-3.5" />
                                 </button>
                               </div>
                             </div>
@@ -1982,56 +1993,79 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
                         );
                       })()}
 
-                      {/* Remaining Upcoming Gaps (Compact High-Density List with Smooth Scrolling) */}
+                      {/* Remaining Upcoming Gaps (Apple-Grade Inset List) */}
                       {upcomingGaps.length > 0 && (
-                        <div className="space-y-1.5 max-h-[380px] overflow-y-auto pr-1">
+                        <div className="space-y-1.5 max-h-[420px] overflow-y-auto pr-1">
                           {upcomingGaps.map((item, idx) => {
                             const gap = item.gap;
-                            const isLess10 = gap.durationMinutes < 10;
+                            const isLess15 = gap.durationMinutes < 15;
+                            const isDeep = gap.durationMinutes >= 60;
                             const isAfterMidnight = wakingEndMin > 1440 && parse12HourToMinutes(gap.startTime) < wakingStartMin;
                             const targetGapDate = item.targetDate || (isAfterMidnight ? tomorrowDateStr : selectedDate);
                             const isFutureDay = targetGapDate !== selectedDate;
+                            const slotNum = firstSuggestion ? idx + 2 : idx + 1;
+                            const humanDur = formatDurationHuman(gap.durationMinutes);
+                            const period = getTimePeriodForTime(gap.startTime, timePeriodSettings);
 
                             return (
                               <div
                                 key={`upcoming-${idx}`}
-                                className="group flex items-center justify-between gap-2 p-2.5 rounded-xl border border-theme-border/80 hover:border-blue-500/50 bg-theme-card/60 hover:bg-theme-card transition-all"
+                                className="group flex items-center justify-between gap-3 p-2.5 rounded-2xl bg-white/70 dark:bg-slate-800/40 hover:bg-white dark:hover:bg-slate-800/80 border border-slate-200/80 dark:border-white/[0.08] shadow-2xs hover:shadow-xs transition-all duration-150"
                               >
-                                {/* Left side: Slot # badge, Time, Date badge, Duration */}
-                                <div className="flex items-center gap-2 min-w-0 flex-wrap">
-                                  <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-blue-100 dark:bg-blue-950/70 text-blue-700 dark:text-blue-300 shrink-0">
-                                    #{firstSuggestion ? idx + 2 : idx + 1}
-                                  </span>
-
-                                  <div className="flex items-center gap-1.5">
-                                    <span className="font-mono text-xs font-bold text-theme-text">
-                                      {gap.startTime} - {gap.endTime}
-                                    </span>
-                                    {isFutureDay && (
-                                      <span className="text-[9px] font-bold px-1.5 py-0.2 rounded bg-purple-100 dark:bg-purple-950 text-purple-700 dark:text-purple-300 border border-purple-300/60 dark:border-purple-800/60 font-mono shrink-0">
-                                        📅 {formatDisplayDate(targetGapDate)}
-                                      </span>
-                                    )}
+                                {/* Left Side: Squircle Slot Number + Structured Meta */}
+                                <div className="flex items-center gap-2.5 min-w-0">
+                                  {/* Apple Squircle Slot Index */}
+                                  <div className="w-7 h-7 rounded-xl bg-blue-500/10 text-blue-600 dark:text-blue-400 text-[11px] font-mono font-bold flex items-center justify-center shrink-0 border border-blue-500/15 group-hover:bg-blue-600 group-hover:text-white transition-colors">
+                                    #{slotNum}
                                   </div>
 
-                                  <span className={`text-[11px] font-mono font-black px-1.5 py-0.5 rounded-md ${
-                                    isLess10
-                                      ? 'bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-400'
-                                      : 'bg-blue-100 dark:bg-blue-950/60 text-blue-700 dark:text-blue-400'
-                                  }`}>
-                                    {gap.durationMinutes}m
-                                  </span>
+                                  {/* 2-Tier Clean Alignment: Line 1 Time, Line 2 Badges */}
+                                  <div className="min-w-0 flex flex-col justify-center">
+                                    <div className="flex items-center gap-1.5 leading-none">
+                                      <span className="font-mono text-xs font-bold text-theme-text tracking-tight">
+                                        {gap.startTime}
+                                        <span className="text-theme-muted font-light mx-1">→</span>
+                                        {gap.endTime}
+                                      </span>
+                                    </div>
+
+                                    {/* Meta Badges Row: Duration pill, Date tag, Period */}
+                                    <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+                                      <span className={`text-[10px] font-mono font-semibold px-1.5 py-0.2 rounded-md leading-tight ${
+                                        isLess15
+                                          ? 'bg-amber-500/10 text-amber-700 dark:text-amber-300 border border-amber-500/20'
+                                          : isDeep
+                                          ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border border-emerald-500/20'
+                                          : 'bg-blue-500/10 text-blue-700 dark:text-blue-300 border border-blue-500/20'
+                                      }`}>
+                                        {humanDur}
+                                      </span>
+
+                                      {isFutureDay && (
+                                        <span className="text-[9px] font-bold px-1.5 py-0.2 rounded-md bg-purple-500/10 text-purple-700 dark:text-purple-300 border border-purple-500/20 font-mono">
+                                          📅 {formatDisplayDate(targetGapDate)}
+                                        </span>
+                                      )}
+
+                                      {period && (
+                                        <span className="text-[10px] text-theme-muted hidden sm:inline-flex items-center gap-0.5">
+                                          <span>{period.emoji}</span>
+                                          <span className="text-[9px] font-medium">{period.name}</span>
+                                        </span>
+                                      )}
+                                    </div>
+                                  </div>
                                 </div>
 
-                                {/* Right side: Compact Action Buttons */}
-                                <div className="flex items-center gap-1 shrink-0">
+                                {/* Right Side: Apple Pill Action Buttons */}
+                                <div className="flex items-center gap-1.5 shrink-0">
                                   <button
                                     onClick={() => onOpenTaskModal(undefined, targetGapDate, gap.startTime)}
-                                    className="px-2.5 py-1 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-[11px] font-bold shadow-2xs transition-transform active:scale-95 flex items-center gap-1 cursor-pointer"
+                                    className="px-3 py-1.5 rounded-full bg-blue-600 hover:bg-blue-500 active:scale-95 text-white text-xs font-semibold shadow-xs shadow-blue-500/20 transition-all flex items-center gap-1 cursor-pointer"
                                     title={`Plan task on ${formatDisplayDate(targetGapDate)} starting at ${gap.startTime}`}
                                   >
-                                    <Plus className="w-3 h-3 stroke-[3]" />
-                                    <span className="hidden sm:inline">Schedule</span>
+                                    <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
+                                    <span>Schedule</span>
                                   </button>
 
                                   <button
@@ -2040,12 +2074,12 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
                                       startTime: gap.startTime,
                                       endTime: gap.endTime,
                                       durationMinutes: gap.durationMinutes,
-                                      activityTag: isLess10 ? 'Break / Rest' : 'Deep Focus Buffer'
+                                      activityTag: isLess15 ? 'Break / Rest' : 'Deep Focus Buffer'
                                     })}
-                                    className="p-1 rounded-lg bg-theme-card hover:bg-theme-card-hover border border-theme-border text-theme-muted hover:text-amber-500 text-[11px] transition-colors cursor-pointer"
+                                    className="p-1.5 rounded-full bg-theme-card-hover hover:bg-theme-border border border-theme-border text-theme-muted hover:text-amber-500 transition-colors cursor-pointer"
                                     title={`Pre-log planned buffer note on ${formatDisplayDate(targetGapDate)}`}
                                   >
-                                    <Coffee className="w-3 h-3" />
+                                    <Coffee className="w-3.5 h-3.5" />
                                   </button>
                                 </div>
                               </div>
