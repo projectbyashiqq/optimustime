@@ -33,7 +33,7 @@ export const ConflictModal: React.FC<ConflictModalProps> = ({
   const newCalculatedEnd = addMinutesToTime(newCalculatedStart, appointedMinutes);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in">
+    <div className="fixed inset-0 z-[80] flex items-center justify-center p-4 bg-black/75 backdrop-blur-md animate-fade-in">
       <div className="bg-theme-card border border-red-300 dark:border-red-800 rounded-2xl max-w-lg w-full p-6 shadow-2xl space-y-5 animate-slide-up">
         
         {/* Header */}

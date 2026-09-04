@@ -17,7 +17,7 @@ import { AnalyticsView } from './views/AnalyticsView';
 import { NotesView } from './views/NotesView';
 import { AdminSettingsView } from './views/AdminSettingsView';
 import { LoginGate } from './components/LoginGate';
-import { Task } from './types';
+import { Task, RecurrenceType } from './types';
 
 export const AppContent: React.FC = () => {
   const { activeTab, isAuthenticated, isRecurringHubOpen, closeRecurringHub } = useApp();
@@ -35,6 +35,8 @@ export const AppContent: React.FC = () => {
   const [modalInitialProjectCode, setModalInitialProjectCode] = useState<string | undefined>(undefined);
   const [modalInitialCategory, setModalInitialCategory] = useState<string | undefined>(undefined);
   const [modalInitialPlanProjectId, setModalInitialPlanProjectId] = useState<string | undefined>(undefined);
+  const [modalInitialRecurrence, setModalInitialRecurrence] = useState<RecurrenceType | undefined>(undefined);
+  const [isMasterSeriesAdmin, setIsMasterSeriesAdmin] = useState<boolean>(false);
 
   const handleOpenTaskModal = (
     task?: Task, 
@@ -42,7 +44,9 @@ export const AppContent: React.FC = () => {
     startTime?: string,
     projectCode?: string,
     category?: string,
-    planProjectId?: string
+    planProjectId?: string,
+    initialRecurrence?: RecurrenceType,
+    isMasterRecurringSeriesAdmin?: boolean
   ) => {
     setTaskToEdit(task || null);
     setModalInitialDate(date);
@@ -50,6 +54,8 @@ export const AppContent: React.FC = () => {
     setModalInitialProjectCode(projectCode);
     setModalInitialCategory(category);
     setModalInitialPlanProjectId(planProjectId);
+    setModalInitialRecurrence(initialRecurrence);
+    setIsMasterSeriesAdmin(Boolean(isMasterRecurringSeriesAdmin));
     setIsTaskModalOpen(true);
   };
 
@@ -61,6 +67,8 @@ export const AppContent: React.FC = () => {
     setModalInitialProjectCode(undefined);
     setModalInitialCategory(undefined);
     setModalInitialPlanProjectId(undefined);
+    setModalInitialRecurrence(undefined);
+    setIsMasterSeriesAdmin(false);
   };
 
   return (
@@ -112,6 +120,8 @@ export const AppContent: React.FC = () => {
           initialProjectCode={modalInitialProjectCode}
           initialCategory={modalInitialCategory}
           initialPlanProjectId={modalInitialPlanProjectId}
+          initialRecurrence={modalInitialRecurrence}
+          isMasterRecurringSeriesAdmin={isMasterSeriesAdmin}
           onClose={handleCloseTaskModal}
         />
       )}

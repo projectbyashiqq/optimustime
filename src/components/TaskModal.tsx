@@ -62,6 +62,8 @@ interface TaskModalProps {
   initialProjectCode?: string;
   initialCategory?: string;
   initialPlanProjectId?: string;
+  initialRecurrence?: RecurrenceType;
+  isMasterRecurringSeriesAdmin?: boolean;
   onClose: () => void;
 }
 
@@ -72,6 +74,8 @@ export const TaskModal: React.FC<TaskModalProps> = ({
   initialProjectCode,
   initialCategory,
   initialPlanProjectId,
+  initialRecurrence,
+  isMasterRecurringSeriesAdmin = false,
   onClose
 }) => {
   const { 
@@ -84,6 +88,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
     bufferNotes,
     addTask, 
     updateTask, 
+    updateRecurringSeriesEntirely,
     detectConflicts, 
     cascadeShiftDownstream,
     linkSimultaneousTasks,
@@ -210,9 +215,17 @@ export const TaskModal: React.FC<TaskModalProps> = ({
   const [endTime, setEndTime] = useState<string>(initialSmartSlot.endTime);
   
   const [status, setStatus] = useState<TaskStatus>(taskToEdit?.status || 'Pending');
-  const [recurrence, setRecurrence] = useState<RecurrenceType>(taskToEdit?.recurrence || 'None');
-  const [selectedDays, setSelectedDays] = useState<string[]>(taskToEdit?.selectedDays || []);
-  const [recurringEditScope, setRecurringEditScope] = useState<'single' | 'series'>('single');
+  const [recurrence, setRecurrence] = useState<RecurrenceType>(
+    taskToEdit?.recurrence || initialRecurrence || (isMasterRecurringSeriesAdmin ? 'Daily' : 'None')
+  );
+  const [selectedDays, setSelectedDays] = useState<string[]>(
+    taskToEdit?.selectedDays || (initialRecurrence === 'Selected Days' ? ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'] : [])
+  );
+  const [recurringEditScope, setRecurringEditScope] = useState<'single' | 'series'>(
+    isMasterRecurringSeriesAdmin ? 'series' : 'single'
+  );
+  const [seriesPropagateScope, setSeriesPropagateScope] = useState<'all' | 'future'>('all');
+  const [seriesClearExclusions, setSeriesClearExclusions] = useState<boolean>(false);
   const [notes, setNotes] = useState(taskToEdit?.notes || '');
   const [links, setLinks] = useState<TaskLink[]>(taskToEdit?.links || []);
   const [subtasks, setSubtasks] = useState<SubTask[]>(taskToEdit?.subtasks || []);
@@ -522,7 +535,14 @@ export const TaskModal: React.FC<TaskModalProps> = ({
     };
 
     if (isEditing && taskToEdit) {
-      if (taskToEdit.recurrence && taskToEdit.recurrence !== 'None' && recurringEditScope === 'single') {
+      if (isMasterRecurringSeriesAdmin || recurringEditScope === 'series') {
+        // SUPREME GOD ADMIN: Entirely update recurring series everywhere
+        updateRecurringSeriesEntirely(taskToEdit.id, payload, {
+          syncSnapshots: true,
+          propagateScope: seriesPropagateScope,
+          clearExclusions: seriesClearExclusions
+        });
+      } else if (taskToEdit.recurrence && taskToEdit.recurrence !== 'None' && recurringEditScope === 'single') {
         // Exclude today/this occurrence from master series so future recurring stays fit on original time
         const targetDate = initialDate || taskToEdit.taskDate || taskDate;
         const existingExclusions = taskToEdit.excludedDates || [];
@@ -589,10 +609,18 @@ export const TaskModal: React.FC<TaskModalProps> = ({
     };
 
     if (isEditing && taskToEdit) {
-      updateTask({
-        ...taskToEdit,
-        ...payload
-      });
+      if (isMasterRecurringSeriesAdmin || recurringEditScope === 'series') {
+        updateRecurringSeriesEntirely(taskToEdit.id, payload, {
+          syncSnapshots: true,
+          propagateScope: seriesPropagateScope,
+          clearExclusions: seriesClearExclusions
+        });
+      } else {
+        updateTask({
+          ...taskToEdit,
+          ...payload
+        });
+      }
     } else {
       addTask(payload);
     }
@@ -630,10 +658,18 @@ export const TaskModal: React.FC<TaskModalProps> = ({
     };
 
     if (isEditing && taskToEdit) {
-      updateTask({
-        ...taskToEdit,
-        ...payload
-      });
+      if (isMasterRecurringSeriesAdmin || recurringEditScope === 'series') {
+        updateRecurringSeriesEntirely(taskToEdit.id, payload, {
+          syncSnapshots: true,
+          propagateScope: seriesPropagateScope,
+          clearExclusions: seriesClearExclusions
+        });
+      } else {
+        updateTask({
+          ...taskToEdit,
+          ...payload
+        });
+      }
     } else {
       addTask(payload);
     }
@@ -673,10 +709,18 @@ export const TaskModal: React.FC<TaskModalProps> = ({
     };
 
     if (isEditing && taskToEdit) {
-      updateTask({
-        ...taskToEdit,
-        ...payload
-      });
+      if (isMasterRecurringSeriesAdmin || recurringEditScope === 'series') {
+        updateRecurringSeriesEntirely(taskToEdit.id, payload, {
+          syncSnapshots: true,
+          propagateScope: seriesPropagateScope,
+          clearExclusions: seriesClearExclusions
+        });
+      } else {
+        updateTask({
+          ...taskToEdit,
+          ...payload
+        });
+      }
     } else {
       addTask(payload);
     }
@@ -688,18 +732,31 @@ export const TaskModal: React.FC<TaskModalProps> = ({
 
   return (
     <>
-      <div className="fixed inset-0 z-40 flex items-center justify-center p-3 sm:p-4 bg-black/60 backdrop-blur-sm animate-fade-in overflow-y-auto">
+      <div className="fixed inset-0 z-[70] flex items-center justify-center p-3 sm:p-4 bg-black/75 backdrop-blur-md animate-fade-in overflow-y-auto">
         <div className="bg-theme-card border border-theme-border rounded-2xl max-w-2xl w-full p-5 sm:p-6 shadow-2xl space-y-5 my-8 animate-slide-up">
           
           {/* Modal Header */}
           <div className="flex items-center justify-between border-b border-theme-border pb-4">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-blue-100 dark:bg-blue-950/60 flex items-center justify-center text-blue-600 dark:text-blue-400">
-                <Clock className="w-5 h-5" />
+              <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-bold ${
+                isMasterRecurringSeriesAdmin 
+                  ? 'bg-gradient-to-tr from-blue-600 via-indigo-600 to-purple-600 text-white shadow-md shadow-indigo-500/25 text-lg'
+                  : 'bg-blue-100 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400'
+              }`}>
+                {isMasterRecurringSeriesAdmin ? '👑' : <Clock className="w-5 h-5" />}
               </div>
               <div>
-                <h2 className="text-base sm:text-lg font-bold text-theme-text">
-                  {isEditing ? 'Edit Task Matrix' : 'Create New Scheduled Task'}
+                <h2 className="text-base sm:text-lg font-bold text-theme-text flex items-center gap-2">
+                  <span>
+                    {isMasterRecurringSeriesAdmin 
+                      ? (isEditing ? 'God Admin: Edit Master Recurring Series' : 'God Admin: Create New Recurring Series')
+                      : (isEditing ? 'Edit Task Matrix' : 'Create New Scheduled Task')}
+                  </span>
+                  {isMasterRecurringSeriesAdmin && (
+                    <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-blue-500/20 text-blue-600 dark:text-blue-400 font-black border border-blue-500/30">
+                      MASTER
+                    </span>
+                  )}
                 </h2>
                 <div className="flex items-center gap-2 text-xs text-theme-muted flex-wrap">
                   <span>Code:</span>
@@ -740,6 +797,32 @@ export const TaskModal: React.FC<TaskModalProps> = ({
               <div className="p-3 rounded-xl bg-red-100/80 dark:bg-red-950/60 border border-red-300 dark:border-red-800 text-red-700 dark:text-red-300 text-xs font-bold flex items-center gap-2 animate-shake shadow-sm">
                 <AlertTriangle className="w-4 h-4 text-red-500 shrink-0" />
                 <span>{validationError}</span>
+              </div>
+            )}
+
+            {/* God Admin Master Recurring Series Hero Banner */}
+            {isMasterRecurringSeriesAdmin && (
+              <div className="p-3.5 rounded-2xl bg-gradient-to-r from-blue-600/15 via-indigo-600/15 to-purple-600/15 border border-blue-500/30 flex items-center justify-between gap-3 shadow-md animate-fade-in">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-blue-600 via-indigo-600 to-purple-600 text-white flex items-center justify-center font-black shadow-md shadow-indigo-500/25 shrink-0 text-base">
+                    👑
+                  </div>
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-xs font-black text-theme-text font-display uppercase tracking-wider">
+                        God Admin: Master Series Mode
+                      </span>
+                      <span className="text-[9px] font-mono px-2 py-0.5 rounded-full bg-blue-500/20 text-blue-600 dark:text-blue-400 font-bold border border-blue-500/30">
+                        FULL TASK ENGINE
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-theme-muted mt-0.5 leading-tight">
+                      {isEditing 
+                        ? `Editing master schedule for "${taskToEdit?.title}". All 100% features (P1-P5, categories, timeboxes, subtask minutes, links, notes) will sync entirely everywhere.`
+                        : 'Creating a new Master Recurring Series template with full enterprise time-boxing and automatic recurring propagation.'}
+                    </p>
+                  </div>
+                </div>
               </div>
             )}
 
@@ -1664,6 +1747,114 @@ export const TaskModal: React.FC<TaskModalProps> = ({
               </div>
             </div>
 
+            {/* 👑 Recurring Series Scope & Propagation Selector */}
+            {(isMasterRecurringSeriesAdmin || (isEditing && taskToEdit?.recurrence && taskToEdit.recurrence !== 'None')) && (
+              <div className="p-4 rounded-2xl bg-gradient-to-br from-indigo-50/70 via-blue-50/40 to-theme-card dark:from-indigo-950/40 dark:via-blue-950/20 dark:to-theme-card border-2 border-indigo-200 dark:border-indigo-800/80 space-y-3">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <Repeat className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+                    <span className="text-xs font-black text-theme-text font-display uppercase tracking-wider">
+                      Recurring Edit Scope & Propagation
+                    </span>
+                  </div>
+                  <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-full bg-indigo-100 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800">
+                    {recurringEditScope === 'series' ? '👑 Master Series Mode' : '📌 Single Occurrence Mode'}
+                  </span>
+                </div>
+
+                {/* Radio Toggle: Master Series vs Single Instance */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                  <button
+                    type="button"
+                    onClick={() => setRecurringEditScope('series')}
+                    className={`p-3 rounded-xl border text-left transition-all flex items-start gap-2.5 cursor-pointer ${
+                      recurringEditScope === 'series'
+                        ? 'bg-blue-600 text-white border-blue-600 shadow-md ring-2 ring-blue-400/30'
+                        : 'bg-theme-card hover:bg-theme-card-hover border-theme-border text-theme-text'
+                    }`}
+                  >
+                    <span className="text-base shrink-0">👑</span>
+                    <div>
+                      <div className="font-bold flex items-center gap-1.5">
+                        <span>Entire Master Series</span>
+                      </div>
+                      <p className={`text-[10px] mt-0.5 leading-snug ${
+                        recurringEditScope === 'series' ? 'text-blue-100' : 'text-theme-muted'
+                      }`}>
+                        Updates master template entirely everywhere across all dates and timelines.
+                      </p>
+                    </div>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setRecurringEditScope('single')}
+                    className={`p-3 rounded-xl border text-left transition-all flex items-start gap-2.5 cursor-pointer ${
+                      recurringEditScope === 'single'
+                        ? 'bg-indigo-600 text-white border-indigo-600 shadow-md ring-2 ring-indigo-400/30'
+                        : 'bg-theme-card hover:bg-theme-card-hover border-theme-border text-theme-text'
+                    }`}
+                  >
+                    <span className="text-base shrink-0">📌</span>
+                    <div>
+                      <div className="font-bold flex items-center gap-1.5">
+                        <span>This Occurrence Only</span>
+                      </div>
+                      <p className={`text-[10px] mt-0.5 leading-snug ${
+                        recurringEditScope === 'single' ? 'text-indigo-100' : 'text-theme-muted'
+                      }`}>
+                        Only updates {formatDisplayDate(taskDate)}. Future dates stay on original schedule.
+                      </p>
+                    </div>
+                  </button>
+                </div>
+
+                {/* God Admin Specific Propagation Options when series is selected */}
+                {recurringEditScope === 'series' && (
+                  <div className="p-3 rounded-xl bg-theme-card border border-theme-border/80 space-y-2 text-xs">
+                    <div className="flex items-center justify-between gap-2 flex-wrap">
+                      <span className="text-[11px] font-bold text-theme-muted">Propagation Window:</span>
+                      <div className="flex items-center gap-1 bg-theme-card-hover p-1 rounded-lg border border-theme-border">
+                        <button
+                          type="button"
+                          onClick={() => setSeriesPropagateScope('all')}
+                          className={`px-2 py-1 rounded-md text-[10px] font-bold transition-all cursor-pointer ${
+                            seriesPropagateScope === 'all'
+                              ? 'bg-blue-600 text-white shadow-xs'
+                              : 'text-theme-muted hover:text-theme-text'
+                          }`}
+                        >
+                          All Dates (Past & Future)
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setSeriesPropagateScope('future')}
+                          className={`px-2 py-1 rounded-md text-[10px] font-bold transition-all cursor-pointer ${
+                            seriesPropagateScope === 'future'
+                              ? 'bg-blue-600 text-white shadow-xs'
+                              : 'text-theme-muted hover:text-theme-text'
+                          }`}
+                        >
+                          From Today Onward
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Clear Exclusions Toggle */}
+                    <label className="flex items-center gap-2 pt-1 text-[11px] text-theme-muted hover:text-theme-text cursor-pointer select-none">
+                      <input
+                        type="checkbox"
+                        checked={seriesClearExclusions}
+                        onChange={(e) => setSeriesClearExclusions(e.target.checked)}
+                        className="w-3.5 h-3.5 rounded border-theme-border text-blue-600 focus:ring-blue-500 cursor-pointer"
+                      />
+                      <span>Restore / Clear all skipped & excluded dates for this series</span>
+                    </label>
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* Recurrence & Status */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
@@ -1885,24 +2076,35 @@ export const TaskModal: React.FC<TaskModalProps> = ({
 
           {/* Modal Actions */}
           <div className="flex items-center justify-between border-t border-theme-border pt-4">
-            <div className="text-xs text-theme-muted">
-              Auto-Buffer: <strong className="text-theme-text">15m</strong> (5m on delay)
+            <div className="text-xs text-theme-muted flex items-center gap-2">
+              {isMasterRecurringSeriesAdmin || (isEditing && recurringEditScope === 'series') ? (
+                <span className="font-mono text-[11px] font-bold text-blue-600 dark:text-blue-400 flex items-center gap-1">
+                  <span>👑 Master Recurring Mode</span>
+                  <span>• Auto-Sync Active</span>
+                </span>
+              ) : (
+                <span>Auto-Buffer: <strong className="text-theme-text">15m</strong> (5m on delay)</span>
+              )}
             </div>
             <div className="flex items-center gap-2">
               <button
                 type="button"
                 onClick={onClose}
-                className="px-4 py-2 text-xs font-semibold text-theme-muted hover:text-theme-text rounded-xl transition-colors"
+                className="px-4 py-2 text-xs font-semibold text-theme-muted hover:text-theme-text rounded-xl transition-colors cursor-pointer"
               >
                 Cancel
               </button>
               <button
                 type="button"
                 onClick={() => handleSave(false)}
-                className="flex items-center gap-1.5 px-5 py-2 bg-gradient-to-r from-blue-600 to-sky-500 hover:from-blue-700 hover:to-sky-600 text-white text-xs font-bold rounded-xl shadow-md shadow-blue-500/25 transition-all transform active:scale-95"
+                className="flex items-center gap-1.5 px-5 py-2 bg-gradient-to-r from-blue-600 to-sky-500 hover:from-blue-700 hover:to-sky-600 text-white text-xs font-bold rounded-xl shadow-md shadow-blue-500/25 transition-all transform active:scale-95 cursor-pointer"
               >
                 <CheckCircle2 className="w-4 h-4" />
-                <span>{isEditing ? 'Save Changes' : 'Schedule Task'}</span>
+                <span>
+                  {isMasterRecurringSeriesAdmin || (isEditing && recurringEditScope === 'series')
+                    ? (isEditing ? '👑 Save Master Series Everywhere' : '👑 Create Master Recurring Series')
+                    : (isEditing ? 'Save Changes' : 'Schedule Task')}
+                </span>
               </button>
             </div>
           </div>
@@ -1926,7 +2128,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
 
       {/* Huge Warning Interceptor Modal: Scheduling Before Current Time */}
       {showPastTimeModal && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fade-in">
+        <div className="fixed inset-0 z-[80] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fade-in">
           <div className="bg-theme-card border-2 border-red-500/80 rounded-3xl max-w-lg w-full p-6 shadow-2xl space-y-5 animate-scale-up">
             
             {/* Header */}
