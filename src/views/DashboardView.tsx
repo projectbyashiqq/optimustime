@@ -184,6 +184,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
         startTime: newStartTime,
         endTime: newEndTime,
         status: 'Pending',
+        isSimultaneous: false,
+        simultaneousWithIds: [],
         rescheduleCount: (taskToReschedule.rescheduleCount || 0) + 1,
         lastRescheduledAt: new Date().toISOString(),
         originallyAddedAt: taskToReschedule.originallyAddedAt || taskToReschedule.dateAdded || new Date().toISOString(),

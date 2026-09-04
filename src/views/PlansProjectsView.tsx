@@ -94,6 +94,8 @@ export const PlansProjectsView: React.FC<PlansProjectsViewProps> = ({ onOpenTask
         startTime: newStartTime,
         endTime: newEndTime,
         status: 'Pending',
+        isSimultaneous: false,
+        simultaneousWithIds: [],
         rescheduleCount: (taskToReschedule.rescheduleCount || 0) + 1,
         lastRescheduledAt: new Date().toISOString(),
         originalScheduledDate: newDate,

@@ -74,7 +74,8 @@ import {
   calculateFirstRecurringDate,
   taskCrossesMidnight,
   getTaskEndDate,
-  getTaskIntervalForDate
+  getTaskIntervalForDate,
+  sanitizeSimultaneousTasks
 } from '../utils/timeUtils';
 import { 
   pushStateToCloud, 
@@ -275,9 +276,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [tasks, setTasks] = useState<Task[]>(() => {
     try {
       const saved = localStorage.getItem(`${STORAGE_KEY}_tasks`);
-      return saved ? JSON.parse(saved) : INITIAL_TASKS;
+      return sanitizeSimultaneousTasks(saved ? JSON.parse(saved) : INITIAL_TASKS);
     } catch {
-      return INITIAL_TASKS;
+      return sanitizeSimultaneousTasks(INITIAL_TASKS);
     }
   });
 
@@ -1231,7 +1232,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         return t;
       });
 
-      return [...updated, ...newShiftedStandaloneTasks];
+      return sanitizeSimultaneousTasks([...updated, ...newShiftedStandaloneTasks]);
     });
 
     return shiftedCount;
@@ -1289,10 +1290,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       links: taskData.links || [],
       subtasks: taskData.subtasks || [],
       crossesMidnight: taskData.crossesMidnight ?? taskCrossesMidnight(startTime, endTime),
-      endDate: taskData.endDate || (taskCrossesMidnight(startTime, endTime) ? getTaskEndDate(date, startTime, endTime) : date)
+      endDate: taskData.endDate || (taskCrossesMidnight(startTime, endTime) ? getTaskEndDate(date, startTime, endTime) : date),
+      isSimultaneous: taskData.isSimultaneous || false,
+      simultaneousWithIds: taskData.simultaneousWithIds || []
     };
 
-    setTasks(prev => [newTask, ...prev]);
+    setTasks(prev => sanitizeSimultaneousTasks([newTask, ...prev]));
     logLifeEvent({
       eventType: 'TASK_CREATED',
       taskId: newTask.id,
@@ -1353,10 +1356,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           totalActualMinutes: 0
         };
 
-        return [
+        return sanitizeSimultaneousTasks([
           snapshot,
           ...prev.map(t => t.id === updated.id ? rolledOverMaster : t)
-        ];
+        ]);
       }
 
       const crosses = updated.crossesMidnight ?? taskCrossesMidnight(updated.startTime, updated.endTime);
@@ -1367,7 +1370,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         endDate: effectiveEndDate
       };
 
-      return prev.map(t => t.id === updated.id ? normalizedUpdated : t);
+      return sanitizeSimultaneousTasks(prev.map(t => t.id === updated.id ? normalizedUpdated : t));
     });
   }, []);
 
@@ -1385,7 +1388,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           message: `Deleted task "${target.title}" (${target.projectCode})`
         });
       }
-      return prev.filter(t => t.id !== taskId);
+      return sanitizeSimultaneousTasks(prev.filter(t => t.id !== taskId));
     });
   }, [logLifeEvent]);
 
@@ -1468,7 +1471,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           message: `⚠️ Deleted entire recurring series for "${target.title}" [${target.recurrence}]`
         });
       }
-      return prev.filter(t => t.id !== taskId);
+      return sanitizeSimultaneousTasks(prev.filter(t => t.id !== taskId));
     });
     setRecurringDeletePrompt(null);
     playNotificationChime('alert');
@@ -2222,6 +2225,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           startTime: newStartTime,
           endTime: newEndTime,
           status: 'Pending' as TaskStatus,
+          isSimultaneous: false,
+          simultaneousWithIds: [],
           recurrence: 'None',
           selectedDays: [],
           dateAdded: new Date().toISOString(),
@@ -2254,10 +2259,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           }
         });
 
-        return [
+        return sanitizeSimultaneousTasks([
           singleRescheduledOccurrence,
           ...prev.map(t => t.id === taskId ? updatedMaster : t)
-        ];
+        ]);
       }
 
       logLifeEvent({
@@ -2277,7 +2282,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         }
       });
 
-      return prev.map(t => {
+      const updatedList = prev.map(t => {
         if (t.id === taskId) {
           return {
             ...t,
@@ -2288,6 +2293,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             startTime: newStartTime,
             endTime: newEndTime,
             status: 'Pending' as TaskStatus,
+            isSimultaneous: false,
+            simultaneousWithIds: [],
             rescheduleCount: (t.rescheduleCount || 0) + 1,
             lastRescheduledAt: new Date().toISOString(),
             originallyAddedAt: t.originallyAddedAt || t.dateAdded || new Date().toISOString(),
@@ -2302,6 +2309,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         }
         return t;
       });
+
+      return sanitizeSimultaneousTasks(updatedList);
     });
   }, [logLifeEvent, defaultTaskSettings.defaultBufferMinutes, capacitySettings.defaultBufferMinutes]);
 
@@ -2325,17 +2334,20 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Simultaneous Task Linking
   const linkSimultaneousTasks = useCallback((task1Id: string, task2Id: string) => {
-    setTasks(prev => prev.map(t => {
-      if (t.id === task1Id) {
-        const existing = t.simultaneousWithIds || [];
-        return { ...t, simultaneousWithIds: Array.from(new Set([...existing, task2Id])) };
-      }
-      if (t.id === task2Id) {
-        const existing = t.simultaneousWithIds || [];
-        return { ...t, simultaneousWithIds: Array.from(new Set([...existing, task1Id])) };
-      }
-      return t;
-    }));
+    setTasks(prev => {
+      const mapped = prev.map(t => {
+        if (t.id === task1Id) {
+          const existing = t.simultaneousWithIds || [];
+          return { ...t, isSimultaneous: true, simultaneousWithIds: Array.from(new Set([...existing, task2Id])) };
+        }
+        if (t.id === task2Id) {
+          const existing = t.simultaneousWithIds || [];
+          return { ...t, isSimultaneous: true, simultaneousWithIds: Array.from(new Set([...existing, task1Id])) };
+        }
+        return t;
+      });
+      return sanitizeSimultaneousTasks(mapped);
+    });
   }, []);
 
   // Sub-task & Project/Plan Escalation Engine

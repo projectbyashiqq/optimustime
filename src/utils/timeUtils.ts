@@ -326,6 +326,85 @@ export interface TimeGap {
   simultaneousTaskId?: string;
 }
 
+/**
+ * Automatically cleans up and synchronizes simultaneous task relationships.
+ * Ensures that tasks only retain `isSimultaneous: true` and `simultaneousWithIds`
+ * if they ACTUALLY overlap in time on the same date!
+ * If a task is moved, rescheduled, or edited to a non-overlapping slot,
+ * its simultaneous status is automatically cleared, and it is removed from other tasks' simultaneousWithIds.
+ */
+export function sanitizeSimultaneousTasks<T extends { id?: string; taskDate: string; startTime: string; endTime: string; status: string; isSimultaneous?: boolean; simultaneousWithIds?: string[] }>(tasks: T[]): T[] {
+  const taskTimeMap = new Map<string, { date: string; startMin: number; endMin: number }>();
+  for (const t of tasks) {
+    if (t.id && t.status !== 'Terminated' && t.startTime && t.endTime && t.startTime !== 'All Day') {
+      const s = parse12HourToMinutes(t.startTime);
+      let e = parse12HourToMinutes(t.endTime);
+      if (e <= s) e += 1440;
+      taskTimeMap.set(t.id, { date: t.taskDate, startMin: s, endMin: e });
+    }
+  }
+
+  // 1. Build verified bidirectional adjacency map for real overlapping pairs
+  const pairMap = new Map<string, Set<string>>();
+  const getPairs = (id: string) => {
+    let set = pairMap.get(id);
+    if (!set) {
+      set = new Set<string>();
+      pairMap.set(id, set);
+    }
+    return set;
+  };
+
+  for (const task of tasks) {
+    if (!task.id) continue;
+    const selfTime = taskTimeMap.get(task.id);
+    if (!selfTime) continue;
+
+    const partnerIds = task.simultaneousWithIds || [];
+    for (const partnerId of partnerIds) {
+      if (!partnerId || partnerId === task.id) continue;
+      const partnerTime = taskTimeMap.get(partnerId);
+      if (!partnerTime) continue;
+      if (partnerTime.date !== selfTime.date) continue;
+      // Real overlap check: self.start < partner.end && self.end > partner.start
+      if (selfTime.startMin < partnerTime.endMin && selfTime.endMin > partnerTime.startMin) {
+        getPairs(task.id).add(partnerId);
+        getPairs(partnerId).add(task.id);
+      }
+    }
+  }
+
+  // 2. Map tasks ensuring exact synchronization and cleanup
+  return tasks.map(task => {
+    if (!task.id) return task;
+    const selfTime = taskTimeMap.get(task.id);
+    const existingIds = task.simultaneousWithIds || [];
+
+    if (!selfTime) {
+      if (task.isSimultaneous || existingIds.length > 0) {
+        return { ...task, isSimultaneous: false, simultaneousWithIds: [] };
+      }
+      return task;
+    }
+
+    const verifiedPartnerIds = Array.from(pairMap.get(task.id) || []);
+    const isSimul = verifiedPartnerIds.length > 0;
+
+    const idsChanged = verifiedPartnerIds.length !== existingIds.length || 
+      verifiedPartnerIds.some(id => !existingIds.includes(id));
+
+    if (isSimul !== Boolean(task.isSimultaneous) || idsChanged) {
+      return {
+        ...task,
+        isSimultaneous: isSimul,
+        simultaneousWithIds: verifiedPartnerIds
+      };
+    }
+
+    return task;
+  });
+}
+
 // Find empty gaps between scheduled tasks, post-task buffers, and logged buffer notes for a day
 export function findScheduleGaps(
   tasks: Array<{ startTime: string; endTime: string; status: string; bufferMinutes?: number; simultaneousWithIds?: string[]; title?: string; id?: string }>,

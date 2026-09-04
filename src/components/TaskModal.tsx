@@ -330,6 +330,13 @@ export const TaskModal: React.FC<TaskModalProps> = ({
     return detectConflicts(taskDate, startTime, endTime, taskToEdit?.id);
   }, [taskDate, startTime, endTime, taskToEdit?.id, detectConflicts]);
 
+  // If time or date changes such that there are no overlapping tasks, auto-turn off simultaneous flag
+  useEffect(() => {
+    if (isSimultaneous && liveOverlaps.length === 0) {
+      setIsSimultaneous(false);
+    }
+  }, [liveOverlaps.length, isSimultaneous]);
+
   // Sleep / Night Window Conflict Calculation & Warning
   const sleepWindowWarning = useMemo(() => {
     const sleepStart = capacitySettings?.sleepStartTime || capacitySettings?.dayEndTime || '11:00 PM';
@@ -546,6 +553,9 @@ export const TaskModal: React.FC<TaskModalProps> = ({
     const calculatedEndDate = crosses ? getTaskEndDate(effectiveTaskDate, startTime, endTime) : effectiveTaskDate;
     const effectiveDayOfWeek = getDayOfWeekFromDate(effectiveTaskDate);
 
+    const actualSimultaneous = Boolean(isSimultaneous && liveOverlaps.length > 0);
+    const actualSimultaneousIds = actualSimultaneous ? liveOverlaps.map(t => t.id) : [];
+
     const payload = {
       projectCode: projectCode.trim() || generateProjectCode(),
       title: title.trim(),
@@ -565,8 +575,8 @@ export const TaskModal: React.FC<TaskModalProps> = ({
       recurrence,
       selectedDays: recurrence === 'Selected Days' ? selectedDays : [],
       isMandatorySchedule,
-      isSimultaneous,
-      simultaneousWithIds: isSimultaneous ? (liveOverlaps.length > 0 ? liveOverlaps.map(t => t.id) : (taskToEdit?.simultaneousWithIds || [])) : [],
+      isSimultaneous: actualSimultaneous,
+      simultaneousWithIds: actualSimultaneousIds,
       planProjectId: planProjectId || undefined,
       notes,
       links,
@@ -695,6 +705,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
       recurrence,
       selectedDays: recurrence === 'Selected Days' ? selectedDays : [],
       isMandatorySchedule,
+      isSimultaneous: true,
       simultaneousWithIds: conflictingTasks.map(t => t.id),
       planProjectId: planProjectId || undefined,
       notes,
