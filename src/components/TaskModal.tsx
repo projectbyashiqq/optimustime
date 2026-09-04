@@ -184,7 +184,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
     const targetDate = initialDate || todayStr;
     const freeRawSlots = computeNextFreeRawTimes(
       targetDate,
-      defaultMin,
+      Math.min(30, defaultMin),
       tasks,
       bufferNotes,
       undefined,
@@ -208,7 +208,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
   const freeRawTimeSuggestions = useMemo(() => {
     return computeNextFreeRawTimes(
       taskDate,
-      appointedMinutes,
+      Math.min(30, appointedMinutes),
       tasks,
       bufferNotes,
       taskToEdit?.id,
@@ -1347,283 +1347,242 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                     </div>
                   )}
 
-                  {/* Date & Start Time Inputs */}
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {/* Date & Start Time Container (Apple Master Level Precision) */}
+                  <div className="p-3 sm:p-4 rounded-2xl bg-theme-card-hover/80 dark:bg-theme-card/50 border border-theme-border shadow-2xs space-y-3">
                     
-                    {/* Date Input */}
-                    <div 
-                      onClick={() => {
-                        try {
-                          taskDateInputRef.current?.showPicker();
-                        } catch {
-                          taskDateInputRef.current?.focus();
-                        }
-                      }}
-                      className="space-y-1 cursor-pointer"
-                    >
-                      <div className="flex items-center justify-between">
-                        <label className="text-[11px] font-bold text-theme-text flex items-center gap-1 cursor-pointer">
-                          <Calendar className="w-3.5 h-3.5 text-blue-500" />
-                          <span>Scheduled Date</span>
-                        </label>
-                        <div className="flex items-center gap-1 text-[10px]">
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              const targetDate = toISODateString(new Date());
-                              setTaskDate(targetDate);
-                              setRolloverNotice(null);
-                              if (validationError) setValidationError(null);
-                              if (!taskToEdit) {
-                                const free = computeNextFreeRawTimes(targetDate, appointedMinutes, tasks, bufferNotes, undefined, effectiveDefaultBuffer, capacitySettings);
-                                if (free.length > 0) {
-                                  setStartTime(free[0]);
-                                  setEndTime(addMinutesToTime(free[0], appointedMinutes));
-                                }
-                              }
-                            }}
-                            className={`px-2 py-0.5 rounded font-bold border transition-colors cursor-pointer ${
-                              taskDate === toISODateString(new Date())
-                                ? 'bg-blue-600 text-white border-blue-600'
-                                : 'bg-theme-card-hover text-theme-muted border-theme-border'
-                            }`}
-                          >
-                            Today
-                          </button>
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              const tomorrow = new Date();
-                              tomorrow.setDate(tomorrow.getDate() + 1);
-                              const targetDate = toISODateString(tomorrow);
-                              setTaskDate(targetDate);
-                              setRolloverNotice(null);
-                              if (validationError) setValidationError(null);
-                              if (!taskToEdit) {
-                                const free = computeNextFreeRawTimes(targetDate, appointedMinutes, tasks, bufferNotes, undefined, effectiveDefaultBuffer, capacitySettings);
-                                if (free.length > 0) {
-                                  setStartTime(free[0]);
-                                  setEndTime(addMinutesToTime(free[0], appointedMinutes));
-                                }
-                              }
-                            }}
-                            className="px-2 py-0.5 rounded font-bold bg-theme-card-hover text-theme-muted border border-theme-border hover:text-theme-text transition-colors cursor-pointer"
-                          >
-                            Tomorrow
-                          </button>
-                        </div>
-                      </div>
-
-                      <input
-                        ref={taskDateInputRef}
-                        type="date"
-                        value={taskDate}
-                        onChange={(e) => {
-                          const newD = e.target.value;
-                          setTaskDate(newD);
-                          if (validationError) setValidationError(null);
-                          if (!taskToEdit && newD) {
-                            const free = computeNextFreeRawTimes(newD, appointedMinutes, tasks, bufferNotes, undefined, effectiveDefaultBuffer, capacitySettings);
-                            if (free.length > 0) {
-                              setStartTime(free[0]);
-                              setEndTime(addMinutesToTime(free[0], appointedMinutes));
-                            }
-                          }
-                        }}
-                        onClick={(e) => {
-                          try {
-                            (e.target as HTMLInputElement).showPicker?.();
-                          } catch {}
-                        }}
-                        className="w-full text-xs px-3 py-2 rounded-xl bg-theme-card-hover border border-theme-border text-theme-text focus:outline-none focus:ring-1 focus:ring-blue-500 font-mono font-bold cursor-pointer"
-                      />
-                    </div>
-
-                    {/* Start Time Input & AM/PM Switcher */}
-                    <div className="space-y-1">
-                      <div className="flex items-center justify-between">
-                        <label className="text-[11px] font-bold text-theme-text flex items-center gap-1">
-                          <Clock className="w-3.5 h-3.5 text-blue-500" />
-                          <span>Start Time</span>
-                        </label>
-
-                        {/* 1-Click AM / PM Quick Switcher */}
-                        {(() => {
-                          const isStart12 = startTime.trim().startsWith('12:') || startTime.trim().toUpperCase().startsWith('12PM') || startTime.trim().toUpperCase().startsWith('12AM');
-                          const isAmActive = startTime.toUpperCase().includes('AM');
-                          const isPmActive = startTime.toUpperCase().includes('PM');
-                          return (
-                            <div className="flex items-center p-0.5 bg-theme-card-hover rounded-lg border border-theme-border text-[10px] font-black shadow-inner">
-                              <button
-                                type="button"
-                                onClick={() => handleTogglePeriod('AM')}
-                                className={`px-2 py-0.5 rounded-md transition-all flex items-center gap-1 cursor-pointer ${
-                                  isAmActive
-                                    ? isStart12 ? 'bg-indigo-600 text-white shadow-xs' : 'bg-amber-500 text-white shadow-xs'
-                                    : 'text-theme-muted hover:text-theme-text'
-                                }`}
-                                title={isStart12 ? '12:00 AM • Night & New Date (Midnight)' : 'Switch to Morning (AM)'}
-                              >
-                                {isStart12 ? <Moon className="w-2.5 h-2.5" /> : <Sun className="w-2.5 h-2.5" />}
-                                <span>AM</span>
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => handleTogglePeriod('PM')}
-                                className={`px-2 py-0.5 rounded-md transition-all flex items-center gap-1 cursor-pointer ${
-                                  isPmActive
-                                    ? isStart12 ? 'bg-amber-500 text-white shadow-xs' : 'bg-indigo-600 text-white shadow-xs'
-                                    : 'text-theme-muted hover:text-theme-text'
-                                }`}
-                                title={isStart12 ? '12:00 PM • Day Time (Midday / Lunch)' : 'Switch to Afternoon / Evening (PM)'}
-                              >
-                                {isStart12 ? <Sun className="w-2.5 h-2.5" /> : <Moon className="w-2.5 h-2.5" />}
-                                <span>PM</span>
-                              </button>
-                            </div>
-                          );
-                        })()}
-                      </div>
-
-                      <TimePicker
-                        value={startTime}
-                        onChange={handleStartTimeChange}
-                      />
-
-                      {/* Next 3-5 Free Raw Time Suggestions */}
-                      {freeRawTimeSuggestions.length > 0 && (
-                        <div className="pt-2 space-y-1.5 animate-fade-in">
-                          <div className="flex items-center justify-between text-[11px] font-bold text-theme-muted">
-                            <span className="flex items-center gap-1.5 text-theme-text font-display">
-                              <Sparkles className="w-3.5 h-3.5 text-amber-500" />
-                              <span>Next Free Times:</span>
-                            </span>
-                            <span className="text-[10px] text-theme-muted font-normal font-mono">1-tap select</span>
-                          </div>
-                          <div className="flex items-center gap-1.5 flex-wrap">
-                            {freeRawTimeSuggestions.slice(0, 5).map((timeStr, idx) => {
-                              const isSelected = startTime === timeStr;
-                              return (
-                                <button
-                                  key={idx}
-                                  type="button"
-                                  onClick={() => {
-                                    setStartTime(timeStr);
-                                    setEndTime(addMinutesToTime(timeStr, appointedMinutes));
-                                    if (validationError) setValidationError(null);
-                                  }}
-                                  className={`px-3 py-1.5 rounded-xl text-xs font-mono font-bold transition-all border cursor-pointer active:scale-95 shadow-2xs ${
-                                    isSelected
-                                      ? 'bg-blue-600 text-white border-blue-600 shadow-xs scale-105'
-                                      : 'bg-theme-card-hover hover:bg-theme-border text-theme-text border-theme-border/80 hover:border-blue-500/50'
-                                  }`}
-                                  title={`Select free slot at ${timeStr}`}
-                                >
-                                  <span>{timeStr}</span>
-                                </button>
-                              );
-                            })}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-
-                  </div>
-
-                  {/* Smart Free Daytime Slots Carousel */}
-                  <div className="space-y-1.5 p-2.5 rounded-xl bg-theme-card-hover border border-theme-border/70">
-                    <div className="flex items-center justify-between text-[10px] font-bold">
-                      <span className="text-theme-muted flex items-center gap-1">
-                        <Sparkles className="w-3 h-3 text-blue-500" />
-                        <span>Recommended Free Slots on {formatDisplayDate(taskDate)}:</span>
-                      </span>
-                      <button
-                        type="button"
+                    {/* Top Row: Date & Start Time (Balanced 50/50 Grid) */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4 items-start">
+                      
+                      {/* Left: Scheduled Date */}
+                      <div 
                         onClick={() => {
-                          const now = new Date();
-                          const isAfternoonOrEvening = now.getHours() >= 12;
-                          const smart = getSmartNextFreeSlot(
-                            taskDate, 
-                            appointedMinutes, 
-                            tasks, 
-                            bufferNotes, 
-                            taskToEdit?.id, 
-                            effectiveDefaultBuffer,
-                            capacitySettings,
-                            isAfternoonOrEvening || startTime.includes('PM')
-                          );
-                          setStartTime(smart.startTime);
-                          setEndTime(smart.endTime);
-                          if (smart.dateStr && smart.dateStr !== taskDate) {
-                            setTaskDate(smart.dateStr);
+                          try {
+                            taskDateInputRef.current?.showPicker();
+                          } catch {
+                            taskDateInputRef.current?.focus();
                           }
-                          setValidationError(null);
                         }}
-                        className="text-[10px] font-bold text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-1 cursor-pointer"
-                        title="Auto-calculate next non-overlapping daytime free slot"
+                        className="space-y-1.5 cursor-pointer"
                       >
-                        <RotateCcw className="w-2.5 h-2.5" />
-                        <span>Auto-Fit Next Free Slot</span>
-                      </button>
-                    </div>
-
-                    <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5 min-h-[32px]">
-                      {recommendedSlots.length > 0 ? (
-                        recommendedSlots.map((slot, idx) => {
-                          const isSelected = startTime === slot.startTime;
-                          return (
+                        <div className="flex items-center justify-between">
+                          <label className="text-[11px] font-bold text-theme-text flex items-center gap-1.5 cursor-pointer">
+                            <Calendar className="w-3.5 h-3.5 text-blue-500" />
+                            <span>Scheduled Date</span>
+                          </label>
+                          <div className="flex items-center gap-1 text-[10px]">
                             <button
-                              key={idx}
                               type="button"
-                              onClick={() => {
-                                setStartTime(slot.startTime);
-                                setEndTime(slot.endTime);
-                                setValidationError(null);
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                const targetDate = toISODateString(getBangladeshNow());
+                                setTaskDate(targetDate);
+                                setRolloverNotice(null);
+                                if (validationError) setValidationError(null);
+                                if (!taskToEdit) {
+                                  const free = computeNextFreeRawTimes(targetDate, Math.min(30, appointedMinutes), tasks, bufferNotes, undefined, effectiveDefaultBuffer, capacitySettings);
+                                  if (free.length > 0) {
+                                    setStartTime(free[0]);
+                                    setEndTime(addMinutesToTime(free[0], appointedMinutes));
+                                  }
+                                }
                               }}
-                              className={`px-2.5 py-1 rounded-lg text-[10px] font-bold whitespace-nowrap transition-all border flex items-center gap-1 shrink-0 cursor-pointer ${
-                                isSelected
+                              className={`px-2.5 py-0.5 rounded-full font-bold border transition-all cursor-pointer shadow-2xs ${
+                                taskDate === toISODateString(getBangladeshNow())
                                   ? 'bg-blue-600 text-white border-blue-600 shadow-xs'
-                                  : 'bg-theme-card text-theme-muted hover:text-theme-text border-theme-border hover:border-blue-400'
+                                  : 'bg-theme-card text-theme-muted border-theme-border hover:text-theme-text hover:bg-theme-card-hover'
                               }`}
                             >
-                              <span>{slot.label}</span>
-                              <span className="font-mono text-[9px] opacity-80">({slot.startTime} - {slot.endTime})</span>
+                              Today
                             </button>
-                          );
-                        })
-                      ) : (
-                        <div className="text-[10px] text-theme-muted flex items-center gap-2 py-0.5 px-1">
-                          <span>No open slots on {formatDisplayDate(taskDate)}.</span>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              const smart = getSmartNextFreeSlot(
-                                taskDate, 
-                                appointedMinutes, 
-                                tasks, 
-                                bufferNotes, 
-                                taskToEdit?.id, 
-                                effectiveDefaultBuffer,
-                                capacitySettings
-                              );
-                              setStartTime(smart.startTime);
-                              setEndTime(smart.endTime);
-                              if (smart.dateStr && smart.dateStr !== taskDate) {
-                                setTaskDate(smart.dateStr);
-                              }
-                              setValidationError(null);
-                            }}
-                            className="font-bold text-blue-600 dark:text-blue-400 hover:underline cursor-pointer"
-                          >
-                            Find Next Free Day →
-                          </button>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                const tomorrow = getBangladeshNow();
+                                tomorrow.setDate(tomorrow.getDate() + 1);
+                                const targetDate = toISODateString(tomorrow);
+                                setTaskDate(targetDate);
+                                setRolloverNotice(null);
+                                if (validationError) setValidationError(null);
+                                if (!taskToEdit) {
+                                  const free = computeNextFreeRawTimes(targetDate, Math.min(30, appointedMinutes), tasks, bufferNotes, undefined, effectiveDefaultBuffer, capacitySettings);
+                                  if (free.length > 0) {
+                                    setStartTime(free[0]);
+                                    setEndTime(addMinutesToTime(free[0], appointedMinutes));
+                                  }
+                                }
+                              }}
+                              className={`px-2.5 py-0.5 rounded-full font-bold border transition-all cursor-pointer shadow-2xs ${
+                                taskDate !== toISODateString(getBangladeshNow())
+                                  ? 'bg-blue-600 text-white border-blue-600 shadow-xs'
+                                  : 'bg-theme-card text-theme-muted border-theme-border hover:text-theme-text hover:bg-theme-card-hover'
+                              }`}
+                            >
+                              Tomorrow
+                            </button>
+                          </div>
                         </div>
-                      )}
-                    </div>
-                  </div>
 
+                        <input
+                          ref={taskDateInputRef}
+                          type="date"
+                          value={taskDate}
+                          onChange={(e) => {
+                            const newD = e.target.value;
+                            setTaskDate(newD);
+                            if (validationError) setValidationError(null);
+                            if (!taskToEdit && newD) {
+                              const free = computeNextFreeRawTimes(newD, Math.min(30, appointedMinutes), tasks, bufferNotes, undefined, effectiveDefaultBuffer, capacitySettings);
+                              if (free.length > 0) {
+                                setStartTime(free[0]);
+                                setEndTime(addMinutesToTime(free[0], appointedMinutes));
+                              }
+                            }
+                          }}
+                          onClick={(e) => {
+                            try {
+                              (e.target as HTMLInputElement).showPicker?.();
+                            } catch {}
+                          }}
+                          className="w-full text-xs px-3 py-2 rounded-xl bg-theme-card border border-theme-border text-theme-text focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 font-mono font-bold cursor-pointer transition-all shadow-2xs"
+                        />
+                      </div>
+
+                      {/* Right: Start Time */}
+                      <div className="space-y-1.5">
+                        <div className="flex items-center justify-between">
+                          <label className="text-[11px] font-bold text-theme-text flex items-center gap-1.5">
+                            <Clock className="w-3.5 h-3.5 text-blue-500" />
+                            <span>Start Time</span>
+                          </label>
+
+                          {/* 1-Click AM / PM Quick Switcher */}
+                          {(() => {
+                            const isStart12 = startTime.trim().startsWith('12:') || startTime.trim().toUpperCase().startsWith('12PM') || startTime.trim().toUpperCase().startsWith('12AM');
+                            const isAmActive = startTime.toUpperCase().includes('AM');
+                            const isPmActive = startTime.toUpperCase().includes('PM');
+                            return (
+                              <div className="flex items-center p-0.5 bg-theme-card rounded-full border border-theme-border text-[10px] font-black shadow-inner">
+                                <button
+                                  type="button"
+                                  onClick={() => handleTogglePeriod('AM')}
+                                  className={`px-2.5 py-0.5 rounded-full transition-all flex items-center gap-1 cursor-pointer ${
+                                    isAmActive
+                                      ? isStart12 ? 'bg-indigo-600 text-white shadow-xs' : 'bg-amber-500 text-white shadow-xs'
+                                      : 'text-theme-muted hover:text-theme-text'
+                                  }`}
+                                  title={isStart12 ? '12:00 AM • Night & New Date (Midnight)' : 'Switch to Morning (AM)'}
+                                >
+                                  {isStart12 ? <Moon className="w-2.5 h-2.5" /> : <Sun className="w-2.5 h-2.5" />}
+                                  <span>AM</span>
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleTogglePeriod('PM')}
+                                  className={`px-2.5 py-0.5 rounded-full transition-all flex items-center gap-1 cursor-pointer ${
+                                    isPmActive
+                                      ? isStart12 ? 'bg-amber-500 text-white shadow-xs' : 'bg-indigo-600 text-white shadow-xs'
+                                      : 'text-theme-muted hover:text-theme-text'
+                                  }`}
+                                  title={isStart12 ? '12:00 PM • Day Time (Midday / Lunch)' : 'Switch to Afternoon / Evening (PM)'}
+                                >
+                                  {isStart12 ? <Sun className="w-2.5 h-2.5" /> : <Moon className="w-2.5 h-2.5" />}
+                                  <span>PM</span>
+                                </button>
+                              </div>
+                            );
+                          })()}
+                        </div>
+
+                        <TimePicker
+                          value={startTime}
+                          onChange={handleStartTimeChange}
+                        />
+                      </div>
+
+                    </div>
+
+                    {/* Bottom Full-Width Strip: Next Free Time Slots (Apple Complication Styling) */}
+                    {freeRawTimeSuggestions.length > 0 && (
+                      <div className="pt-2.5 border-t border-theme-border/60 space-y-2">
+                        <div className="flex items-center justify-between text-[11px]">
+                          <div className="flex items-center gap-1.5 font-bold text-theme-text font-display">
+                            <div className="w-4 h-4 rounded-md bg-amber-500/15 flex items-center justify-center text-amber-500 shrink-0">
+                              <Sparkles className="w-2.5 h-2.5" />
+                            </div>
+                            <span>Next Free Slots</span>
+                            <span className="text-[10px] font-normal text-theme-muted">
+                              • {taskDate === toISODateString(getBangladeshNow()) ? 'Today' : formatDisplayDate(taskDate)}
+                            </span>
+                          </div>
+
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const best = freeRawTimeSuggestions[0];
+                                if (best) {
+                                  setStartTime(best);
+                                  setEndTime(addMinutesToTime(best, appointedMinutes));
+                                  if (validationError) setValidationError(null);
+                                }
+                              }}
+                              className="text-[10px] font-bold text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-1 cursor-pointer"
+                              title="Auto-fit to earliest available free slot"
+                            >
+                              <RotateCcw className="w-2.5 h-2.5" />
+                              <span>Auto-Fit First</span>
+                            </button>
+                            <span className="text-[9px] font-mono text-theme-muted/70 hidden sm:inline">1-tap select</span>
+                          </div>
+                        </div>
+
+                        {/* 3 to 5 Clickable Free Slots Pills */}
+                        <div className="flex items-center gap-2 flex-wrap">
+                          {freeRawTimeSuggestions.slice(0, 5).map((timeStr, idx) => {
+                            const isSelected = startTime === timeStr;
+                            const mins = parse12HourToMinutes(timeStr);
+                            const isLate = mins < 360 || mins >= 1380;
+                            const endStr = addMinutesToTime(timeStr, appointedMinutes);
+
+                            return (
+                              <button
+                                key={idx}
+                                type="button"
+                                onClick={() => {
+                                  setStartTime(timeStr);
+                                  setEndTime(endStr);
+                                  if (validationError) setValidationError(null);
+                                }}
+                                className={`group px-3 py-1.5 rounded-xl text-xs font-mono font-bold transition-all border cursor-pointer active:scale-95 flex items-center gap-2 shadow-2xs ${
+                                  isSelected
+                                    ? 'bg-blue-600 text-white border-blue-500 shadow-sm shadow-blue-600/30 ring-2 ring-blue-400/40 scale-[1.02]'
+                                    : 'bg-theme-card hover:bg-theme-card-hover text-theme-text border-theme-border/80 hover:border-blue-400/50'
+                                }`}
+                                title={`Schedule at ${timeStr} (${timeStr} - ${endStr})`}
+                              >
+                                <div className="flex items-center gap-1">
+                                  {isLate ? (
+                                    <Moon className={`w-3 h-3 ${isSelected ? 'text-blue-200' : 'text-indigo-400'}`} />
+                                  ) : (
+                                    <Sun className={`w-3 h-3 ${isSelected ? 'text-amber-200' : 'text-amber-500'}`} />
+                                  )}
+                                  <span>{timeStr}</span>
+                                </div>
+                                <span className={`text-[10px] font-sans font-medium px-1.5 py-0.2 rounded-md transition-colors ${
+                                  isSelected
+                                    ? 'bg-white/20 text-white'
+                                    : 'bg-theme-border/50 text-theme-muted group-hover:text-theme-text'
+                                }`}>
+                                  ~{appointedMinutes}m
+                                </span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 </div>
 
                 {/* 5. Safety & Execution Governance Protocols */}
