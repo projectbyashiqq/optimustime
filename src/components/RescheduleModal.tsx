@@ -317,35 +317,36 @@ export const RescheduleModal: React.FC<RescheduleModalProps> = ({
   }, [activeDateSlots, taskStartMin]);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/60 backdrop-blur-sm animate-fade-in">
-      <div className="bg-theme-card border border-theme-border rounded-3xl max-w-3xl w-full p-5 sm:p-6 shadow-2xl space-y-4 animate-slide-up max-h-[94vh] flex flex-col">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5 bg-black/40 backdrop-blur-md animate-fade-in">
+      <div className="bg-theme-card border border-theme-border rounded-3xl max-w-4xl w-full p-5 sm:p-6 shadow-[0_25px_70px_rgba(0,0,0,0.25)] space-y-3.5 animate-slide-up max-h-[92vh] flex flex-col">
         
         {/* Header */}
         <div className="flex items-start justify-between shrink-0">
           <div className="flex items-center gap-3">
-            <div className="w-11 h-11 sm:w-12 sm:h-12 rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center text-white shadow-md shadow-blue-500/20">
-              <Sparkles className="w-6 h-6" />
+            <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-blue-500 to-indigo-600 flex items-center justify-center text-white shadow-sm shadow-blue-500/20 shrink-0">
+              <Sparkles className="w-5 h-5" />
             </div>
             <div>
               <div className="flex items-center gap-2 flex-wrap">
-                <h3 className="text-base sm:text-lg font-black text-theme-text font-display">
-                  Reschedule • Multiple Available Time Slots
+                <h3 className="text-base sm:text-lg font-bold text-theme-text font-display tracking-tight">
+                  Reschedule • Available Time Slots
                 </h3>
-                <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-full bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-300">
+                <span className="text-[11px] font-mono font-semibold px-2.5 py-0.5 rounded-full bg-theme-card-hover text-theme-muted border border-theme-border">
                   {task.projectCode}
                 </span>
               </div>
-              <div className="text-xs text-theme-muted mt-1 flex items-center gap-2 flex-wrap">
-                <span>Task: <strong className="text-theme-text">{task.title}</strong></span>
+              <div className="text-xs text-theme-muted mt-0.5 flex items-center gap-2 flex-wrap">
+                <span>Task: <strong className="text-theme-text font-semibold">{task.title}</strong></span>
                 {task.startTime && task.startTime !== 'All Day' && (
-                  <span className="flex items-center gap-1">
-                    <span>• Current:</span>
+                  <span className="flex items-center gap-1.5">
+                    <span className="text-theme-muted/40">•</span>
+                    <span>Current:</span>
                     <strong className="font-mono text-theme-text">{task.startTime}</strong>
                     {(() => {
                       const period = getTimePeriodForTime(task.startTime, timePeriodSettings);
                       if (!period) return null;
                       return (
-                        <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-indigo-50 dark:bg-indigo-950/70 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 flex items-center gap-0.5">
+                        <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-theme-card-hover text-theme-text border border-theme-border flex items-center gap-1">
                           <span>{period.emoji}</span>
                           <span>{period.name}</span>
                         </span>
@@ -353,25 +354,26 @@ export const RescheduleModal: React.FC<RescheduleModalProps> = ({
                     })()}
                   </span>
                 )}
-                <span>• Duration: <span className="font-bold text-blue-600 dark:text-blue-400">{task.appointedMinutes} mins</span></span>
+                <span className="text-theme-muted/40">•</span>
+                <span>Duration: <span className="font-semibold text-blue-600 dark:text-blue-400">{task.appointedMinutes} mins</span></span>
               </div>
             </div>
           </div>
           <button 
             onClick={onClose}
-            className="p-1.5 rounded-xl hover:bg-theme-card-hover text-theme-muted transition-colors cursor-pointer"
+            className="w-8 h-8 rounded-full flex items-center justify-center text-theme-muted hover:text-theme-text hover:bg-theme-card-hover transition-colors cursor-pointer shrink-0"
           >
-            <X className="w-5 h-5" />
+            <X className="w-4 h-4" />
           </button>
         </div>
 
         {/* Recurring Task Scope Selector */}
         {isRecurring && (
-          <div className="p-3 bg-purple-500/10 border border-purple-500/30 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2.5 shrink-0">
+          <div className="p-3 bg-purple-500/[0.06] dark:bg-purple-400/[0.08] border border-purple-500/20 dark:border-purple-400/20 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2.5 shrink-0">
             <div className="flex items-center gap-2">
               <RotateCcw className="w-4 h-4 text-purple-600 dark:text-purple-400 shrink-0" />
               <div>
-                <span className="text-xs font-bold text-purple-900 dark:text-purple-200 block">
+                <span className="text-xs font-semibold text-purple-900 dark:text-purple-200 block">
                   Recurring Routine: {task.recurrence}
                 </span>
                 <span className="text-[11px] text-theme-muted">
@@ -379,13 +381,13 @@ export const RescheduleModal: React.FC<RescheduleModalProps> = ({
                 </span>
               </div>
             </div>
-            <div className="flex items-center gap-1.5 shrink-0 bg-theme-card p-1 rounded-xl border border-theme-border">
+            <div className="flex items-center gap-1 shrink-0 bg-theme-card p-1 rounded-xl border border-theme-border">
               <button
                 type="button"
                 onClick={() => setRecurringScope('single')}
-                className={`px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                className={`px-3 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
                   recurringScope === 'single'
-                    ? 'bg-purple-600 text-white shadow-sm'
+                    ? 'bg-purple-600 text-white shadow-xs'
                     : 'text-theme-muted hover:text-theme-text'
                 }`}
               >
@@ -394,9 +396,9 @@ export const RescheduleModal: React.FC<RescheduleModalProps> = ({
               <button
                 type="button"
                 onClick={() => setRecurringScope('series')}
-                className={`px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                className={`px-3 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
                   recurringScope === 'series'
-                    ? 'bg-purple-600 text-white shadow-sm'
+                    ? 'bg-purple-600 text-white shadow-xs'
                     : 'text-theme-muted hover:text-theme-text'
                 }`}
               >
@@ -408,35 +410,35 @@ export const RescheduleModal: React.FC<RescheduleModalProps> = ({
 
         {/* Suggested Next Available Time Slot Hero Card */}
         {suggestedNextSlot && (
-          <div className="p-3.5 sm:p-4 rounded-2xl bg-gradient-to-r from-emerald-500/15 via-blue-500/10 to-indigo-500/15 border-2 border-emerald-500/50 dark:border-emerald-500/40 shadow-lg shadow-emerald-500/10 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shrink-0 animate-fade-in">
+          <div className="relative overflow-hidden rounded-2xl p-3.5 sm:p-4 bg-gradient-to-r from-emerald-500/[0.08] via-teal-500/[0.04] to-emerald-500/[0.02] dark:from-emerald-400/[0.12] dark:via-teal-400/[0.06] dark:to-emerald-400/[0.03] border border-emerald-500/25 dark:border-emerald-400/25 shadow-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shrink-0 animate-fade-in">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-emerald-600 to-teal-600 flex items-center justify-center text-white shrink-0 shadow-md shadow-emerald-600/30">
+              <div className="w-10 h-10 rounded-2xl bg-emerald-500/15 dark:bg-emerald-400/20 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0 border border-emerald-500/20 dark:border-emerald-400/20">
                 <Zap className="w-5 h-5 fill-current" />
               </div>
               <div>
                 <div className="flex items-center gap-2 flex-wrap">
-                  <span className="text-[11px] font-black uppercase tracking-wider text-emerald-700 dark:text-emerald-300 flex items-center gap-1">
+                  <span className="text-[11px] font-bold uppercase tracking-wider text-emerald-700 dark:text-emerald-300 flex items-center gap-1">
                     <Sparkles className="w-3.5 h-3.5 text-emerald-500" />
                     Suggested Next Available Slot
                   </span>
-                  <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950/80 text-emerald-700 dark:text-emerald-300 border border-emerald-300/60 dark:border-emerald-700/60">
+                  <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-500/25">
                     {suggestedNextSlot.isNextDay ? (suggestedNextSlot.daysOffset === 1 ? '🌅 Next Day (+1d)' : `📅 In ${suggestedNextSlot.daysOffset} Days`) : '⚡ Today'}
                   </span>
-                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-indigo-100 dark:bg-indigo-950/80 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 flex items-center gap-1">
+                  <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-indigo-500/10 text-indigo-700 dark:text-indigo-300 border border-indigo-500/20 flex items-center gap-1">
                     <ShieldCheck className="w-3 h-3 text-indigo-500" />
                     Sleep Time Protected ({capacitySettings.sleepStartTime || '11:00 PM'} - {capacitySettings.sleepEndTime || '06:00 AM'})
                   </span>
                 </div>
-                <div className="text-sm sm:text-base font-black font-display text-theme-text mt-0.5 flex items-center gap-2 flex-wrap">
+                <div className="text-sm sm:text-base font-bold font-display text-theme-text mt-0.5 flex items-center gap-2 flex-wrap">
                   <span>{suggestedNextSlot.date} ({suggestedNextSlot.dayOfWeek})</span>
-                  <span className="text-emerald-600 dark:text-emerald-400 font-mono font-black">
-                    • {suggestedNextSlot.startTime} - {suggestedNextSlot.endTime}
+                  <span className="text-emerald-600 dark:text-emerald-300 font-mono font-bold tracking-tight">
+                    • {suggestedNextSlot.startTime} – {suggestedNextSlot.endTime}
                   </span>
                   {(() => {
                     const period = getTimePeriodForTime(suggestedNextSlot.startTime, timePeriodSettings);
                     if (!period) return null;
                     return (
-                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-indigo-100 dark:bg-indigo-950/80 text-indigo-800 dark:text-indigo-200 border border-indigo-300 dark:border-indigo-700 flex items-center gap-1 shadow-2xs">
+                      <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-indigo-500/10 dark:bg-indigo-950/60 text-indigo-800 dark:text-indigo-200 border border-indigo-500/20 flex items-center gap-1">
                         <span>{period.emoji}</span>
                         <span>{period.name}</span>
                       </span>
@@ -458,19 +460,19 @@ export const RescheduleModal: React.FC<RescheduleModalProps> = ({
                 onConfirmReschedule(task, suggestedNextSlot.date, suggestedNextSlot.startTime, suggestedNextSlot.endTime, recurringScope);
                 onClose();
               }}
-              className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white text-xs font-black shadow-lg shadow-emerald-500/25 transition-all transform active:scale-95 flex items-center justify-center gap-1.5 shrink-0 cursor-pointer"
+              className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 active:scale-[0.98] text-white text-xs font-semibold shadow-sm shadow-emerald-600/30 transition-all flex items-center justify-center gap-1.5 shrink-0 cursor-pointer"
             >
-              <Check className="w-4 h-4 stroke-[3]" />
+              <Check className="w-4 h-4 stroke-[2.5]" />
               <span>Confirm This Slot</span>
             </button>
           </div>
         )}
 
         {/* Anchor Date Quick Switcher Bar */}
-        <div className="flex items-center justify-between p-2.5 rounded-2xl bg-theme-card-hover border border-theme-border flex-wrap gap-2 text-xs shrink-0">
+        <div className="flex items-center justify-between p-2 rounded-2xl bg-theme-card-hover border border-theme-border flex-wrap gap-2 text-xs shrink-0">
           <div className="flex items-center gap-2">
             <Calendar className="w-4 h-4 text-blue-500 shrink-0" />
-            <span className="font-bold text-theme-text">Target Date:</span>
+            <span className="font-semibold text-theme-text">Target Date:</span>
             <input 
               type="date"
               min={todayStr}
@@ -482,25 +484,25 @@ export const RescheduleModal: React.FC<RescheduleModalProps> = ({
                   setSelectedSlot(null);
                 }
               }}
-              className="px-2.5 py-1 rounded-lg bg-theme-card border border-theme-border text-theme-text font-mono font-bold text-xs focus:outline-none focus:ring-1 focus:ring-blue-500"
+              className="px-2.5 py-1 rounded-lg bg-theme-card border border-theme-border text-theme-text font-mono font-medium text-xs focus:outline-none focus:ring-1 focus:ring-blue-500 transition-all"
             />
           </div>
 
           <div className="flex items-center gap-1.5 flex-wrap">
-            {task.taskDate && (
+            {task.taskDate && task.taskDate !== todayStr && (
               <button
                 type="button"
                 onClick={() => {
                   setAnchorDate(task.taskDate >= todayStr ? task.taskDate : todayStr);
                   setSelectedSlot(null);
                 }}
-                className={`px-2.5 py-1 rounded-lg font-bold transition-all border ${
+                className={`px-3 py-1 rounded-lg font-medium transition-all ${
                   anchorDate === (task.taskDate >= todayStr ? task.taskDate : todayStr)
-                    ? 'bg-blue-600 text-white border-blue-600 shadow-sm'
-                    : 'bg-theme-card text-theme-muted hover:text-theme-text border-theme-border'
+                    ? 'bg-blue-600 text-white shadow-xs font-semibold'
+                    : 'bg-theme-card text-theme-muted hover:text-theme-text border border-theme-border hover:bg-theme-card-hover'
                 }`}
               >
-                {task.taskDate === todayStr ? `Today (${formatDisplayDate(task.taskDate)})` : `Task Date (${formatDisplayDate(task.taskDate)})`}
+                Task Date ({formatDisplayDate(task.taskDate)})
               </button>
             )}
 
@@ -510,10 +512,10 @@ export const RescheduleModal: React.FC<RescheduleModalProps> = ({
                 setAnchorDate(todayStr);
                 setSelectedSlot(null);
               }}
-              className={`px-2.5 py-1 rounded-lg font-bold transition-all border ${
+              className={`px-3 py-1 rounded-lg font-medium transition-all ${
                 anchorDate === todayStr
-                  ? 'bg-blue-600 text-white border-blue-600 shadow-sm'
-                  : 'bg-theme-card text-theme-muted hover:text-theme-text border-theme-border'
+                  ? 'bg-blue-600 text-white shadow-xs font-semibold'
+                  : 'bg-theme-card text-theme-muted hover:text-theme-text border border-theme-border hover:bg-theme-card-hover'
               }`}
             >
               Today
@@ -525,10 +527,10 @@ export const RescheduleModal: React.FC<RescheduleModalProps> = ({
                 setAnchorDate(tomorrowStr);
                 setSelectedSlot(null);
               }}
-              className={`px-2.5 py-1 rounded-lg font-bold transition-all border ${
+              className={`px-3 py-1 rounded-lg font-medium transition-all ${
                 anchorDate === tomorrowStr
-                  ? 'bg-blue-600 text-white border-blue-600 shadow-sm'
-                  : 'bg-theme-card text-theme-muted hover:text-theme-text border-theme-border'
+                  ? 'bg-blue-600 text-white shadow-xs font-semibold'
+                  : 'bg-theme-card text-theme-muted hover:text-theme-text border border-theme-border hover:bg-theme-card-hover'
               }`}
             >
               Tomorrow
@@ -543,7 +545,14 @@ export const RescheduleModal: React.FC<RescheduleModalProps> = ({
                 setAnchorDate(dStr);
                 setSelectedSlot(null);
               }}
-              className="px-2.5 py-1 rounded-lg font-bold transition-all border bg-theme-card text-theme-muted hover:text-theme-text border-theme-border"
+              className={`px-3 py-1 rounded-lg font-medium transition-all ${
+                anchorDate === (() => {
+                  const parts = todayStr.split('-').map(Number);
+                  return toISODateString(new Date(parts[0], parts[1] - 1, parts[2] + 2));
+                })()
+                  ? 'bg-blue-600 text-white shadow-xs font-semibold'
+                  : 'bg-theme-card text-theme-muted hover:text-theme-text border border-theme-border hover:bg-theme-card-hover'
+              }`}
             >
               +2 Days
             </button>
@@ -557,7 +566,14 @@ export const RescheduleModal: React.FC<RescheduleModalProps> = ({
                 setAnchorDate(dStr);
                 setSelectedSlot(null);
               }}
-              className="px-2.5 py-1 rounded-lg font-bold transition-all border bg-theme-card text-theme-muted hover:text-theme-text border-theme-border"
+              className={`px-3 py-1 rounded-lg font-medium transition-all ${
+                anchorDate === (() => {
+                  const parts = todayStr.split('-').map(Number);
+                  return toISODateString(new Date(parts[0], parts[1] - 1, parts[2] + 7));
+                })()
+                  ? 'bg-blue-600 text-white shadow-xs font-semibold'
+                  : 'bg-theme-card text-theme-muted hover:text-theme-text border border-theme-border hover:bg-theme-card-hover'
+              }`}
             >
               +1 Week
             </button>
@@ -565,69 +581,74 @@ export const RescheduleModal: React.FC<RescheduleModalProps> = ({
         </div>
 
         {/* Navigation Mode Tabs */}
-        <div className="flex items-center gap-1.5 p-1 bg-theme-card-hover rounded-xl border border-theme-border text-xs font-bold shrink-0">
+        <div className="flex items-center gap-1 p-1 bg-theme-card-hover rounded-xl border border-theme-border text-xs font-semibold shrink-0">
           <button
             onClick={() => setViewMode('week')}
-            className={`flex-1 py-2 rounded-lg transition-all flex items-center justify-center gap-1.5 ${
+            className={`flex-1 py-1.5 px-2.5 rounded-lg transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
               viewMode === 'week' 
-                ? 'bg-theme-card text-blue-600 dark:text-blue-400 shadow-sm' 
+                ? 'bg-theme-card text-blue-600 dark:text-blue-400 shadow-xs border border-theme-border' 
                 : 'text-theme-muted hover:text-theme-text'
             }`}
           >
-            <CalendarDays className="w-4 h-4" />
+            <CalendarDays className="w-3.5 h-3.5 text-blue-500" />
             <span>7-Day Schedule Matrix (from {formatDisplayDate(anchorDate)})</span>
           </button>
           <button
             onClick={() => setViewMode('scanner')}
-            className={`flex-1 py-2 rounded-lg transition-all flex items-center justify-center gap-1.5 ${
+            className={`flex-1 py-1.5 px-2.5 rounded-lg transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
               viewMode === 'scanner' 
-                ? 'bg-theme-card text-purple-600 dark:text-purple-400 shadow-sm' 
+                ? 'bg-theme-card text-purple-600 dark:text-purple-400 shadow-xs border border-theme-border' 
                 : 'text-theme-muted hover:text-theme-text'
             }`}
           >
-            <Search className="w-4 h-4" />
+            <Search className="w-3.5 h-3.5" />
             <span>100-Day Smart Scanner</span>
           </button>
           <button
             onClick={() => setViewMode('custom')}
-            className={`flex-1 py-2 rounded-lg transition-all flex items-center justify-center gap-1.5 ${
+            className={`flex-1 py-1.5 px-2.5 rounded-lg transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
               viewMode === 'custom' 
-                ? 'bg-theme-card text-emerald-600 dark:text-emerald-400 shadow-sm' 
+                ? 'bg-theme-card text-emerald-600 dark:text-emerald-400 shadow-xs border border-theme-border' 
                 : 'text-theme-muted hover:text-theme-text'
             }`}
           >
-            <Calendar className="w-4 h-4" />
+            <Calendar className="w-3.5 h-3.5" />
             <span>Custom Date Finder</span>
           </button>
         </div>
 
         {/* Content Body */}
-        <div className="flex-1 overflow-y-auto space-y-3.5 pr-1">
+        <div className="flex-1 overflow-y-auto space-y-3 pr-1">
           
           {/* TAB 1: TOMORROW & NEXT 7 DAYS MULTIPLE TIME SLOTS */}
           {viewMode === 'week' && (
             <div className="space-y-3">
               
               {/* Day Filter Pills */}
-              <div className="flex items-center gap-1.5 overflow-x-auto pb-1 text-xs font-bold no-scrollbar">
+              <div className="flex items-center gap-1.5 overflow-x-auto pb-1 text-xs font-medium no-scrollbar">
                 <button
                   onClick={() => setSelectedDayFilter('ALL')}
-                  className={`px-3 py-1.5 rounded-xl shrink-0 transition-all border ${
+                  className={`px-3 py-1.5 rounded-xl shrink-0 transition-all flex items-center gap-1.5 cursor-pointer ${
                     selectedDayFilter === 'ALL'
-                      ? 'bg-blue-600 text-white border-blue-600 shadow-sm'
-                      : 'bg-theme-card text-theme-muted border-theme-border hover:text-theme-text'
+                      ? 'bg-blue-600 text-white shadow-xs font-semibold'
+                      : 'bg-theme-card text-theme-muted border border-theme-border hover:text-theme-text hover:bg-theme-card-hover'
                   }`}
                 >
-                  All Days ({weekDaysData.length})
+                  <span>All Days</span>
+                  <span className={`text-[10px] px-1.5 py-0.2 rounded-full ${
+                    selectedDayFilter === 'ALL' ? 'bg-white/20 text-white' : 'bg-theme-card-hover text-theme-muted'
+                  }`}>
+                    {weekDaysData.length}
+                  </span>
                 </button>
                 {weekDaysData.map((d, i) => (
                   <button
                     key={i}
                     onClick={() => setSelectedDayFilter(i)}
-                    className={`px-3 py-1.5 rounded-xl shrink-0 transition-all border flex items-center gap-1.5 ${
+                    className={`px-3 py-1.5 rounded-xl shrink-0 transition-all flex items-center gap-1.5 cursor-pointer ${
                       selectedDayFilter === i
-                        ? 'bg-blue-600 text-white border-blue-600 shadow-sm'
-                        : 'bg-theme-card text-theme-muted border-theme-border hover:text-theme-text'
+                        ? 'bg-blue-600 text-white shadow-xs font-semibold'
+                        : 'bg-theme-card text-theme-muted border border-theme-border hover:text-theme-text hover:bg-theme-card-hover'
                     }`}
                   >
                     <span>{d.dayLabel}</span>
@@ -640,47 +661,47 @@ export const RescheduleModal: React.FC<RescheduleModalProps> = ({
                 ))}
               </div>
 
-              {/* RELATIVE SHIFT TIMELINE MATRIX (Blue: Before | Red: Current | Green: After) */}
+              {/* RELATIVE SHIFT TIMELINE MATRIX */}
               {taskStartMin !== null && (
-                <div className="p-3.5 sm:p-4 rounded-2xl bg-theme-card-hover/80 border border-theme-border shadow-sm space-y-3 shrink-0">
-                  <div className="flex items-center justify-between gap-2 flex-wrap">
+                <div className="p-3.5 sm:p-4 rounded-2xl bg-theme-card-hover/70 border border-theme-border shadow-xs space-y-3 shrink-0">
+                  <div className="flex items-center justify-between gap-2 flex-wrap pb-1 border-b border-theme-border/60">
                     <div className="flex items-center gap-2">
-                      <span className="text-xs font-black uppercase tracking-wider text-theme-text flex items-center gap-1.5">
-                        <Clock className="w-3.5 h-3.5 text-blue-500" />
+                      <Clock className="w-3.5 h-3.5 text-blue-500" />
+                      <span className="text-xs font-bold text-theme-text tracking-tight">
                         Shift Timeline Matrix ({formatDisplayDate(anchorDate)})
                       </span>
                     </div>
-                    <div className="flex items-center gap-2.5 text-[10px] font-bold text-theme-muted flex-wrap">
-                      <span className="flex items-center gap-1">
-                        <span className="w-2.5 h-2.5 rounded-full bg-blue-500 inline-block"></span>
-                        <span className="text-blue-600 dark:text-blue-400 font-semibold">Blue: Earlier ({beforeSlots.length})</span>
+                    <div className="flex items-center gap-3 text-[11px] font-medium text-theme-muted flex-wrap">
+                      <span className="flex items-center gap-1.5">
+                        <span className="w-2 h-2 rounded-full bg-blue-500"></span>
+                        <span>Earlier ({beforeSlots.length})</span>
                       </span>
-                      <span className="flex items-center gap-1">
-                        <span className="w-2.5 h-2.5 rounded-full bg-red-500 inline-block"></span>
-                        <span className="text-red-600 dark:text-red-400 font-semibold">Red: Current Anchor</span>
+                      <span className="flex items-center gap-1.5">
+                        <span className="w-2 h-2 rounded-full bg-amber-500"></span>
+                        <span>Current Anchor</span>
                       </span>
-                      <span className="flex items-center gap-1">
-                        <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 inline-block"></span>
-                        <span className="text-emerald-600 dark:text-emerald-400 font-semibold">Green: Later ({afterSlots.length})</span>
+                      <span className="flex items-center gap-1.5">
+                        <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+                        <span>Later ({afterSlots.length})</span>
                       </span>
                     </div>
                   </div>
 
-                  {/* 3-Section Visual Layout: Before (Blue) ⟵ Current (Red) ⟶ After (Green) */}
-                  <div className="grid grid-cols-1 lg:grid-cols-11 gap-2.5 items-stretch">
+                  {/* 3-Section Visual Layout: Before ⟵ Current Anchor ⟶ After */}
+                  <div className="grid grid-cols-1 md:grid-cols-[1fr_135px_1fr] gap-3 items-stretch">
                     
-                    {/* 1. BEFORE SLOTS (BLUE BOXES) - Col span 5 */}
-                    <div className="lg:col-span-5 space-y-2 flex flex-col justify-between">
-                      <div className="flex items-center justify-between text-[11px] font-black text-blue-700 dark:text-blue-300 uppercase tracking-wider px-1">
+                    {/* 1. BEFORE SLOTS (BLUE / PRE-PONE) */}
+                    <div className="space-y-2 flex flex-col justify-between">
+                      <div className="flex items-center justify-between text-[11px] font-semibold text-blue-600 dark:text-blue-400 uppercase tracking-wider px-1">
                         <span className="flex items-center gap-1">
                           <ArrowLeft className="w-3 h-3 stroke-[2.5]" /> Shift Earlier ({beforeSlots.length})
                         </span>
-                        <span className="text-[10px] font-medium text-theme-muted font-normal">Pre-pone</span>
+                        <span className="text-[10px] font-normal text-theme-muted normal-case">Pre-pone</span>
                       </div>
 
                       <div className="space-y-1.5 flex-1 flex flex-col justify-start">
                         {beforeSlots.length === 0 ? (
-                          <div className="p-3 rounded-xl bg-blue-50/40 dark:bg-blue-950/20 border border-dashed border-blue-200 dark:border-blue-900/40 text-center text-xs text-theme-muted flex items-center justify-center flex-1 min-h-[70px]">
+                          <div className="p-3 rounded-xl bg-blue-500/[0.04] dark:bg-blue-400/[0.06] border border-dashed border-blue-500/20 text-center text-xs text-theme-muted flex items-center justify-center flex-1 min-h-[70px]">
                             No earlier conflict-free slots on {anchorDate}
                           </div>
                         ) : (
@@ -701,35 +722,35 @@ export const RescheduleModal: React.FC<RescheduleModalProps> = ({
                                 onClick={() => setSelectedSlot(slot)}
                                 className={`w-full p-2.5 rounded-xl border text-left transition-all flex items-center justify-between gap-2 cursor-pointer ${
                                   isSelected
-                                    ? 'bg-blue-600 text-white border-blue-600 shadow-md ring-2 ring-blue-500/50'
-                                    : 'bg-blue-50/90 dark:bg-blue-950/50 border-blue-300 dark:border-blue-800/80 hover:border-blue-500 hover:bg-blue-100/80 dark:hover:bg-blue-900/60 shadow-2xs'
+                                    ? 'bg-blue-600 text-white border-blue-600 shadow-md ring-2 ring-blue-500/30'
+                                    : 'bg-blue-500/[0.04] dark:bg-blue-400/[0.08] border-blue-500/20 dark:border-blue-400/25 hover:border-blue-500/40 hover:bg-blue-500/[0.08] shadow-2xs'
                                 }`}
                               >
                                 <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
-                                  <div className={`text-xs font-mono font-black ${isSelected ? 'text-white' : 'text-blue-950 dark:text-blue-100'}`}>
+                                  <div className={`text-xs font-mono font-bold ${isSelected ? 'text-white' : 'text-theme-text'}`}>
                                     {slot.startTime} → {slot.endTime}
                                   </div>
-                                  <span className={`text-[10px] font-bold px-1.5 py-0.2 rounded shrink-0 flex items-center gap-0.5 ${
+                                  <span className={`text-[10px] font-medium px-1.5 py-0.2 rounded-full shrink-0 flex items-center gap-0.5 ${
                                     isSelected 
                                       ? 'bg-white/20 text-white' 
-                                      : 'bg-blue-100 dark:bg-blue-900/80 text-blue-800 dark:text-blue-200 border border-blue-200 dark:border-blue-700'
+                                      : 'bg-blue-500/10 text-blue-700 dark:text-blue-300 border border-blue-500/20'
                                   }`}>
                                     <span>{period?.emoji || '⏰'}</span>
                                     <span>{period?.name || slot.period}</span>
                                   </span>
                                   {slot.isSimultaneousSlot && (
-                                    <span className="text-[11px] font-black tracking-wider px-2 py-0.5 rounded bg-purple-100 dark:bg-purple-950 text-purple-700 dark:text-purple-300 border border-purple-300 dark:border-purple-800 flex items-center gap-0.5 shadow-2xs">
+                                    <span className="text-[10px] font-semibold tracking-wider px-1.5 py-0.5 rounded-full bg-purple-500/15 text-purple-700 dark:text-purple-300 border border-purple-500/25 flex items-center gap-0.5">
                                       <Zap className="w-2.5 h-2.5 fill-current" /> Simultaneous
                                     </span>
                                   )}
                                 </div>
                                 <div className="flex items-center gap-1.5 shrink-0">
-                                  <span className={`text-[11px] font-bold font-mono px-2 py-0.5 rounded ${
-                                    isSelected ? 'bg-white/25 text-white' : 'bg-blue-200/80 dark:bg-blue-900/80 text-blue-900 dark:text-blue-100'
+                                  <span className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded-full ${
+                                    isSelected ? 'bg-white/25 text-white' : 'bg-blue-500/20 text-blue-700 dark:text-blue-300 border border-blue-500/30'
                                   }`}>
                                     {diffLabel}
                                   </span>
-                                  {isSelected && <Check className="w-3.5 h-3.5 stroke-[3] text-white" />}
+                                  {isSelected && <Check className="w-3.5 h-3.5 stroke-[2.5] text-white" />}
                                 </div>
                               </button>
                             );
@@ -738,42 +759,42 @@ export const RescheduleModal: React.FC<RescheduleModalProps> = ({
                       </div>
                     </div>
 
-                    {/* 2. CURRENT TIME REFERENCE (RED BOX) - Col span 1 */}
-                    <div className="lg:col-span-1 flex flex-col items-center justify-center p-2.5 rounded-xl bg-red-500/10 dark:bg-red-950/30 border-2 border-red-500 text-center space-y-1 shrink-0 shadow-sm">
-                      <span className="text-[11px] font-black uppercase tracking-wider text-red-700 dark:text-red-300 px-2 py-0.5 rounded bg-red-100 dark:bg-red-950/80 border border-red-300 dark:border-red-800 flex items-center gap-0.5">
-                        <Clock className="w-3 h-3" /> CURRENT
+                    {/* 2. CURRENT TIME REFERENCE (APPLE CUPERTINO PIN CARD) */}
+                    <div className="flex flex-col items-center justify-center p-3 rounded-2xl bg-amber-500/[0.06] dark:bg-amber-400/[0.08] border border-amber-500/30 dark:border-amber-400/30 text-center space-y-1 shrink-0 shadow-2xs">
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-amber-700 dark:text-amber-300 px-2.5 py-0.5 rounded-full bg-amber-500/15 border border-amber-500/25 flex items-center gap-1">
+                        <Clock className="w-2.5 h-2.5" /> CURRENT
                       </span>
-                      <div className="font-mono font-black text-xs sm:text-sm text-red-700 dark:text-red-300 leading-tight">
+                      <div className="font-mono font-bold text-xs sm:text-sm text-theme-text leading-tight mt-1">
                         {task.startTime}
                       </div>
-                      <div className="text-[11px] text-theme-muted font-mono font-semibold">
+                      <div className="text-[11px] text-theme-muted font-mono font-medium">
                         ↓ {task.endTime}
                       </div>
-                      <div className="text-[11px] font-bold text-red-600/90 dark:text-red-400/90 font-mono">
-                        ({task.taskDate === todayStr ? `Today (${formatDisplayDate(task.taskDate)})` : formatDisplayDate(task.taskDate)})
+                      <div className="text-[10px] text-amber-700 dark:text-amber-300 font-semibold">
+                        {task.taskDate === todayStr ? `Today (${formatDisplayDate(task.taskDate)})` : formatDisplayDate(task.taskDate)}
                       </div>
                       {(() => {
                         const curPeriod = getTimePeriodForTime(task.startTime, timePeriodSettings);
                         return (
-                          <span className="text-[11px] font-bold text-red-700 dark:text-red-300 truncate max-w-full px-1">
+                          <span className="text-[10px] font-medium text-theme-muted truncate max-w-full px-1">
                             {curPeriod?.emoji || '⏰'} {curPeriod?.name || 'Anchor'}
                           </span>
                         );
                       })()}
                     </div>
 
-                    {/* 3. AFTER SLOTS (GREEN BOXES) - Col span 5 */}
-                    <div className="lg:col-span-5 space-y-2 flex flex-col justify-between">
-                      <div className="flex items-center justify-between text-[11px] font-black text-emerald-700 dark:text-emerald-300 uppercase tracking-wider px-1">
+                    {/* 3. AFTER SLOTS (GREEN / POST-PONE) */}
+                    <div className="space-y-2 flex flex-col justify-between">
+                      <div className="flex items-center justify-between text-[11px] font-semibold text-emerald-600 dark:text-emerald-400 uppercase tracking-wider px-1">
                         <span className="flex items-center gap-1">
                           Shift Later ({afterSlots.length}) <ArrowRight className="w-3 h-3 stroke-[2.5]" />
                         </span>
-                        <span className="text-[10px] font-medium text-theme-muted font-normal">Post-pone</span>
+                        <span className="text-[10px] font-normal text-theme-muted normal-case">Post-pone</span>
                       </div>
 
                       <div className="space-y-1.5 flex-1 flex flex-col justify-start">
                         {afterSlots.length === 0 ? (
-                          <div className="p-3 rounded-xl bg-emerald-50/40 dark:bg-emerald-950/20 border border-dashed border-emerald-200 dark:border-emerald-900/40 text-center text-xs text-theme-muted flex items-center justify-center flex-1 min-h-[70px]">
+                          <div className="p-3 rounded-xl bg-emerald-500/[0.04] dark:bg-emerald-400/[0.06] border border-dashed border-emerald-500/20 text-center text-xs text-theme-muted flex items-center justify-center flex-1 min-h-[70px]">
                             No later conflict-free slots on {anchorDate}
                           </div>
                         ) : (
@@ -794,35 +815,35 @@ export const RescheduleModal: React.FC<RescheduleModalProps> = ({
                                 onClick={() => setSelectedSlot(slot)}
                                 className={`w-full p-2.5 rounded-xl border text-left transition-all flex items-center justify-between gap-2 cursor-pointer ${
                                   isSelected
-                                    ? 'bg-emerald-600 text-white border-emerald-600 shadow-md ring-2 ring-emerald-500/50'
-                                    : 'bg-emerald-50/90 dark:bg-emerald-950/50 border-emerald-300 dark:border-emerald-800/80 hover:border-emerald-500 hover:bg-emerald-100/80 dark:hover:bg-emerald-900/60 shadow-2xs'
+                                    ? 'bg-emerald-600 text-white border-emerald-600 shadow-md ring-2 ring-emerald-500/30'
+                                    : 'bg-emerald-500/[0.04] dark:bg-emerald-400/[0.08] border-emerald-500/20 dark:border-emerald-400/25 hover:border-emerald-500/40 hover:bg-emerald-500/[0.08] shadow-2xs'
                                 }`}
                               >
                                 <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
-                                  <div className={`text-xs font-mono font-black ${isSelected ? 'text-white' : 'text-emerald-950 dark:text-emerald-100'}`}>
+                                  <div className={`text-xs font-mono font-bold ${isSelected ? 'text-white' : 'text-theme-text'}`}>
                                     {slot.startTime} → {slot.endTime}
                                   </div>
-                                  <span className={`text-[10px] font-bold px-1.5 py-0.2 rounded shrink-0 flex items-center gap-0.5 ${
+                                  <span className={`text-[10px] font-medium px-1.5 py-0.2 rounded-full shrink-0 flex items-center gap-0.5 ${
                                     isSelected 
                                       ? 'bg-white/20 text-white' 
-                                      : 'bg-emerald-100 dark:bg-emerald-900/80 text-emerald-800 dark:text-emerald-200 border border-emerald-200 dark:border-emerald-700'
+                                      : 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border border-emerald-500/20'
                                   }`}>
                                     <span>{period?.emoji || '⏰'}</span>
                                     <span>{period?.name || slot.period}</span>
                                   </span>
                                   {slot.isSimultaneousSlot && (
-                                    <span className="text-[11px] font-black tracking-wider px-2 py-0.5 rounded bg-purple-100 dark:bg-purple-950 text-purple-700 dark:text-purple-300 border border-purple-300 dark:border-purple-800 flex items-center gap-0.5 shadow-2xs">
+                                    <span className="text-[10px] font-semibold tracking-wider px-1.5 py-0.5 rounded-full bg-purple-500/15 text-purple-700 dark:text-purple-300 border border-purple-500/25 flex items-center gap-0.5">
                                       <Zap className="w-2.5 h-2.5 fill-current" /> Simultaneous
                                     </span>
                                   )}
                                 </div>
                                 <div className="flex items-center gap-1.5 shrink-0">
-                                  <span className={`text-[11px] font-bold font-mono px-2 py-0.5 rounded ${
-                                    isSelected ? 'bg-white/25 text-white' : 'bg-emerald-200/80 dark:bg-emerald-900/80 text-emerald-900 dark:text-emerald-100'
+                                  <span className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded-full ${
+                                    isSelected ? 'bg-white/25 text-white' : 'bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30'
                                   }`}>
                                     {diffLabel}
                                   </span>
-                                  {isSelected && <Check className="w-3.5 h-3.5 stroke-[3] text-white" />}
+                                  {isSelected && <Check className="w-3.5 h-3.5 stroke-[2.5] text-white" />}
                                 </div>
                               </button>
                             );
@@ -846,30 +867,30 @@ export const RescheduleModal: React.FC<RescheduleModalProps> = ({
                       key={groupIdx}
                       className={`p-4 rounded-2xl border transition-all ${
                         isTomorrow 
-                          ? 'bg-gradient-to-r from-blue-50/40 via-theme-card to-theme-card dark:from-blue-950/20 border-blue-300/80 dark:border-blue-800/80' 
-                          : 'bg-theme-card border-theme-border'
+                          ? 'bg-blue-500/[0.03] dark:bg-blue-400/[0.04] border-blue-500/25 dark:border-blue-400/25' 
+                          : 'bg-theme-card border-theme-border/70'
                       }`}
                     >
                       {/* Day Header */}
-                      <div className="flex items-center justify-between gap-2 border-b border-theme-border/60 pb-2.5 mb-3">
+                      <div className="flex items-center justify-between gap-2 border-b border-theme-border/50 pb-2.5 mb-3">
                         <div className="flex items-center gap-2">
-                          <div className={`w-8 h-8 rounded-xl flex items-center justify-center font-bold text-xs ${
+                          <div className={`w-7 h-7 rounded-lg flex items-center justify-center font-bold text-xs ${
                             isTomorrow 
-                              ? 'bg-blue-600 text-white shadow-sm' 
+                              ? 'bg-blue-600 text-white shadow-xs' 
                               : 'bg-theme-card-hover text-theme-text'
                           }`}>
-                            <Calendar className="w-4 h-4" />
+                            <Calendar className="w-3.5 h-3.5" />
                           </div>
                           <div>
                             <div className="flex items-center gap-2">
-                              <span className="text-sm font-black text-theme-text font-display">
+                              <span className="text-sm font-bold text-theme-text font-display">
                                 {dayGroup.dayLabel}
                               </span>
-                              <span className="text-xs text-theme-muted font-mono font-medium">
+                              <span className="text-xs text-theme-muted font-mono">
                                 ({dayGroup.dayOfWeek}, {dayGroup.dateStr})
                               </span>
                               {isTomorrow && (
-                                <span className="text-[10px] uppercase font-black tracking-wider px-2 py-0.5 rounded-full bg-blue-100 dark:bg-blue-900/60 text-blue-700 dark:text-blue-300">
+                                <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-700 dark:text-blue-300 border border-blue-500/20">
                                   Recommended
                                 </span>
                               )}
@@ -877,10 +898,10 @@ export const RescheduleModal: React.FC<RescheduleModalProps> = ({
                           </div>
                         </div>
 
-                        <span className={`text-[11px] font-bold px-2.5 py-0.5 rounded-full ${
+                        <span className={`text-[11px] font-semibold px-2.5 py-0.5 rounded-full ${
                           hasSlots 
-                            ? 'bg-emerald-100 dark:bg-emerald-950/80 text-emerald-700 dark:text-emerald-300'
-                            : 'bg-red-100 dark:bg-red-950 text-red-700 dark:text-red-300'
+                            ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border border-emerald-500/20'
+                            : 'bg-red-500/10 text-red-700 dark:text-red-300 border border-red-500/20'
                         }`}>
                           {hasSlots 
                             ? `${dayGroup.slots.length} Slots Available` 
@@ -907,22 +928,18 @@ export const RescheduleModal: React.FC<RescheduleModalProps> = ({
                                 key={sIdx}
                                 type="button"
                                 onClick={() => setSelectedSlot(slot)}
-                                className={`p-3.5 rounded-2xl border text-left transition-all relative flex flex-col justify-between gap-2.5 cursor-pointer ${
+                                className={`p-3 rounded-xl border text-left transition-all relative flex flex-col justify-between gap-2 cursor-pointer ${
                                   isSelected
-                                    ? 'bg-blue-50/95 dark:bg-blue-950/80 border-blue-500 shadow-md ring-2 ring-blue-500/40'
+                                    ? 'bg-blue-600/10 dark:bg-blue-400/15 border-blue-500 shadow-sm ring-2 ring-blue-500/30'
                                     : isSuggested
-                                      ? 'bg-emerald-50/50 dark:bg-emerald-950/30 border-emerald-400/80 hover:border-emerald-500'
-                                      : isBeforeCurrent
-                                        ? 'bg-blue-50/25 dark:bg-blue-950/15 border-blue-200/70 dark:border-blue-900/40 hover:border-blue-400'
-                                        : isAfterCurrent
-                                          ? 'bg-emerald-50/25 dark:bg-emerald-950/15 border-emerald-200/70 dark:border-emerald-900/40 hover:border-emerald-400'
-                                          : 'bg-theme-card-hover/70 hover:bg-theme-card-hover border-theme-border hover:border-blue-400 dark:hover:border-blue-600'
+                                      ? 'bg-emerald-500/[0.06] dark:bg-emerald-400/[0.08] border-emerald-500/30 hover:border-emerald-500/50'
+                                      : 'bg-theme-card hover:bg-theme-card-hover border-theme-border hover:border-blue-400 dark:hover:border-blue-600'
                                 }`}
                               >
-                                {/* Top Row: ONE Unified Time Name on Left, Clean Badges on Right */}
+                                {/* Top Row: Time Period on Left, Clean Badges on Right */}
                                 <div className="flex items-center justify-between gap-2 w-full">
                                   <div className="flex items-center gap-1.5 min-w-0">
-                                    <span className="text-[11px] font-black text-theme-text uppercase tracking-wider flex items-center gap-1 truncate">
+                                    <span className="text-[11px] font-bold text-theme-text uppercase tracking-wider flex items-center gap-1 truncate">
                                       <span>{period?.emoji || (slot.period === 'Morning' ? '🌅' : slot.period === 'Afternoon' ? '☀️' : '🌙')}</span>
                                       <span className="truncate">{period?.name || slot.period}</span>
                                     </span>
@@ -930,45 +947,45 @@ export const RescheduleModal: React.FC<RescheduleModalProps> = ({
 
                                   <div className="flex items-center gap-1.5 shrink-0">
                                     {slot.isSimultaneousSlot && (
-                                      <span className="text-[11px] font-black tracking-wider px-2 py-0.5 rounded-full bg-purple-100 dark:bg-purple-950 text-purple-700 dark:text-purple-300 border border-purple-300 dark:border-purple-700 flex items-center gap-0.5 shadow-2xs">
+                                      <span className="text-[10px] font-semibold tracking-wider px-1.5 py-0.5 rounded-full bg-purple-500/15 text-purple-700 dark:text-purple-300 border border-purple-500/25 flex items-center gap-0.5">
                                         <Zap className="w-2.5 h-2.5 fill-current" />
                                         SIMULTANEOUS
                                       </span>
                                     )}
 
                                     {isSuggested && (
-                                      <span className="text-[11px] font-black tracking-wider px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-700 flex items-center gap-0.5 shadow-2xs">
+                                      <span className="text-[10px] font-semibold tracking-wider px-1.5 py-0.5 rounded-full bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-500/25 flex items-center gap-0.5">
                                         <Zap className="w-2.5 h-2.5 fill-current" />
                                         RECOMMENDED
                                       </span>
                                     )}
 
                                     {isSelected ? (
-                                      <div className="w-5 h-5 rounded-full bg-blue-600 text-white flex items-center justify-center shrink-0 shadow-xs">
-                                        <Check className="w-3 h-3 stroke-[3]" />
+                                      <div className="w-4 h-4 rounded-full bg-blue-600 text-white flex items-center justify-center shrink-0 shadow-xs">
+                                        <Check className="w-2.5 h-2.5 stroke-[2.5]" />
                                       </div>
                                     ) : (
-                                      <span className="text-[11px] font-mono text-theme-muted font-bold">
+                                      <span className="text-[11px] font-mono text-theme-muted">
                                         #{sIdx + 1}
                                       </span>
                                     )}
                                   </div>
                                 </div>
 
-                                {/* Middle Row: Big Clean Time + Relative Offset Pill */}
+                                {/* Middle Row: Time + Offset Pill */}
                                 <div className="flex items-center justify-between gap-2 my-0.5 flex-wrap">
-                                  <div className="text-sm font-black font-mono text-theme-text flex items-center gap-1.5">
+                                  <div className="text-xs sm:text-sm font-bold font-mono text-theme-text flex items-center gap-1.5">
                                     <span>{slot.startTime}</span>
-                                    <ArrowRight className="w-3.5 h-3.5 text-theme-muted" />
+                                    <ArrowRight className="w-3 h-3 text-theme-muted" />
                                     <span>{slot.endTime}</span>
                                   </div>
 
                                   {isBeforeCurrent ? (
-                                    <span className="text-[11px] font-black font-mono px-2 py-0.5 rounded-full bg-blue-100 dark:bg-blue-950/80 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800 shrink-0 flex items-center gap-0.5">
+                                    <span className="text-[10px] font-semibold font-mono px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-700 dark:text-blue-300 border border-blue-500/20 shrink-0 flex items-center gap-0.5">
                                       <ArrowLeft className="w-2.5 h-2.5" /> Earlier
                                     </span>
                                   ) : isAfterCurrent ? (
-                                    <span className="text-[11px] font-black font-mono px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950/80 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 shrink-0 flex items-center gap-0.5">
+                                    <span className="text-[10px] font-semibold font-mono px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border border-emerald-500/20 shrink-0 flex items-center gap-0.5">
                                       Later <ArrowRight className="w-2.5 h-2.5" />
                                     </span>
                                   ) : null}
@@ -977,7 +994,7 @@ export const RescheduleModal: React.FC<RescheduleModalProps> = ({
                                 {/* Bottom Row: Duration + Sleep Protection */}
                                 <div className="flex items-center justify-between text-[10px] text-theme-muted font-medium pt-1.5 border-t border-theme-border/40">
                                   <span>{task.appointedMinutes}m block</span>
-                                  <span className="text-emerald-600 dark:text-emerald-400 font-semibold">No Sleep Overlap ✓</span>
+                                  <span className="text-emerald-600 dark:text-emerald-400 font-medium">No Sleep Overlap ✓</span>
                                 </div>
                               </button>
                             );
@@ -1012,14 +1029,14 @@ export const RescheduleModal: React.FC<RescheduleModalProps> = ({
                     <div
                       key={idx}
                       onClick={() => setSelectedSlot(slot)}
-                      className={`p-3.5 rounded-2xl border transition-all cursor-pointer flex items-center justify-between gap-3 ${
+                      className={`p-3 rounded-2xl border transition-all cursor-pointer flex items-center justify-between gap-3 ${
                         isSelected
-                          ? 'bg-purple-50/90 dark:bg-purple-950/60 border-purple-500 shadow-md ring-2 ring-purple-500/30'
-                          : 'bg-theme-card border-theme-border hover:border-purple-300 dark:hover:border-purple-700 hover:shadow-sm'
+                          ? 'bg-purple-500/10 dark:bg-purple-400/15 border-purple-500 shadow-sm ring-2 ring-purple-500/30'
+                          : 'bg-theme-card border-theme-border hover:border-purple-300 dark:hover:border-purple-700 hover:shadow-xs'
                       }`}
                     >
                       <div className="flex items-center gap-3">
-                        <div className="w-9 h-9 rounded-xl bg-purple-100 dark:bg-purple-950 flex items-center justify-center text-purple-600 font-bold text-xs font-mono">
+                        <div className="w-8 h-8 rounded-xl bg-purple-500/15 text-purple-600 font-bold text-xs font-mono flex items-center justify-center">
                           #{idx + 1}
                         </div>
                         <div>
@@ -1027,13 +1044,13 @@ export const RescheduleModal: React.FC<RescheduleModalProps> = ({
                             <span>{slot.date}</span>
                             <span className="text-theme-muted font-normal">({slot.dayOfWeek})</span>
                           </div>
-                          <div className="text-xs font-mono font-bold text-purple-600 dark:text-purple-400 flex items-center gap-1.5 flex-wrap">
-                            <span>{slot.startTime} - {slot.endTime} ({task.appointedMinutes}m)</span>
+                          <div className="text-xs font-mono font-semibold text-purple-600 dark:text-purple-400 flex items-center gap-1.5 flex-wrap">
+                            <span>{slot.startTime} – {slot.endTime} ({task.appointedMinutes}m)</span>
                             {(() => {
                               const period = getTimePeriodForTime(slot.startTime, timePeriodSettings);
                               if (!period) return null;
                               return (
-                                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-indigo-50 dark:bg-indigo-950/70 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 flex items-center gap-0.5">
+                                <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-theme-card-hover text-theme-text border border-theme-border flex items-center gap-0.5">
                                   <span>{period.emoji}</span>
                                   <span>{period.name}</span>
                                 </span>
@@ -1050,10 +1067,10 @@ export const RescheduleModal: React.FC<RescheduleModalProps> = ({
                             {Math.floor(slot.scheduledMinutesOnDay / 60)}h {slot.scheduledMinutesOnDay % 60}m
                           </div>
                         </div>
-                        <div className={`w-6 h-6 rounded-full border flex items-center justify-center ${
+                        <div className={`w-5 h-5 rounded-full border flex items-center justify-center ${
                           isSelected ? 'bg-purple-600 border-purple-600 text-white' : 'border-theme-border'
                         }`}>
-                          {isSelected && <Check className="w-3.5 h-3.5 stroke-[3]" />}
+                          {isSelected && <Check className="w-3 h-3 stroke-[2.5]" />}
                         </div>
                       </div>
                     </div>
@@ -1067,7 +1084,7 @@ export const RescheduleModal: React.FC<RescheduleModalProps> = ({
           {viewMode === 'custom' && (
             <div className="space-y-4 p-4 rounded-2xl bg-theme-card-hover/40 border border-theme-border">
               <div className="space-y-2">
-                <label className="text-xs font-bold text-theme-text flex items-center gap-1.5">
+                <label className="text-xs font-semibold text-theme-text flex items-center gap-1.5">
                   <Calendar className="w-3.5 h-3.5 text-emerald-500" />
                   <span>Choose Target Date to Scan Multiple Slots:</span>
                 </label>
@@ -1076,7 +1093,7 @@ export const RescheduleModal: React.FC<RescheduleModalProps> = ({
                   value={customDate}
                   min={tomorrowStr}
                   onChange={(e) => setCustomDate(e.target.value)}
-                  className="w-full px-3.5 py-2.5 rounded-xl border border-theme-border bg-theme-card text-theme-text text-sm font-semibold focus:outline-none focus:border-emerald-500"
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-theme-border bg-theme-card text-theme-text text-sm font-semibold focus:outline-none focus:border-emerald-500 transition-all"
                 />
               </div>
 
@@ -1096,33 +1113,33 @@ export const RescheduleModal: React.FC<RescheduleModalProps> = ({
                           onClick={() => setSelectedSlot(slot)}
                           className={`p-3 rounded-xl border transition-all cursor-pointer space-y-1.5 ${
                             isSelected
-                              ? 'bg-emerald-50 dark:bg-emerald-950/60 border-emerald-500 shadow-md ring-2 ring-emerald-500/30'
+                              ? 'bg-emerald-500/10 dark:bg-emerald-400/15 border-emerald-500 shadow-sm ring-2 ring-emerald-500/30'
                               : 'bg-theme-card border-theme-border hover:border-emerald-300'
                           }`}
                         >
                           <div className="flex items-center justify-between">
                             <div className="flex items-center gap-1.5 min-w-0">
-                              <span className="text-[11px] font-bold text-emerald-700 dark:text-emerald-300 uppercase tracking-wider flex items-center gap-1 truncate">
+                              <span className="text-[11px] font-semibold text-emerald-700 dark:text-emerald-300 uppercase tracking-wider flex items-center gap-1 truncate">
                                 <span>{period?.emoji || '⏰'}</span>
                                 <span className="truncate">{period?.name || `${slot.period} Slot`}</span>
                               </span>
                             </div>
                             <div className="flex items-center gap-1.5 shrink-0">
                               {slot.isSimultaneousSlot && (
-                                <span className="text-[9px] font-black px-1.5 py-0.5 rounded-full bg-purple-100 dark:bg-purple-950 text-purple-700 dark:text-purple-300 border border-purple-300 dark:border-purple-700 flex items-center gap-0.5 shadow-2xs">
+                                <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded-full bg-purple-500/15 text-purple-700 dark:text-purple-300 border border-purple-500/25 flex items-center gap-0.5">
                                   <Zap className="w-2.5 h-2.5 fill-current" />
                                   SIMULTANEOUS
                                 </span>
                               )}
                               {isSelected && (
                                 <div className="w-4 h-4 rounded-full bg-emerald-600 text-white flex items-center justify-center shrink-0">
-                                  <Check className="w-2.5 h-2.5 stroke-[3]" />
+                                  <Check className="w-2.5 h-2.5 stroke-[2.5]" />
                                 </div>
                               )}
                             </div>
                           </div>
                           <div className="text-xs font-mono font-bold text-theme-text">
-                            {slot.startTime} - {slot.endTime}
+                            {slot.startTime} – {slot.endTime}
                           </div>
                         </div>
                       );
@@ -1130,8 +1147,8 @@ export const RescheduleModal: React.FC<RescheduleModalProps> = ({
                   </div>
                 </div>
               ) : (
-                <div className="p-4 rounded-2xl bg-red-50/50 dark:bg-red-950/20 border border-red-300 dark:border-red-800 text-center space-y-1">
-                  <div className="text-xs font-bold text-red-600 dark:text-red-400 flex items-center justify-center gap-1">
+                <div className="p-4 rounded-2xl bg-red-500/[0.04] border border-red-500/20 text-center space-y-1">
+                  <div className="text-xs font-semibold text-red-600 dark:text-red-400 flex items-center justify-center gap-1">
                     <AlertCircle className="w-4 h-4" />
                     <span>
                       {customDate < tomorrowStr 
@@ -1152,24 +1169,24 @@ export const RescheduleModal: React.FC<RescheduleModalProps> = ({
         </div>
 
         {/* Selected Slot Summary & Action Footer */}
-        <div className="p-4 rounded-2xl bg-gradient-to-r from-blue-50/80 to-indigo-50/80 dark:from-blue-950/40 dark:to-indigo-950/40 border border-blue-200 dark:border-blue-900/60 flex flex-col sm:flex-row items-center justify-between gap-3 shrink-0">
+        <div className="p-3.5 sm:p-4 rounded-2xl bg-theme-card-hover/80 border border-theme-border backdrop-blur-xl flex flex-col sm:flex-row items-center justify-between gap-3 shrink-0">
           <div>
-            <div className="text-[11px] font-bold text-theme-muted uppercase tracking-wider">
+            <div className="text-[10px] font-bold text-theme-muted uppercase tracking-wider">
               Selected Target Reschedule Slot:
             </div>
             {selectedSlot ? (
-              <div className="text-sm font-black text-theme-text font-display flex items-center gap-2 flex-wrap">
+              <div className="text-sm font-bold text-theme-text mt-0.5 flex items-center gap-2 flex-wrap">
                 <span>{selectedSlot.date} ({selectedSlot.dayOfWeek.slice(0, 3)})</span>
-                <span className="text-blue-600 dark:text-blue-400 font-mono font-black">
-                  • {selectedSlot.startTime} - {selectedSlot.endTime}
+                <span className="text-blue-600 dark:text-blue-400 font-mono font-bold">
+                  • {selectedSlot.startTime} – {selectedSlot.endTime}
                 </span>
-                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-100 dark:bg-blue-900/60 text-blue-700 dark:text-blue-300">
+                <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-700 dark:text-blue-300 border border-blue-500/20">
                   {selectedSlot.period || 'Wake Slot'} ✓
                 </span>
               </div>
             ) : (
-              <div className="text-xs text-red-500 font-semibold">
-                Please select an available time slot above
+              <div className="text-xs text-theme-muted font-medium mt-0.5">
+                Select an available time slot above to reschedule
               </div>
             )}
           </div>
@@ -1178,7 +1195,7 @@ export const RescheduleModal: React.FC<RescheduleModalProps> = ({
             <button
               type="button"
               onClick={onClose}
-              className="flex-1 sm:flex-initial px-4 py-2.5 rounded-xl border border-theme-border bg-theme-card hover:bg-theme-card-hover text-xs font-bold text-theme-text transition-colors"
+              className="flex-1 sm:flex-initial px-4 py-2 rounded-xl border border-theme-border bg-theme-card hover:bg-theme-card-hover text-xs font-semibold text-theme-text transition-all cursor-pointer"
             >
               Cancel
             </button>
@@ -1186,9 +1203,9 @@ export const RescheduleModal: React.FC<RescheduleModalProps> = ({
               type="button"
               disabled={!selectedSlot}
               onClick={handleApplyReschedule}
-              className="flex-1 sm:flex-initial flex items-center justify-center gap-1.5 px-5 py-2.5 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white text-xs font-black shadow-lg shadow-blue-500/25 transition-all transform active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="flex-1 sm:flex-initial flex items-center justify-center gap-1.5 px-5 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 active:scale-[0.98] text-white text-xs font-semibold shadow-md shadow-blue-500/25 transition-all disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
             >
-              <Check className="w-4 h-4 stroke-[3]" />
+              <Check className="w-4 h-4 stroke-[2.5]" />
               <span>Confirm Reschedule</span>
             </button>
           </div>
