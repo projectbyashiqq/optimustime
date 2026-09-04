@@ -17,23 +17,37 @@ export function generateProjectCode(prefix = 'OPT'): string {
   return `${prefix}-${yearShort}${month}-${randomPart}`;
 }
 
-// Convert "09:30 AM" or "02:15 PM" to minutes from midnight (0..1439)
+// Convert "09:30 AM", "2:15 PM", "14:30", "09:30:00 AM", etc. to minutes from midnight (0..1439)
 export function parse12HourToMinutes(timeStr: string): number {
   if (!timeStr) return 0;
   const cleaned = timeStr.trim().toUpperCase();
-  const match = cleaned.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/);
-  if (!match) return 0;
-  
-  let hours = parseInt(match[1], 10);
-  const minutes = parseInt(match[2], 10);
-  const period = match[3];
 
-  if (period === 'AM') {
-    if (hours === 12) hours = 0;
-  } else if (period === 'PM') {
-    if (hours !== 12) hours += 12;
+  // 1. Standard 12-hour with optional seconds: "09:30 AM", "9:30AM", "09:30:00 AM", "9 AM"
+  const match12 = cleaned.match(/^(\d{1,2})(?::(\d{2}))?(?::\d{2})?\s*(AM|PM)$/);
+  if (match12) {
+    let hours = parseInt(match12[1], 10);
+    const minutes = match12[2] ? parseInt(match12[2], 10) : 0;
+    const period = match12[3];
+
+    if (period === 'AM') {
+      if (hours === 12) hours = 0;
+    } else if (period === 'PM') {
+      if (hours !== 12) hours += 12;
+    }
+    return ((hours * 60 + minutes) % 1440 + 1440) % 1440;
   }
-  return hours * 60 + minutes;
+
+  // 2. 24-hour military/ISO: "14:30", "09:00", "23:59:00"
+  const match24 = cleaned.match(/^(\d{1,2}):(\d{2})/);
+  if (match24) {
+    const hours = parseInt(match24[1], 10);
+    const minutes = parseInt(match24[2], 10);
+    if (hours >= 0 && hours <= 24 && minutes >= 0 && minutes <= 59) {
+      return ((hours * 60 + minutes) % 1440 + 1440) % 1440;
+    }
+  }
+
+  return 0;
 }
 
 // Convert minutes from midnight (0..1439) to "09:30 AM"
@@ -2497,7 +2511,23 @@ export function isTaskInSleepWindow(
 
 /**
  * Returns the NamedTimePeriod for a given 12-hour time string (e.g. "09:30 AM" -> Morning).
- * Correctly accounts for normal periods and cross-midnight periods (e.g. 08:00 PM - 02:00 AM Night).
+ * Calculate duration of a NamedTimePeriod in minutes (handles overnight periods).
+ */
+export function getPeriodDurationMinutes(period: NamedTimePeriod): number {
+  const startMin = parse12HourToMinutes(period.startTime);
+  const endMin = parse12HourToMinutes(period.endTime);
+  if (startMin <= endMin) {
+    return (endMin - startMin) || 1440;
+  } else {
+    return (1440 - startMin) + endMin;
+  }
+}
+
+/**
+ * Returns the NamedTimePeriod for a given 12-hour or 24-hour time string (e.g. "09:30 AM" -> Morning).
+ * Accurately accounts for normal periods and cross-midnight periods.
+ * When multiple periods overlap, intelligently picks the most specific (shortest duration) period,
+ * guaranteeing that newly added custom sub-zones always work throughout the app!
  */
 export function getTimePeriodForTime(
   timeStr: string,
@@ -2517,25 +2547,71 @@ export function getTimePeriodForTime(
     periodList = periodsOrSettings;
   }
 
-  if (periodList.length === 0) return null;
+  if (!periodList || periodList.length === 0) return null;
 
-  for (const period of periodList) {
+  // Filter out any blank or incomplete periods
+  const validPeriods = periodList.filter(p => p.startTime && p.endTime);
+  if (validPeriods.length === 0) return null;
+
+  // Collect all matching periods with their durations
+  const matches: { period: NamedTimePeriod; duration: number }[] = [];
+
+  for (const period of validPeriods) {
     const startMin = parse12HourToMinutes(period.startTime);
     const endMin = parse12HourToMinutes(period.endTime);
+    const duration = getPeriodDurationMinutes(period);
 
     if (startMin <= endMin) {
-      // Normal within-day range (e.g. 05:00 AM to 08:59 AM)
-      if (targetMin >= startMin && targetMin <= endMin) {
-        return period;
+      // Normal within-day range (e.g. 05:00 AM to 09:00 AM)
+      // Check both clean boundary [startMin, endMin) and legacy inclusive [startMin, endMin]
+      const isClean = endMin % 5 === 0;
+      const isMatch = isClean 
+        ? (targetMin >= startMin && targetMin < endMin)
+        : (targetMin >= startMin && targetMin <= endMin);
+
+      if (isMatch) {
+        matches.push({ period, duration });
       }
     } else {
       // Overnight / cross-midnight range (e.g. 08:00 PM to 02:00 AM)
-      if (targetMin >= startMin || targetMin <= endMin) {
-        return period;
+      const isClean = endMin % 5 === 0;
+      const isMatch = isClean
+        ? (targetMin >= startMin || targetMin < endMin)
+        : (targetMin >= startMin || targetMin <= endMin);
+
+      if (isMatch) {
+        matches.push({ period, duration });
       }
     }
   }
-  return null;
+
+  if (matches.length > 0) {
+    // Pick the most specific (shortest duration) period so custom zones take priority over broad umbrella zones!
+    matches.sort((a, b) => a.duration - b.duration);
+    return matches[0].period;
+  }
+
+  // Fallback 1: Exact match on boundary minute (e.g. targetMin === startMin or endMin)
+  for (const period of validPeriods) {
+    const startMin = parse12HourToMinutes(period.startTime);
+    const endMin = parse12HourToMinutes(period.endTime);
+    if (targetMin === startMin || targetMin === endMin) {
+      return period;
+    }
+  }
+
+  // Fallback 2: Find the nearest enclosing or preceding period so that there are never unmapped dead zones
+  let bestPeriod = validPeriods[0];
+  let minDiff = Infinity;
+  for (const period of validPeriods) {
+    const startMin = parse12HourToMinutes(period.startTime);
+    const diff = (targetMin - startMin + 1440) % 1440;
+    if (diff < minDiff) {
+      minDiff = diff;
+      bestPeriod = period;
+    }
+  }
+  return bestPeriod;
 }
 
 export function getTimePeriodName(

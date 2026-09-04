@@ -2362,6 +2362,21 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const updateDefaultTaskSettings = useCallback((settings: DefaultTaskSettings) => {
     setDefaultTaskSettings(settings);
+    const newDefBuffer = settings.defaultBufferMinutes ?? 15;
+    setCapacitySettings(prev => ({
+      ...prev,
+      defaultBufferMinutes: newDefBuffer
+    }));
+    // Automatically synchronize pending tasks to new default buffer
+    setTasks(prev => prev.map(t => {
+      if (t.status === 'Pending') {
+        return {
+          ...t,
+          bufferMinutes: newDefBuffer
+        };
+      }
+      return t;
+    }));
   }, []);
 
   // Backup / Restore & 100% System Data Hub

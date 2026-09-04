@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
 import { PriorityLevel, Category, NamedTimePeriod } from '../types';
 import { DEFAULT_NAMED_TIME_PERIODS } from '../context/initialData';
-import { getTimePeriodForTime } from '../utils/timeUtils';
+import { getTimePeriodForTime, getPeriodDurationMinutes, formatMinutesTo12Hour, parse12HourToMinutes } from '../utils/timeUtils';
 import { TimePicker } from '../components/TimePicker';
 import {
   Settings2,
@@ -14,6 +14,7 @@ import {
   Upload,
   RotateCcw,
   Plus,
+  Minus,
   Trash2,
   CheckCircle2,
   Tag,
@@ -46,7 +47,10 @@ import {
   Activity,
   FileSpreadsheet,
   FileJson,
-  Sunrise
+  Sunrise,
+  Search,
+  Scissors,
+  ArrowRight
 } from 'lucide-react';
 import { exportTasksToExcelWorkbook, exportTasksToDetailedCSV } from '../utils/excelExporter';
 import { DEFAULT_SQL_SCHEMA, testSupabaseConnection } from '../services/supabase';
@@ -112,6 +116,64 @@ export const AdminSettingsView: React.FC = () => {
   const [autoSleepScheduleEnabled, setAutoSleepScheduleEnabled] = useState(Boolean(capacitySettings.autoSleepScheduleEnabled));
   const [capacityStatusMsg, setCapacityStatusMsg] = useState<string | null>(null);
 
+  // Fast 24-Hours Auto-Balancing Engine (Strict 24h Invariant: Work + Buffer + Sleep = 24.0h)
+  const clamp = (val: number, min: number, max: number) => Math.min(Math.max(val, min), max);
+  const roundHalf = (val: number) => Math.round(val * 2) / 2;
+
+  const updateWithAutoBalance = (
+    type: 'work' | 'sleep' | 'buffer',
+    newValue: number
+  ) => {
+    const rounded = roundHalf(newValue);
+
+    if (type === 'work') {
+      const newW = clamp(rounded, 1, 19.5);
+      let newS = sleepHours;
+      let newB = roundHalf(24 - newW - newS);
+      if (newB < 0.5) {
+        newB = 0.5;
+        newS = roundHalf(24 - newW - newB);
+        if (newS < 4) {
+          newS = 4;
+          newB = roundHalf(24 - newW - newS);
+        }
+      }
+      setMaxWorkHours(newW);
+      setBufferHours(newB);
+      setSleepHours(newS);
+    } else if (type === 'sleep') {
+      const newS = clamp(rounded, 4, 12);
+      let newW = maxWorkHours;
+      let newB = roundHalf(24 - newW - newS);
+      if (newB < 0.5) {
+        newB = 0.5;
+        newW = roundHalf(24 - newS - newB);
+        if (newW < 1) {
+          newW = 1;
+          newB = roundHalf(24 - newW - newS);
+        }
+      }
+      setSleepHours(newS);
+      setBufferHours(newB);
+      setMaxWorkHours(newW);
+    } else if (type === 'buffer') {
+      const newB = clamp(rounded, 0.5, 12);
+      let newS = sleepHours;
+      let newW = roundHalf(24 - newB - newS);
+      if (newW < 1) {
+        newW = 1;
+        newS = roundHalf(24 - newW - newB);
+        if (newS < 4) {
+          newS = 4;
+          newW = roundHalf(24 - newB - newS);
+        }
+      }
+      setBufferHours(newB);
+      setMaxWorkHours(newW);
+      setSleepHours(newS);
+    }
+  };
+
   // Security Editing State
   const [isPasswordProtected, setIsPasswordProtected] = useState(securitySettings.isPasswordProtected);
   const [masterPassword, setMasterPassword] = useState(securitySettings.masterPassword);
@@ -152,6 +214,10 @@ export const AdminSettingsView: React.FC = () => {
   const [taskDefaults, setTaskDefaults] = useState(defaultTaskSettings);
   const [taskDefaultsStatusMsg, setTaskDefaultsStatusMsg] = useState<string | null>(null);
 
+  // Modern UI/UX Navigation Tab & Search State
+  const [activeTab, setActiveTab] = useState<'all' | 'capacity' | 'tasks' | 'categories' | 'security'>('all');
+  const [searchQuery, setSearchQuery] = useState('');
+
   // Keep form inputs synced when cloudSyncConfig updates (e.g. from environment or context)
   React.useEffect(() => {
     setIsCloudSyncEnabled(cloudSyncConfig.isEnabled);
@@ -184,6 +250,14 @@ export const AdminSettingsView: React.FC = () => {
       setTaskDefaults(defaultTaskSettings);
     }
   }, [defaultTaskSettings]);
+
+  // Keep Day Zones (Name of Time) synced when context updates
+  React.useEffect(() => {
+    if (timePeriodSettings) {
+      setPeriodCustomizeEnabled(timePeriodSettings.isEnabled);
+      setPeriodsList(timePeriodSettings.periods || []);
+    }
+  }, [timePeriodSettings]);
 
   const handleSaveCloudSync = async () => {
     const isConfigured = Boolean(supabaseUrl.trim() && supabaseAnonKey.trim());
@@ -278,37 +352,179 @@ export const AdminSettingsView: React.FC = () => {
     setTimeout(() => setHasCopiedSql(false), 3000);
   };
 
-  // Day Zones (Name of Time) Handlers
-  const handlePeriodChange = (id: string, field: keyof NamedTimePeriod, val: string) => {
+  // =============================================================
+  // 24-HOURS NAME ENGINE: CONTIGUOUS RING & SMART SPLITTING
+  // Invariant: sum(duration) == 1440m (24.0h), zero overlaps, zero gaps
+  // =============================================================
+
+  // Compute total duration covered across all zones
+  const totalZoneMinutes = periodsList.reduce((acc, p) => acc + getPeriodDurationMinutes(p), 0);
+  const totalZoneHours = (totalZoneMinutes / 60).toFixed(1);
+
+  // 1. Update zone metadata (name, emoji, color)
+  const handlePeriodMetaChange = (id: string, field: 'name' | 'emoji' | 'color', val: string) => {
     setPeriodsList(prev => prev.map(p => p.id === id ? { ...p, [field]: val } : p));
   };
 
-  const handleAddPeriod = () => {
-    const newPeriod: NamedTimePeriod = {
-      id: `period-${Date.now()}`,
-      name: 'Custom Day Zone',
-      startTime: '10:00 PM',
-      endTime: '11:59 PM',
-      emoji: '⚡',
-      color: '#3b82f6'
-    };
-    setPeriodsList(prev => [...prev, newPeriod]);
+  // 2. Adjust boundary between Zone index and Zone (index + 1)
+  // Changing Zone index's endTime automatically locks Zone (index+1)'s startTime!
+  const handleBoundaryChange = (index: number, newEndTimeStr: string) => {
+    const list = [...periodsList];
+    if (list.length <= 1) return;
+
+    const newEndMin = parse12HourToMinutes(newEndTimeStr);
+    const cleanTimeStr = formatMinutesTo12Hour(newEndMin);
+    const nextIndex = (index + 1) % list.length;
+
+    list[index] = { ...list[index], endTime: cleanTimeStr };
+    list[nextIndex] = { ...list[nextIndex], startTime: cleanTimeStr };
+
+    setPeriodsList(list);
   };
 
-  const handleDeletePeriod = (id: string) => {
-    if (periodsList.length <= 1) {
-      alert('You must keep at least one named time period.');
+  // 3. 1-Click Stepper Nudge (Shift boundary by +/-15 minutes)
+  const handleNudgeBoundary = (index: number, deltaMinutes: number) => {
+    const list = [...periodsList];
+    if (list.length <= 1) return;
+
+    const curEndMin = parse12HourToMinutes(list[index].endTime);
+    const nextEndMin = (curEndMin + deltaMinutes + 1440) % 1440;
+    const cleanTimeStr = formatMinutesTo12Hour(nextEndMin);
+    const nextIndex = (index + 1) % list.length;
+
+    list[index] = { ...list[index], endTime: cleanTimeStr };
+    list[nextIndex] = { ...list[nextIndex], startTime: cleanTimeStr };
+
+    setPeriodsList(list);
+  };
+
+  // 4. Split Zone: 1-click bisect any zone into two balanced halves with zero gaps!
+  const handleSplitPeriod = (index: number) => {
+    const list = [...periodsList];
+    const target = list[index];
+    if (!target) return;
+
+    const startMin = parse12HourToMinutes(target.startTime);
+    const duration = getPeriodDurationMinutes(target);
+    if (duration < 30) {
+      alert('Zone duration is too short (< 30 minutes) to split.');
       return;
     }
-    setPeriodsList(prev => prev.filter(p => p.id !== id));
+
+    const halfDuration = Math.round(duration / 2);
+    const midMin = (startMin + halfDuration) % 1440;
+    const midTimeStr = formatMinutesTo12Hour(midMin);
+
+    const firstHalf: NamedTimePeriod = {
+      ...target,
+      endTime: midTimeStr
+    };
+
+    const secondHalf: NamedTimePeriod = {
+      id: `period-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      name: `${target.name.replace(/ \(Part \d+\)$/, '')} (Part 2)`,
+      startTime: midTimeStr,
+      endTime: target.endTime,
+      emoji: target.emoji || '⚡',
+      color: target.color || '#3b82f6'
+    };
+
+    list.splice(index, 1, firstHalf, secondHalf);
+    setPeriodsList(list);
+    setPeriodSaveMsg(`Split "${target.name}" into two ${(halfDuration / 60).toFixed(1)}h zones! ✂️`);
+    setTimeout(() => setPeriodSaveMsg(null), 3000);
+  };
+
+  // 5. Smart Add Zone: automatically finds the longest zone in the 24h day and splits it!
+  const handleAddPeriod = () => {
+    if (periodsList.length === 0) {
+      setPeriodsList(DEFAULT_NAMED_TIME_PERIODS);
+      return;
+    }
+
+    let longestIdx = 0;
+    let maxDur = 0;
+    periodsList.forEach((p, idx) => {
+      const dur = getPeriodDurationMinutes(p);
+      if (dur > maxDur) {
+        maxDur = dur;
+        longestIdx = idx;
+      }
+    });
+
+    handleSplitPeriod(longestIdx);
+  };
+
+  // 6. Delete Zone: cleanly merges deleted zone's slice into previous zone (preserves 24h total)
+  const handleDeletePeriod = (id: string) => {
+    if (periodsList.length <= 1) {
+      alert('You must keep at least one named time period to cover the 24-hour cycle.');
+      return;
+    }
+
+    const index = periodsList.findIndex(p => p.id === id);
+    if (index === -1) return;
+
+    const list = [...periodsList];
+    const prevIndex = (index - 1 + list.length) % list.length;
+    
+    // Merge deleted zone's time slice into previous zone
+    list[prevIndex] = {
+      ...list[prevIndex],
+      endTime: list[index].endTime
+    };
+
+    list.splice(index, 1);
+    setPeriodsList(list);
+  };
+
+  // 7. Preset Profiles
+  const applyPreset = (presetType: 'classic' | 'executive' | 'quarter' | 'circadian') => {
+    let newPeriods: NamedTimePeriod[] = [];
+    if (presetType === 'classic') {
+      newPeriods = DEFAULT_NAMED_TIME_PERIODS;
+    } else if (presetType === 'executive') {
+      newPeriods = [
+        { id: 'exec-1', name: 'Morning Routine & Fitness', startTime: '05:00 AM', endTime: '08:30 AM', emoji: '🧘', color: '#f59e0b' },
+        { id: 'exec-2', name: 'Deep Work Block', startTime: '08:30 AM', endTime: '01:00 PM', emoji: '⚡', color: '#3b82f6' },
+        { id: 'exec-3', name: 'Execution & Meetings', startTime: '01:00 PM', endTime: '05:30 PM', emoji: '💼', color: '#10b981' },
+        { id: 'exec-4', name: 'Evening & Family', startTime: '05:30 PM', endTime: '10:00 PM', emoji: '🏡', color: '#f97316' },
+        { id: 'exec-5', name: 'Deep Sleep & Recovery', startTime: '10:00 PM', endTime: '05:00 AM', emoji: '💤', color: '#6366f1' }
+      ];
+    } else if (presetType === 'quarter') {
+      newPeriods = [
+        { id: 'q-1', name: 'Morning Quad', startTime: '06:00 AM', endTime: '12:00 PM', emoji: '🌅', color: '#f59e0b' },
+        { id: 'q-2', name: 'Afternoon Quad', startTime: '12:00 PM', endTime: '06:00 PM', emoji: '☀️', color: '#3b82f6' },
+        { id: 'q-3', name: 'Evening Quad', startTime: '06:00 PM', endTime: '12:00 AM', emoji: '🌆', color: '#8b5cf6' },
+        { id: 'q-4', name: 'Night Sleep Quad', startTime: '12:00 AM', endTime: '06:00 AM', emoji: '🌙', color: '#1e293b' }
+      ];
+    } else if (presetType === 'circadian') {
+      newPeriods = [
+        { id: 'bio-1', name: 'Dawn Awakening', startTime: '05:30 AM', endTime: '08:30 AM', emoji: '🌄', color: '#f59e0b' },
+        { id: 'bio-2', name: 'Peak Cognitive Window', startTime: '08:30 AM', endTime: '12:30 PM', emoji: '🧠', color: '#3b82f6' },
+        { id: 'bio-3', name: 'Midday Siesta / Reset', startTime: '12:30 PM', endTime: '03:30 PM', emoji: '🌿', color: '#10b981' },
+        { id: 'bio-4', name: 'Secondary Focus', startTime: '03:30 PM', endTime: '07:30 PM', emoji: '🎯', color: '#f97316' },
+        { id: 'bio-5', name: 'Wind Down & Reflection', startTime: '07:30 PM', endTime: '11:00 PM', emoji: '🕯️', color: '#8b5cf6' },
+        { id: 'bio-6', name: 'Cellular Restoration', startTime: '11:00 PM', endTime: '05:30 AM', emoji: '🛌', color: '#475569' }
+      ];
+    }
+
+    setPeriodsList(newPeriods);
+    setPeriodCustomizeEnabled(true);
+    updateTimePeriodSettings({
+      isEnabled: true,
+      periods: newPeriods
+    });
+    setPeriodSaveMsg(`Applied ${presetType.toUpperCase()} 24h Profile! All zones synchronized across the app ✨`);
+    setTimeout(() => setPeriodSaveMsg(null), 3500);
   };
 
   const handleResetPeriods = () => {
-    if (confirm('Reset all Day Zones to default 7 periods (EarlyMorning, Morning, Lunch Time zone, After Lunch, Evening, Night, deep night)?')) {
+    if (confirm('Reset all Day Zones to standard 7 contiguous 24-hour periods?')) {
       setPeriodsList(DEFAULT_NAMED_TIME_PERIODS);
       setPeriodCustomizeEnabled(true);
       resetTimePeriodsToDefault();
-      setPeriodSaveMsg('Reset to default Day Zones! 🌅');
+      setPeriodSaveMsg('Reset to default 24-Hour Day Zones! 🌅');
       setTimeout(() => setPeriodSaveMsg(null), 3500);
     }
   };
@@ -318,7 +534,7 @@ export const AdminSettingsView: React.FC = () => {
       isEnabled: periodCustomizeEnabled,
       periods: periodsList
     });
-    setPeriodSaveMsg('Time Period Day Zones saved successfully! ✨');
+    setPeriodSaveMsg('24-Hour Name Engine saved! Active across all views & calculations ✨');
     setTimeout(() => setPeriodSaveMsg(null), 3500);
   };
 
@@ -347,7 +563,7 @@ export const AdminSettingsView: React.FC = () => {
       dayEndTime,
       sleepStartTime,
       sleepEndTime,
-      defaultBufferMinutes: Number(defaultBufferMinutes),
+      defaultBufferMinutes: Number(taskDefaults.defaultBufferMinutes || capacitySettings.defaultBufferMinutes || 15),
       autoSleepScheduleEnabled
     });
     setCapacityStatusMsg('24-Hour Capacity & Red-Line Protocol saved successfully! ✅');
@@ -407,42 +623,132 @@ export const AdminSettingsView: React.FC = () => {
     }
   };
 
-  return (
-    <div className="space-y-6 animate-fade-in">
+  // Smart Visibility Checker for Search & Tab Navigation
+  const isCardVisible = (cardId: 'capacity' | 'priorities' | 'taskDefaults' | 'dayZones' | 'categories' | 'bufferStatus' | 'emergencyBuffer' | 'security' | 'cloudSync' | 'backupHub') => {
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase().trim();
+      const keywordsMap: Record<string, string[]> = {
+        capacity: ['capacity', 'hours', 'sleep', 'buffer', '24h', 'work target', 'bedtime', 'wake', 'red-line', 'protocol', 'balance', 'shift'],
+        priorities: ['priority', 'p1', 'p2', 'p3', 'p4', 'p5', 'duration', 'minutes', 'rules'],
+        taskDefaults: ['task defaults', 'presets', 'fast-add', 'category', 'start time', 'strategy', 'buffer', '1-click'],
+        dayZones: ['day zones', 'time period', 'morning', 'night', 'lunch', '24-hour clock', 'clock', 'nomenclature', 'periods'],
+        categories: ['category', 'subcategory', 'tags', 'color', 'entities', 'crud', 'manage'],
+        bufferStatus: ['buffer status', 'free time', 'activity menu', 'coffee', 'exercise', 'nap', 'reading', 'meditation'],
+        emergencyBuffer: ['emergency', 'crisis', 'loadshedding', 'illness', 'buffer', 'hazard', 'power outage'],
+        security: ['security', 'password', 'pin', 'gate', 'lock', 'username', 'admin', 'protect', 'access'],
+        cloudSync: ['cloud', 'supabase', 'database', 'sync', 'realtime', 'sql', 'multi-device', 'anon key', 'url', 'vercel'],
+        backupHub: ['backup', 'restore', 'export', 'excel', 'json', 'recovery', 'vault', 'xlsx', 'snapshot', 'rollback']
+      };
+      const keys = keywordsMap[cardId] || [];
+      return keys.some(k => k.includes(q));
+    }
 
-      {/* Top Banner */}
-      <div className="glass-panel p-6 rounded-2xl border border-theme-border flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-        <div className="flex items-center gap-4">
-          <div className="w-14 h-14 rounded-2xl bg-gradient-to-tr from-slate-700 to-slate-900 dark:from-slate-800 dark:to-slate-950 flex items-center justify-center text-white shadow-lg">
-            <Settings2 className="w-7 h-7" />
+    if (activeTab === 'all') return true;
+    if (activeTab === 'capacity') return cardId === 'capacity';
+    if (activeTab === 'tasks') return ['priorities', 'taskDefaults', 'dayZones'].includes(cardId);
+    if (activeTab === 'categories') return ['categories', 'bufferStatus', 'emergencyBuffer'].includes(cardId);
+    if (activeTab === 'security') return ['security', 'cloudSync', 'backupHub'].includes(cardId);
+    return true;
+  };
+
+  return (
+    <div className="space-y-5 animate-fade-in">
+
+      {/* Top Banner & Command Navigation Hub */}
+      <div className="glass-panel p-4 sm:p-5 rounded-2xl border border-theme-border space-y-4 shadow-sm">
+        <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+          <div className="flex items-center gap-3.5">
+            <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-slate-800 to-slate-950 text-white flex items-center justify-center shadow-md shadow-slate-900/20 shrink-0">
+              <Settings2 className="w-6 h-6 text-blue-400" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h2 className="text-lg sm:text-xl font-black text-theme-text tracking-tight font-display">
+                  Global Control & Admin Panel
+                </h2>
+                <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-300 font-mono border border-blue-200 dark:border-blue-800">
+                  Engine v2.0
+                </span>
+              </div>
+              <p className="text-xs text-theme-muted mt-0.5">
+                Dynamic priority minutes, 24h capacity limits, system presets, and multi-device cloud parameters.
+              </p>
+            </div>
           </div>
-          <div>
-            <h2 className="text-xl font-black text-theme-text tracking-tight">
-              Global Control & Admin Panel
-            </h2>
-            <p className="text-xs text-theme-muted mt-0.5">
-              Customize dynamic priority minutes, categories, capacity limits, and system parameters.
-            </p>
-          </div>
+
+          <button
+            onClick={() => {
+              if (confirm('Are you sure you want to empty all tasks, notes, buffer logs, and projects, and reset to clean default settings?')) {
+                resetToDefaultData();
+              }
+            }}
+            className="flex items-center gap-1.5 px-3.5 py-2 bg-theme-card-hover hover:bg-red-50 dark:hover:bg-red-950/40 text-theme-muted hover:text-red-500 border border-theme-border text-xs font-bold rounded-xl transition-all cursor-pointer active:scale-98"
+          >
+            <RotateCcw className="w-3.5 h-3.5" />
+            <span>Clear All Tasks & Reset Defaults</span>
+          </button>
         </div>
 
-        <button
-          onClick={() => {
-            if (confirm('Are you sure you want to empty all tasks, notes, buffer logs, and projects, and reset to clean default settings?')) {
-              resetToDefaultData();
-            }
-          }}
-          className="flex items-center gap-1.5 px-3.5 py-2 bg-theme-card-hover hover:bg-red-50 dark:hover:bg-red-950/40 text-theme-muted hover:text-red-500 border border-theme-border text-xs font-bold rounded-xl transition-colors cursor-pointer"
-        >
-          <RotateCcw className="w-3.5 h-3.5" />
-          <span>Clear All Tasks & Reset Defaults</span>
-        </button>
+        {/* Category Navigation Tabs & Quick Search */}
+        <div className="pt-2 border-t border-theme-border/60 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+          {/* Fast Navigation Tabs */}
+          <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5">
+            {[
+              { id: 'all', label: 'All Settings', icon: Sliders },
+              { id: 'capacity', label: 'Capacity & Schedule', icon: ShieldCheck },
+              { id: 'tasks', label: 'Tasks & Day Zones', icon: Sparkles },
+              { id: 'categories', label: 'Categories & Buffers', icon: FolderKanban },
+              { id: 'security', label: 'Security & Cloud Sync', icon: Lock },
+            ].map(tab => {
+              const Icon = tab.icon;
+              const isActive = activeTab === tab.id;
+              return (
+                <button
+                  key={tab.id}
+                  onClick={() => {
+                    setActiveTab(tab.id as any);
+                    setSearchQuery('');
+                  }}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all cursor-pointer ${
+                    isActive
+                      ? 'bg-blue-600 text-white shadow-sm shadow-blue-500/30 ring-1 ring-blue-500'
+                      : 'bg-theme-card-hover text-theme-muted hover:text-theme-text hover:bg-theme-border border border-theme-border'
+                  }`}
+                >
+                  <Icon className={`w-3.5 h-3.5 ${isActive ? 'text-white' : 'text-blue-500'}`} />
+                  <span>{tab.label}</span>
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Quick Search Box */}
+          <div className="relative shrink-0 sm:w-64">
+            <Search className="w-3.5 h-3.5 text-theme-muted absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Quick search settings..."
+              className="w-full pl-8 pr-7 py-1.5 text-xs rounded-xl bg-theme-card border border-theme-border text-theme-text placeholder:text-theme-muted focus:outline-none focus:ring-1 focus:ring-blue-500 transition-all"
+            />
+            {searchQuery && (
+              <button
+                onClick={() => setSearchQuery('')}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-theme-muted hover:text-theme-text cursor-pointer"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
+        </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className={`grid grid-cols-1 ${activeTab === 'capacity' ? 'max-w-4xl mx-auto' : 'lg:grid-cols-2'} gap-5`}>
 
         {/* Daily Capacity & Red-Line Protocol (24-Hours Locked System Tools) */}
-        <div className="glass-panel p-6 rounded-2xl border border-theme-border space-y-6 relative z-20">
+        {isCardVisible('capacity') && (
+        <div className={`glass-panel p-5 sm:p-6 rounded-2xl border border-theme-border space-y-5 relative z-20 ${activeTab === 'capacity' ? 'lg:col-span-2' : ''}`}>
           <div className="flex items-center justify-between border-b border-theme-border pb-4 flex-wrap gap-2">
             <div>
               <h3 className="text-sm font-black text-theme-text uppercase tracking-wider flex items-center gap-2">
@@ -455,29 +761,9 @@ export const AdminSettingsView: React.FC = () => {
             </div>
             
             {/* 24h Lock Balance Status Badge */}
-            <div className={`px-3 py-1.5 rounded-full text-xs font-black flex items-center gap-1.5 shadow-sm transition-all ${
-              (maxWorkHours + bufferHours + sleepHours) === 24
-                ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/80 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-700'
-                : (maxWorkHours + bufferHours + sleepHours) > 24
-                  ? 'bg-red-100 text-red-800 dark:bg-red-950/80 dark:text-red-300 border border-red-300 dark:border-red-700 animate-pulse'
-                  : 'bg-amber-100 text-amber-800 dark:bg-amber-950/80 dark:text-amber-300 border border-amber-300 dark:border-amber-700'
-            }`}>
-              {(maxWorkHours + bufferHours + sleepHours) === 24 ? (
-                <>
-                  <Lock className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
-                  <span>24.0h Locked & Balanced (Exact)</span>
-                </>
-              ) : (maxWorkHours + bufferHours + sleepHours) > 24 ? (
-                <>
-                  <AlertTriangle className="w-3.5 h-3.5 text-red-600 dark:text-red-400" />
-                  <span>{(maxWorkHours + bufferHours + sleepHours)}h / 24h (+{((maxWorkHours + bufferHours + sleepHours) - 24)}h Over Red-Line)</span>
-                </>
-              ) : (
-                <>
-                  <Clock className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
-                  <span>{(maxWorkHours + bufferHours + sleepHours)}h / 24h ({(24 - (maxWorkHours + bufferHours + sleepHours))}h Unallocated)</span>
-                </>
-              )}
+            <div className="px-3 py-1.5 rounded-full text-xs font-black flex items-center gap-1.5 shadow-xs bg-emerald-100 text-emerald-800 dark:bg-emerald-950/80 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-700">
+              <Lock className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+              <span>24.0h Auto-Balanced Protocol</span>
             </div>
           </div>
 
@@ -512,12 +798,8 @@ export const AdminSettingsView: React.FC = () => {
                   <button
                     key={targetH}
                     type="button"
-                    onClick={() => {
-                      setMaxWorkHours(targetH);
-                      const rem = Math.max(0, 24 - targetH - sleepHours);
-                      setBufferHours(rem);
-                    }}
-                    className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all ${
+                    onClick={() => updateWithAutoBalance('work', targetH)}
+                    className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer ${
                       maxWorkHours === targetH
                         ? 'bg-blue-600 text-white shadow-sm'
                         : 'bg-theme-card text-theme-muted border border-theme-border hover:border-blue-400'
@@ -534,20 +816,33 @@ export const AdminSettingsView: React.FC = () => {
                   <label className="font-bold text-theme-text block mb-1 text-[11px]">
                     Work Target Budget (Hours)
                   </label>
-                  <input
-                    type="number"
-                    min="1"
-                    max="20"
-                    step="0.5"
-                    value={maxWorkHours}
-                    onChange={(e) => {
-                      const w = Number(e.target.value);
-                      setMaxWorkHours(w);
-                      const rem = Math.max(0, 24 - w - sleepHours);
-                      setBufferHours(rem);
-                    }}
-                    className="w-full px-3 py-2 rounded-xl bg-theme-card border border-blue-300 dark:border-blue-800 text-blue-600 dark:text-blue-400 font-mono font-bold text-center"
-                  />
+                  <div className="flex items-center">
+                    <button
+                      type="button"
+                      onClick={() => updateWithAutoBalance('work', maxWorkHours - 0.5)}
+                      className="h-9 px-2.5 rounded-l-xl bg-blue-100 hover:bg-blue-200 dark:bg-blue-900/60 dark:hover:bg-blue-800 text-blue-700 dark:text-blue-300 border border-r-0 border-blue-300 dark:border-blue-700 transition-colors flex items-center justify-center font-bold active:scale-95 cursor-pointer"
+                      title="Decrease Work (-0.5h)"
+                    >
+                      <Minus className="w-3.5 h-3.5" />
+                    </button>
+                    <input
+                      type="number"
+                      min="1"
+                      max="19.5"
+                      step="0.5"
+                      value={maxWorkHours}
+                      onChange={(e) => updateWithAutoBalance('work', Number(e.target.value))}
+                      className="w-full h-9 bg-theme-card border-y border-blue-300 dark:border-blue-700 text-blue-600 dark:text-blue-400 font-mono font-bold text-center text-xs focus:outline-none"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => updateWithAutoBalance('work', maxWorkHours + 0.5)}
+                      className="h-9 px-2.5 rounded-r-xl bg-blue-100 hover:bg-blue-200 dark:bg-blue-900/60 dark:hover:bg-blue-800 text-blue-700 dark:text-blue-300 border border-l-0 border-blue-300 dark:border-blue-700 transition-colors flex items-center justify-center font-bold active:scale-95 cursor-pointer"
+                      title="Increase Work (+0.5h)"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
                 </div>
 
                 <div>
@@ -612,16 +907,13 @@ export const AdminSettingsView: React.FC = () => {
                       key={preset.name}
                       type="button"
                       onClick={() => {
-                        setSleepHours(preset.hours);
+                        updateWithAutoBalance('sleep', preset.hours);
                         setDayStartTime(preset.start);
                         setDayEndTime(preset.end);
                         setSleepStartTime(preset.end);
                         setSleepEndTime(preset.start);
-                        // Mandatory 24h balance: adjust buffer
-                        const remainingBuffer = Math.max(0, 24 - maxWorkHours - preset.hours);
-                        setBufferHours(remainingBuffer);
                       }}
-                      className={`p-2.5 rounded-xl border text-left transition-all ${
+                      className={`p-2.5 rounded-xl border text-left transition-all cursor-pointer ${
                         isSelected
                           ? 'bg-indigo-100/70 dark:bg-indigo-950 border-indigo-500 ring-1 ring-indigo-500 shadow-sm'
                           : 'bg-theme-card border-theme-border hover:border-indigo-300 dark:hover:border-indigo-700'
@@ -652,20 +944,33 @@ export const AdminSettingsView: React.FC = () => {
                   <label className="font-bold text-theme-text block mb-1 text-[11px]">
                     Sleep Target (Hours)
                   </label>
-                  <input
-                    type="number"
-                    min="4"
-                    max="12"
-                    step="0.5"
-                    value={sleepHours}
-                    onChange={(e) => {
-                      const s = Number(e.target.value);
-                      setSleepHours(s);
-                      const rem = Math.max(0, 24 - maxWorkHours - s);
-                      setBufferHours(rem);
-                    }}
-                    className="w-full px-3 py-2 rounded-xl bg-theme-card border border-indigo-300 dark:border-indigo-800 text-indigo-600 dark:text-indigo-400 font-mono font-bold text-center"
-                  />
+                  <div className="flex items-center">
+                    <button
+                      type="button"
+                      onClick={() => updateWithAutoBalance('sleep', sleepHours - 0.5)}
+                      className="h-9 px-2.5 rounded-l-xl bg-indigo-100 hover:bg-indigo-200 dark:bg-indigo-900/60 dark:hover:bg-indigo-800 text-indigo-700 dark:text-indigo-300 border border-r-0 border-indigo-300 dark:border-indigo-700 transition-colors flex items-center justify-center font-bold active:scale-95 cursor-pointer"
+                      title="Decrease Sleep (-0.5h)"
+                    >
+                      <Minus className="w-3.5 h-3.5" />
+                    </button>
+                    <input
+                      type="number"
+                      min="4"
+                      max="12"
+                      step="0.5"
+                      value={sleepHours}
+                      onChange={(e) => updateWithAutoBalance('sleep', Number(e.target.value))}
+                      className="w-full h-9 bg-theme-card border-y border-indigo-300 dark:border-indigo-700 text-indigo-600 dark:text-indigo-400 font-mono font-bold text-center text-xs focus:outline-none"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => updateWithAutoBalance('sleep', sleepHours + 0.5)}
+                      className="h-9 px-2.5 rounded-r-xl bg-indigo-100 hover:bg-indigo-200 dark:bg-indigo-900/60 dark:hover:bg-indigo-800 text-indigo-700 dark:text-indigo-300 border border-l-0 border-indigo-300 dark:border-indigo-700 transition-colors flex items-center justify-center font-bold active:scale-95 cursor-pointer"
+                      title="Increase Sleep (+0.5h)"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
                 </div>
 
                 <div>
@@ -720,7 +1025,7 @@ export const AdminSettingsView: React.FC = () => {
               </div>
             </div>
 
-            {/* Pillar 3: Automated Buffer Time & Leisure Allocation */}
+            {/* Pillar 3: Daily Buffer & Leisure Budget (Macro 24h Allocation) */}
             <div className="p-4 rounded-xl bg-amber-50/50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-900/60 space-y-3.5">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
@@ -730,171 +1035,167 @@ export const AdminSettingsView: React.FC = () => {
                   <div>
                     <h4 className="font-bold text-theme-text text-xs flex items-center gap-1.5">
                       <Coffee className="w-3.5 h-3.5 text-amber-500" />
-                      <span>Automated Buffer Time & Leisure Setup</span>
+                      <span>Daily Buffer & Leisure Budget</span>
                     </h4>
                     <p className="text-[10px] text-theme-muted">
-                      Configured automated buffer applied between tasks (Default: 15 min) + daily whitespace hours
+                      Allocated daily whitespace, restorative breathing room, and transition downtime balancing your 24-hour cycle
                     </p>
                   </div>
                 </div>
                 <span className="font-mono font-bold text-xs px-2.5 py-1 rounded-lg bg-amber-100 dark:bg-amber-900/50 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800">
-                  Buffer: {defaultBufferMinutes}m / task • {bufferHours}h total
+                  Buffer: {bufferHours}h total
                 </span>
               </div>
 
-              {/* Automated Task Buffer Quick Selector (5, 10, 15, 20, 30 min) */}
-              <div className="space-y-1.5">
-                <label className="font-bold text-theme-text flex items-center justify-between text-[11px]">
-                  <span>Automated Buffer Time Between Tasks:</span>
-                  <span className="text-amber-700 dark:text-amber-400 font-mono">
-                    Currently: {defaultBufferMinutes} Minutes {defaultBufferMinutes === 15 ? '(Default 15 min)' : ''}
-                  </span>
+              {/* Quick Macro Buffer Budget Presets */}
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-[11px] font-semibold text-theme-muted">Buffer Presets:</span>
+                {[
+                  { label: '1.5 Hours', hours: 1.5 },
+                  { label: '2.0 Hours', hours: 2.0 },
+                  { label: '3.0 Hours', hours: 3.0 },
+                  { label: '4.0 Hours', hours: 4.0 },
+                  { label: '5.0 Hours', hours: 5.0 },
+                ].map((preset) => (
+                  <button
+                    key={preset.label}
+                    type="button"
+                    onClick={() => updateWithAutoBalance('buffer', preset.hours)}
+                    className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer ${
+                      bufferHours === preset.hours
+                        ? 'bg-amber-500 text-white shadow-sm'
+                        : 'bg-theme-card text-theme-muted border border-theme-border hover:border-amber-400'
+                    }`}
+                  >
+                    {preset.label}
+                  </button>
+                ))}
+              </div>
+
+              {/* Total Daily Buffer Hours Input & Stepper */}
+              <div className="pt-1">
+                <label className="font-bold text-theme-text block mb-1 text-[11px]">
+                  Daily Buffer & Leisure Budget (Hours)
                 </label>
-                <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+                <div className="flex items-center max-w-xs">
+                  <button
+                    type="button"
+                    onClick={() => updateWithAutoBalance('buffer', bufferHours - 0.5)}
+                    className="h-9 px-2.5 rounded-l-xl bg-amber-100 hover:bg-amber-200 dark:bg-amber-900/60 dark:hover:bg-amber-800 text-amber-700 dark:text-amber-300 border border-r-0 border-amber-300 dark:border-amber-700 transition-colors flex items-center justify-center font-bold active:scale-95 cursor-pointer"
+                    title="Decrease Buffer (-0.5h)"
+                  >
+                    <Minus className="w-3.5 h-3.5" />
+                  </button>
+                  <input
+                    type="number"
+                    min="0.5"
+                    max="12"
+                    step="0.5"
+                    value={bufferHours}
+                    onChange={(e) => updateWithAutoBalance('buffer', Number(e.target.value))}
+                    className="w-full h-9 bg-theme-card border-y border-amber-300 dark:border-amber-700 text-amber-600 dark:text-amber-400 font-mono font-bold text-center text-xs focus:outline-none"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => updateWithAutoBalance('buffer', bufferHours + 0.5)}
+                    className="h-9 px-2.5 rounded-r-xl bg-amber-100 hover:bg-amber-200 dark:bg-amber-900/60 dark:hover:bg-amber-800 text-amber-700 dark:text-amber-300 border border-l-0 border-amber-300 dark:border-amber-700 transition-colors flex items-center justify-center font-bold active:scale-95 cursor-pointer"
+                    title="Increase Buffer (+0.5h)"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+                <p className="text-[10px] text-theme-muted mt-2 flex items-center gap-1">
+                  <span>💡 Note: Per-task post-activity break durations (e.g. 15m between tasks) are managed in <strong>Default Task Adding Presets (Fast-Add)</strong>.</span>
+                </p>
+              </div>
+            </div>
+
+            {/* 4. 24-Hour Locked Allocation Bar & Presets */}
+            <div className="space-y-3 p-4 rounded-2xl bg-theme-card/60 dark:bg-theme-card/40 border border-theme-border/80 shadow-xs">
+              <div className="flex items-center justify-between flex-wrap gap-2 text-xs">
+                <div className="flex items-center gap-2">
+                  <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                  <span className="font-bold text-theme-text text-[11px] uppercase tracking-wider">
+                    24h Daily Allocation
+                  </span>
+                </div>
+                <div className="flex items-center gap-3 font-mono text-[11px] font-bold">
+                  <span className="flex items-center gap-1.5 text-blue-600 dark:text-blue-400">
+                    <span className="w-2 h-2 rounded-full bg-blue-500" />
+                    {maxWorkHours}h Work
+                  </span>
+                  <span className="text-theme-muted/40">•</span>
+                  <span className="flex items-center gap-1.5 text-amber-600 dark:text-amber-400">
+                    <span className="w-2 h-2 rounded-full bg-amber-500" />
+                    {bufferHours}h Buffer
+                  </span>
+                  <span className="text-theme-muted/40">•</span>
+                  <span className="flex items-center gap-1.5 text-indigo-600 dark:text-indigo-400">
+                    <span className="w-2 h-2 rounded-full bg-indigo-500" />
+                    {sleepHours}h Sleep
+                  </span>
+                </div>
+              </div>
+
+              {/* Visual 24h Segmented Bar */}
+              <div className="w-full h-5 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden flex p-0.5 border border-theme-border/60 shadow-inner gap-0.5">
+                <div
+                  className="bg-gradient-to-r from-blue-600 to-blue-500 h-full rounded-l-full transition-all duration-300 flex items-center justify-center text-[10px] text-white font-black tracking-tight"
+                  style={{ width: `${(maxWorkHours / 24) * 100}%` }}
+                  title={`Work Target: ${maxWorkHours}h (${Math.round((maxWorkHours / 24) * 100)}%)`}
+                >
+                  {maxWorkHours >= 3 ? `${maxWorkHours}h` : ''}
+                </div>
+                <div
+                  className="bg-gradient-to-r from-amber-500 to-amber-400 h-full transition-all duration-300 flex items-center justify-center text-[10px] text-white font-black tracking-tight"
+                  style={{ width: `${(bufferHours / 24) * 100}%` }}
+                  title={`Buffer & Leisure: ${bufferHours}h (${Math.round((bufferHours / 24) * 100)}%)`}
+                >
+                  {bufferHours >= 2 ? `${bufferHours}h` : ''}
+                </div>
+                <div
+                  className="bg-gradient-to-r from-indigo-600 to-indigo-500 h-full rounded-r-full transition-all duration-300 flex items-center justify-center text-[10px] text-white font-black tracking-tight"
+                  style={{ width: `${(sleepHours / 24) * 100}%` }}
+                  title={`Sleep Target: ${sleepHours}h (${Math.round((sleepHours / 24) * 100)}%)`}
+                >
+                  {sleepHours >= 3 ? `${sleepHours}h` : ''}
+                </div>
+              </div>
+
+              {/* Clean Presets */}
+              <div className="flex items-center justify-between gap-2 flex-wrap pt-0.5">
+                <span className="text-[10px] font-bold text-theme-muted uppercase tracking-wider">Presets:</span>
+                <div className="flex items-center gap-1.5 flex-wrap">
                   {[
-                    { min: 5, label: '5 min', desc: 'Tight Sprint' },
-                    { min: 10, label: '10 min', desc: 'Compact' },
-                    { min: 15, label: '15 min', desc: 'Standard (Default)' },
-                    { min: 20, label: '20 min', desc: 'Relaxed' },
-                    { min: 30, label: '30 min', desc: 'Deep Breath' },
-                  ].map((preset) => {
-                    const isSelected = defaultBufferMinutes === preset.min;
+                    { label: 'Standard', sub: '14h / 3h / 7h', w: 14, b: 3, s: 7 },
+                    { label: 'Deep Focus', sub: '13h / 3h / 8h', w: 13, b: 3, s: 8 },
+                    { label: 'Sprint', sub: '16h / 2h / 6h', w: 16, b: 2, s: 6 },
+                    { label: 'Wellness', sub: '11h / 5h / 8h', w: 11, b: 5, s: 8 },
+                  ].map((p) => {
+                    const isActive = maxWorkHours === p.w && bufferHours === p.b && sleepHours === p.s;
                     return (
                       <button
-                        key={preset.min}
+                        key={p.label}
                         type="button"
-                        onClick={() => setDefaultBufferMinutes(preset.min)}
-                        className={`p-2 rounded-xl border text-center transition-all ${
-                          isSelected
-                            ? 'bg-amber-100 dark:bg-amber-900/60 border-amber-500 ring-1 ring-amber-500 shadow-sm'
-                            : 'bg-theme-card border-theme-border hover:border-amber-300 dark:hover:border-amber-700'
+                        onClick={() => {
+                          setMaxWorkHours(p.w);
+                          setBufferHours(p.b);
+                          setSleepHours(p.s);
+                        }}
+                        className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                          isActive
+                            ? 'bg-blue-600 text-white shadow-xs'
+                            : 'bg-theme-card hover:bg-theme-card-hover border border-theme-border text-theme-muted hover:text-theme-text'
                         }`}
                       >
-                        <div className="font-black text-xs text-theme-text">{preset.label}</div>
-                        <div className="text-[9px] text-theme-muted mt-0.5">{preset.desc}</div>
+                        <span>{p.label}</span>
+                        <span className={`text-[10px] font-mono ${isActive ? 'text-blue-100' : 'text-theme-muted/70'}`}>
+                          {p.sub}
+                        </span>
                       </button>
                     );
                   })}
                 </div>
-              </div>
-
-              {/* Total Daily Buffer Hours Input & Leisure Presets */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
-                <div>
-                  <label className="font-bold text-theme-text block mb-1 text-[11px]">
-                    Daily Buffer & Leisure Budget (Hours)
-                  </label>
-                  <input
-                    type="number"
-                    min="0"
-                    max="12"
-                    step="0.5"
-                    value={bufferHours}
-                    onChange={(e) => {
-                      const b = Number(e.target.value);
-                      setBufferHours(b);
-                      setMaxWorkHours(Math.max(1, 24 - sleepHours - b));
-                    }}
-                    className="w-full px-3 py-2 rounded-xl bg-theme-card border border-amber-300 dark:border-amber-800 text-amber-600 dark:text-amber-400 font-mono font-bold text-center"
-                  />
-                </div>
-
-                <div>
-                  <label className="font-bold text-theme-text block mb-1 text-[11px]">
-                    Custom Task Buffer Minutes
-                  </label>
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="number"
-                      min="0"
-                      max="60"
-                      step="5"
-                      value={defaultBufferMinutes}
-                      onChange={(e) => setDefaultBufferMinutes(Number(e.target.value))}
-                      className="w-full px-3 py-2 rounded-xl bg-theme-card border border-theme-border text-theme-text font-mono font-bold text-center"
-                    />
-                    <span className="text-xs font-mono text-theme-muted">min</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* 4. 24-Hour Locked System Math & Presets Tool */}
-            <div className="space-y-3 p-4 rounded-xl bg-theme-card-hover border border-theme-border">
-              <div className="flex justify-between items-center text-[11px] font-semibold text-theme-muted">
-                <span className="flex items-center gap-1.5">
-                  <Lock className="w-3.5 h-3.5 text-blue-500" />
-                  <span>24-Hour Locked System Breakdown:</span>
-                </span>
-                <span className="font-mono font-bold text-theme-text">
-                  {maxWorkHours}h Work • {bufferHours}h Buffer • {sleepHours}h Sleep = <strong className={(maxWorkHours + bufferHours + sleepHours) === 24 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-500'}>{(maxWorkHours + bufferHours + sleepHours)}h</strong> / 24h
-                </span>
-              </div>
-              
-              {/* Visual 24h Segmented Bar */}
-              <div className="w-full h-4 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden flex shadow-inner">
-                <div
-                  className="bg-blue-600 h-full transition-all duration-300 flex items-center justify-center text-[10px] text-white font-bold"
-                  style={{ width: `${Math.min(100, (maxWorkHours / 24) * 100)}%` }}
-                  title={`Work Time Target: ${maxWorkHours}h (${Math.round((maxWorkHours / 24) * 100)}%)`}
-                >
-                  {maxWorkHours >= 2 ? `${maxWorkHours}h Work` : ''}
-                </div>
-                <div
-                  className="bg-amber-500 h-full transition-all duration-300 flex items-center justify-center text-[10px] text-white font-bold"
-                  style={{ width: `${Math.min(100, (bufferHours / 24) * 100)}%` }}
-                  title={`Buffer & Leisure: ${bufferHours}h (${Math.round((bufferHours / 24) * 100)}%)`}
-                >
-                  {bufferHours >= 2 ? `${bufferHours}h Buffer` : ''}
-                </div>
-                <div
-                  className="bg-indigo-600 h-full transition-all duration-300 flex items-center justify-center text-[10px] text-white font-bold"
-                  style={{ width: `${Math.min(100, (sleepHours / 24) * 100)}%` }}
-                  title={`Sleep Budget: ${sleepHours}h (${Math.round((sleepHours / 24) * 100)}%)`}
-                >
-                  {sleepHours >= 2 ? `${sleepHours}h Sleep` : ''}
-                </div>
-              </div>
-
-              {/* 24-Hour System Quick Lock Presets */}
-              <div className="flex items-center justify-between gap-2 flex-wrap pt-1">
-                <div className="flex items-center gap-1.5 flex-wrap">
-                  <span className="text-[10px] font-bold text-theme-muted uppercase tracking-wider">Locked 24h Presets:</span>
-                  {[
-                    { label: 'Standard (14W / 3B / 7S)', w: 14, b: 3, s: 7, buf: 15 },
-                    { label: 'Optimal Focus (13W / 3B / 8S)', w: 13, b: 3, s: 8, buf: 15 },
-                    { label: 'Peak Sprint (16W / 2B / 6S)', w: 16, b: 2, s: 6, buf: 10 },
-                    { label: 'Wellness (11W / 5B / 8S)', w: 11, b: 5, s: 8, buf: 20 },
-                  ].map((p) => (
-                    <button
-                      key={p.label}
-                      type="button"
-                      onClick={() => {
-                        setMaxWorkHours(p.w);
-                        setBufferHours(p.b);
-                        setSleepHours(p.s);
-                        setDefaultBufferMinutes(p.buf);
-                      }}
-                      className="px-2 py-0.5 rounded text-[10px] font-bold bg-theme-card hover:bg-theme-card-hover border border-theme-border text-theme-muted hover:text-theme-text transition-colors"
-                    >
-                      {p.label}
-                    </button>
-                  ))}
-                </div>
-
-                {(maxWorkHours + bufferHours + sleepHours) !== 24 && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const balancedWork = Math.max(1, 24 - sleepHours - bufferHours);
-                      setMaxWorkHours(balancedWork);
-                    }}
-                    className="text-[10px] font-black px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded-lg shadow-sm transition-colors flex items-center gap-1 shrink-0"
-                  >
-                    <Zap className="w-3 h-3" />
-                    Auto-Balance to 24h Lock
-                  </button>
-                )}
               </div>
             </div>
 
@@ -916,419 +1217,629 @@ export const AdminSettingsView: React.FC = () => {
             </button>
           </div>
         </div>
+        )}
 
-        {/* Priority Custom Time Setup (P1-P5) */}
-        <div className="glass-panel p-6 rounded-2xl border border-theme-border space-y-4 relative z-10">
-          <div className="flex items-center justify-between border-b border-theme-border pb-3">
-            <h3 className="text-sm font-bold text-theme-text uppercase tracking-wider flex items-center gap-2">
-              <Flame className="w-4 h-4 text-orange-500" />
-              Priority Default Duration Setup (Minutes)
-            </h3>
-          </div>
-
-          <div className="space-y-2.5 text-xs">
-            {(['P1', 'P2', 'P3', 'P4', 'P5'] as PriorityLevel[]).map((p) => {
-              const meta = prioritySettings[p];
-              return (
-                <div key={p} className="flex items-center justify-between gap-3 p-2 rounded-xl bg-theme-card-hover border border-theme-border">
-                  <div className="flex items-center gap-2">
-                    <span
-                      className="px-2 py-0.5 rounded font-black text-xs"
-                      style={{ backgroundColor: meta.bgColor, color: meta.color }}
-                    >
-                      {p}
-                    </span>
-                    <span className="font-bold text-theme-text">{meta.label}</span>
-                  </div>
-                  <div className="flex items-center gap-1.5">
-                    <input
-                      type="number"
-                      min="0"
-                      step="5"
-                      value={pMinutes[p]}
-                      onChange={(e) => setPMinutes({ ...pMinutes, [p]: Number(e.target.value) })}
-                      className="w-20 px-2 py-1 rounded-lg bg-theme-card border border-theme-border text-theme-text font-mono font-bold text-right"
-                    />
-                    <span className="font-mono text-theme-muted">min</span>
-                  </div>
-                </div>
-              );
-            })}
-
-            <button
-              onClick={handleSavePriorities}
-              className="w-full py-2 bg-orange-600 hover:bg-orange-700 text-white rounded-xl font-bold shadow-md transition-colors mt-2"
-            >
-              Update Priority Minutes
-            </button>
-          </div>
-        </div>
-
-        {/* Default Task Adding System (Fast-Add Presets & Reduced Clicks) */}
-        <div className="glass-panel p-6 rounded-2xl border border-theme-border space-y-5">
-          <div className="flex items-center justify-between border-b border-theme-border pb-3">
-            <div>
-              <h3 className="text-sm font-bold text-theme-text uppercase tracking-wider flex items-center gap-2 font-display">
-                <Sparkles className="w-4 h-4 text-blue-500" />
-                Default Task Adding Presets (Fast-Add System)
-              </h3>
-              <p className="text-xs text-theme-muted mt-0.5">
-                Preset defaults to reduce clicks on new task creation. Defaults are pre-applied automatically so you never get blocked even if you forget to click options.
-              </p>
-            </div>
-          </div>
-
-          <div className="space-y-4 text-xs">
-            {/* Fast-Add Auto-Confirmation Toggle */}
-            <div className="p-3.5 rounded-xl border border-blue-200 dark:border-blue-900/50 bg-blue-50/40 dark:bg-blue-950/20 flex items-center justify-between gap-3">
-              <div className="space-y-0.5">
-                <div className="font-bold text-theme-text flex items-center gap-1.5">
-                  <Zap className="w-3.5 h-3.5 text-blue-500" />
-                  <span>Fast-Add 1-Click Mode</span>
-                </div>
-                <p className="text-[11px] text-theme-muted">
-                  Auto-confirms default priority and category so you can save tasks instantly without mandatory clicks.
-                </p>
+        {/* Right Column Stack: Priority Durations + Task Presets (Flawless Height Balance & Zero Empty Voids) */}
+        {(isCardVisible('priorities') || isCardVisible('taskDefaults')) && (
+          <div className="space-y-5 flex flex-col justify-between">
+            {isCardVisible('priorities') && (
+            <div className="glass-panel p-5 rounded-2xl border border-theme-border space-y-4 relative z-10 shadow-xs">
+              <div className="flex items-center justify-between border-b border-theme-border pb-3">
+                <h3 className="text-sm font-bold text-theme-text uppercase tracking-wider flex items-center gap-2">
+                  <Flame className="w-4 h-4 text-orange-500" />
+                  Priority Default Duration Setup (Minutes)
+                </h3>
               </div>
-              <label className="relative inline-flex items-center cursor-pointer shrink-0">
-                <input
-                  type="checkbox"
-                  checked={taskDefaults.autoConfirmDefaults}
-                  onChange={(e) => setTaskDefaults({ ...taskDefaults, autoConfirmDefaults: e.target.checked })}
-                  className="sr-only peer"
-                />
-                <div className="w-9 h-5 bg-slate-300 dark:bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-600"></div>
-              </label>
-            </div>
 
-            {/* Default Priority Preset */}
-            <div className="space-y-1.5">
-              <label className="text-[11px] font-bold text-theme-text uppercase tracking-wider flex items-center gap-1">
-                <Flame className="w-3.5 h-3.5 text-orange-500" />
-                <span>Default Priority</span>
-              </label>
-              <div className="grid grid-cols-5 gap-1.5">
+              <div className="space-y-2.5 text-xs">
                 {(['P1', 'P2', 'P3', 'P4', 'P5'] as PriorityLevel[]).map((p) => {
                   const meta = prioritySettings[p];
-                  const isSelected = taskDefaults.defaultPriority === p;
                   return (
-                    <button
-                      key={p}
-                      type="button"
-                      onClick={() => setTaskDefaults({ ...taskDefaults, defaultPriority: p })}
-                      className={`p-2 rounded-xl text-center border font-bold transition-all cursor-pointer ${
-                        isSelected
-                          ? 'ring-2 ring-blue-500 shadow-sm'
-                          : 'bg-theme-card-hover border-theme-border opacity-70 hover:opacity-100'
-                      }`}
-                      style={{
-                        backgroundColor: isSelected ? meta.bgColor : undefined,
-                        color: isSelected ? meta.color : undefined,
-                        borderColor: isSelected ? meta.color : undefined
-                      }}
-                    >
-                      <div className="text-xs font-black">{p}</div>
-                      <div className="text-[10px] truncate">{meta.label}</div>
-                    </button>
+                    <div key={p} className="flex items-center justify-between gap-3 p-2 rounded-xl bg-theme-card-hover border border-theme-border">
+                      <div className="flex items-center gap-2">
+                        <span
+                          className="px-2 py-0.5 rounded font-black text-xs"
+                          style={{ backgroundColor: meta.bgColor, color: meta.color }}
+                        >
+                          {p}
+                        </span>
+                        <span className="font-bold text-theme-text">{meta.label}</span>
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <input
+                          type="number"
+                          min="0"
+                          step="5"
+                          value={pMinutes[p]}
+                          onChange={(e) => setPMinutes({ ...pMinutes, [p]: Number(e.target.value) })}
+                          className="w-20 px-2 py-1 rounded-lg bg-theme-card border border-theme-border text-theme-text font-mono font-bold text-right"
+                        />
+                        <span className="font-mono text-theme-muted">min</span>
+                      </div>
+                    </div>
                   );
                 })}
+
+                <button
+                  onClick={handleSavePriorities}
+                  className="w-full py-2 bg-orange-600 hover:bg-orange-700 text-white rounded-xl font-bold shadow-md transition-colors mt-2"
+                >
+                  Update Priority Minutes
+                </button>
               </div>
             </div>
-
-            {/* Default Category Preset */}
-            <div className="space-y-1.5">
-              <label className="text-[11px] font-bold text-theme-text uppercase tracking-wider flex items-center gap-1">
-                <FolderKanban className="w-3.5 h-3.5 text-emerald-500" />
-                <span>Default Category</span>
-              </label>
-              <select
-                value={taskDefaults.defaultCategory}
-                onChange={(e) => setTaskDefaults({ ...taskDefaults, defaultCategory: e.target.value })}
-                className="w-full px-3 py-2 rounded-xl bg-theme-card border border-theme-border text-theme-text font-bold text-xs focus:outline-none focus:ring-1 focus:ring-blue-500 cursor-pointer"
-              >
-                {categories.map((cat) => (
-                  <option key={cat.name} value={cat.name}>
-                    {cat.name} ({cat.subCategories.length} subcategories)
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            {/* Default Automated Post-Task Buffer */}
-            <div className="space-y-1.5">
-              <label className="text-[11px] font-bold text-theme-text uppercase tracking-wider flex items-center justify-between">
-                <span className="flex items-center gap-1">
-                  <Coffee className="w-3.5 h-3.5 text-purple-500" />
-                  <span>Default Post-Task Buffer Time</span>
-                </span>
-                <span className="font-mono font-bold text-purple-600 dark:text-purple-400">
-                  {taskDefaults.defaultBufferMinutes} min
-                </span>
-              </label>
-              <div className="flex items-center gap-1.5 flex-wrap">
-                {[0, 5, 10, 15, 20, 30, 45].map((bMin) => (
-                  <button
-                    key={bMin}
-                    type="button"
-                    onClick={() => setTaskDefaults({ ...taskDefaults, defaultBufferMinutes: bMin })}
-                    className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all border cursor-pointer ${
-                      taskDefaults.defaultBufferMinutes === bMin
-                        ? 'bg-purple-600 text-white border-purple-600 shadow-sm'
-                        : 'bg-theme-card text-theme-muted hover:text-theme-text border-theme-border'
-                    }`}
-                  >
-                    {bMin === 0 ? '0m (None)' : `${bMin}m`}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Default Smart Slot Strategy */}
-            <div className="space-y-1.5">
-              <label className="text-[11px] font-bold text-theme-text uppercase tracking-wider flex items-center gap-1">
-                <Clock className="w-3.5 h-3.5 text-blue-500" />
-                <span>Default Start Time Strategy</span>
-              </label>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                {[
-                  { id: 'auto-fit', label: 'Auto-Fit Next Free Slot', desc: 'Finds first non-overlapping gap' },
-                  { id: 'current-time', label: 'Current Real Time (Now)', desc: 'Starts at nearest 5m tick' },
-                  { id: 'work-start', label: 'Work Start Time', desc: `Starts at ${capacitySettings.dayStartTime || '06:00 AM'}` }
-                ].map((strat) => (
-                  <button
-                    key={strat.id}
-                    type="button"
-                    onClick={() => setTaskDefaults({ ...taskDefaults, defaultSmartSlot: strat.id as any })}
-                    className={`p-2.5 rounded-xl border text-left transition-all cursor-pointer ${
-                      taskDefaults.defaultSmartSlot === strat.id
-                        ? 'bg-blue-50 dark:bg-blue-950/40 border-blue-500 ring-1 ring-blue-500'
-                        : 'bg-theme-card-hover border-theme-border opacity-70 hover:opacity-100'
-                    }`}
-                  >
-                    <div className="font-bold text-theme-text text-xs">{strat.label}</div>
-                    <div className="text-[10px] text-theme-muted mt-0.5">{strat.desc}</div>
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Save Status Alert Message */}
-            {taskDefaultsStatusMsg && (
-              <div className="p-3 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-300 dark:border-emerald-800 text-emerald-800 dark:text-emerald-200 text-xs font-bold flex items-center gap-2 animate-fade-in">
-                <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
-                <span>{taskDefaultsStatusMsg}</span>
-              </div>
             )}
 
-            {/* Save Task Defaults Button */}
-            <button
-              onClick={handleSaveTaskDefaults}
-              className="w-full py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-2 text-xs cursor-pointer"
-            >
-              <Check className="w-4 h-4" />
-              <span>Save Default Task Adding Presets</span>
-            </button>
-          </div>
-        </div>
-
-        {/* Name of Time (Day Zones) - Customize Enable */}
-        <div className="glass-panel p-6 rounded-2xl border border-theme-border space-y-5 lg:col-span-2">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-theme-border pb-4 gap-3">
-            <div>
-              <div className="flex items-center gap-2.5">
-                <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-amber-500 to-orange-400 text-white flex items-center justify-center shadow-md shadow-amber-500/20">
-                  <Sunrise className="w-4 h-4 stroke-[2.5]" />
-                </div>
+            {/* Default Task Adding System (Fast-Add Presets & Reduced Clicks) */}
+            {isCardVisible('taskDefaults') && (
+            <div className="glass-panel p-5 rounded-2xl border border-theme-border space-y-4 shadow-xs">
+              <div className="flex items-center justify-between border-b border-theme-border pb-3">
                 <div>
                   <h3 className="text-sm font-bold text-theme-text uppercase tracking-wider flex items-center gap-2 font-display">
-                    <span>Name of Time (Day Zones)</span>
-                    <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-950 text-amber-900 dark:text-amber-200 border border-amber-300 dark:border-amber-800">
-                      24-Hour Clock
-                    </span>
+                    <Sparkles className="w-4 h-4 text-blue-500" />
+                    Default Task Adding Presets (Fast-Add System)
                   </h3>
                   <p className="text-xs text-theme-muted mt-0.5">
-                    Customize names for each time slice across the 24 hours (EarlyMorning, Morning, Lunch Time zone, After Lunch, Evening, Night, deep night).
+                    Preset defaults to reduce clicks on new task creation. Defaults are pre-applied automatically so you never get blocked even if you forget to click options.
                   </p>
                 </div>
               </div>
+
+              <div className="space-y-4 text-xs">
+                {/* Fast-Add Auto-Confirmation Toggle */}
+                <div className="p-3.5 rounded-xl border border-blue-200 dark:border-blue-900/50 bg-blue-50/40 dark:bg-blue-950/20 flex items-center justify-between gap-3">
+                  <div className="space-y-0.5">
+                    <div className="font-bold text-theme-text flex items-center gap-1.5">
+                      <Zap className="w-3.5 h-3.5 text-blue-500" />
+                      <span>Fast-Add 1-Click Mode</span>
+                    </div>
+                    <p className="text-[11px] text-theme-muted">
+                      Auto-confirms default priority and category so you can save tasks instantly without mandatory clicks.
+                    </p>
+                  </div>
+                  <label className="relative inline-flex items-center cursor-pointer shrink-0">
+                    <input
+                      type="checkbox"
+                      checked={taskDefaults.autoConfirmDefaults}
+                      onChange={(e) => setTaskDefaults({ ...taskDefaults, autoConfirmDefaults: e.target.checked })}
+                      className="sr-only peer"
+                    />
+                    <div className="w-9 h-5 bg-slate-300 dark:bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-600"></div>
+                  </label>
+                </div>
+
+                {/* Default Priority Preset */}
+                <div className="space-y-1.5">
+                  <label className="text-[11px] font-bold text-theme-text uppercase tracking-wider flex items-center gap-1">
+                    <Flame className="w-3.5 h-3.5 text-orange-500" />
+                    <span>Default Priority</span>
+                  </label>
+                  <div className="grid grid-cols-5 gap-1.5">
+                    {(['P1', 'P2', 'P3', 'P4', 'P5'] as PriorityLevel[]).map((p) => {
+                      const meta = prioritySettings[p];
+                      const isSelected = taskDefaults.defaultPriority === p;
+                      return (
+                        <button
+                          key={p}
+                          type="button"
+                          onClick={() => setTaskDefaults({ ...taskDefaults, defaultPriority: p })}
+                          className={`p-2 rounded-xl text-center border font-bold transition-all cursor-pointer ${
+                            isSelected
+                              ? 'ring-2 ring-blue-500 shadow-sm'
+                              : 'bg-theme-card-hover border-theme-border opacity-70 hover:opacity-100'
+                          }`}
+                          style={{
+                            backgroundColor: isSelected ? meta.bgColor : undefined,
+                            color: isSelected ? meta.color : undefined,
+                            borderColor: isSelected ? meta.color : undefined
+                          }}
+                        >
+                          <div className="text-xs font-black">{p}</div>
+                          <div className="text-[10px] truncate">{meta.label}</div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Default Category Preset */}
+                <div className="space-y-1.5">
+                  <label className="text-[11px] font-bold text-theme-text uppercase tracking-wider flex items-center gap-1">
+                    <FolderKanban className="w-3.5 h-3.5 text-emerald-500" />
+                    <span>Default Category</span>
+                  </label>
+                  <select
+                    value={taskDefaults.defaultCategory}
+                    onChange={(e) => setTaskDefaults({ ...taskDefaults, defaultCategory: e.target.value })}
+                    className="w-full px-3 py-2 rounded-xl bg-theme-card border border-theme-border text-theme-text font-bold text-xs focus:outline-none focus:ring-1 focus:ring-blue-500 cursor-pointer"
+                  >
+                    {categories.map((cat) => (
+                      <option key={cat.name} value={cat.name}>
+                        {cat.name} ({cat.subCategories.length} subcategories)
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Default Automated Post-Task Buffer */}
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <label className="text-[11px] font-bold text-theme-text uppercase tracking-wider flex items-center gap-1">
+                      <Coffee className="w-3.5 h-3.5 text-purple-500" />
+                      <span>Default Post-Task Buffer Time</span>
+                    </label>
+                    <span className="font-mono font-bold text-purple-600 dark:text-purple-400 text-xs">
+                      {taskDefaults.defaultBufferMinutes} min
+                    </span>
+                  </div>
+                  <p className="text-[10px] text-theme-muted">
+                    Automated post-task rest & transition buffer applied to each scheduled activity
+                  </p>
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    {[0, 5, 10, 15, 20, 30, 45].map((bMin) => (
+                      <button
+                        key={bMin}
+                        type="button"
+                        onClick={() => setTaskDefaults({ ...taskDefaults, defaultBufferMinutes: bMin })}
+                        className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all border cursor-pointer ${
+                          taskDefaults.defaultBufferMinutes === bMin
+                            ? 'bg-purple-600 text-white border-purple-600 shadow-sm'
+                            : 'bg-theme-card text-theme-muted hover:text-theme-text border-theme-border'
+                        }`}
+                      >
+                        {bMin === 0 ? '0m (None)' : `${bMin}m`}
+                      </button>
+                    ))}
+                    <div className="flex items-center gap-1 ml-auto">
+                      <input
+                        type="number"
+                        min="0"
+                        max="60"
+                        step="5"
+                        value={taskDefaults.defaultBufferMinutes}
+                        onChange={(e) => setTaskDefaults({ ...taskDefaults, defaultBufferMinutes: Math.max(0, Number(e.target.value)) })}
+                        className="w-14 h-8 text-center text-xs font-mono font-bold rounded-lg bg-theme-card border border-theme-border text-theme-text focus:outline-none focus:ring-1 focus:ring-purple-500"
+                        title="Custom buffer minutes"
+                      />
+                      <span className="text-[10px] font-mono text-theme-muted">min</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Default Smart Slot Strategy */}
+                <div className="space-y-1.5">
+                  <label className="text-[11px] font-bold text-theme-text uppercase tracking-wider flex items-center gap-1">
+                    <Clock className="w-3.5 h-3.5 text-blue-500" />
+                    <span>Default Start Time Strategy</span>
+                  </label>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                    {[
+                      { id: 'auto-fit', label: 'Auto-Fit Next Free Slot', desc: 'Finds first non-overlapping gap' },
+                      { id: 'current-time', label: 'Current Real Time (Now)', desc: 'Starts at nearest 5m tick' },
+                      { id: 'work-start', label: 'Work Start Time', desc: `Starts at ${capacitySettings.dayStartTime || '06:00 AM'}` }
+                    ].map((strat) => (
+                      <button
+                        key={strat.id}
+                        type="button"
+                        onClick={() => setTaskDefaults({ ...taskDefaults, defaultSmartSlot: strat.id as any })}
+                        className={`p-2.5 rounded-xl text-left border transition-all cursor-pointer ${
+                          taskDefaults.defaultSmartSlot === strat.id
+                            ? 'bg-blue-50/70 dark:bg-blue-950/40 border-blue-500 ring-1 ring-blue-500 shadow-sm'
+                            : 'bg-theme-card hover:bg-theme-card-hover border-theme-border'
+                        }`}
+                      >
+                        <div className="font-bold text-xs text-theme-text">{strat.label}</div>
+                        <div className="text-[10px] text-theme-muted mt-0.5">{strat.desc}</div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Save Status Alert Message */}
+                {taskDefaultsStatusMsg && (
+                  <div className="p-3 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-300 dark:border-emerald-800 text-emerald-800 dark:text-emerald-200 text-xs font-bold flex items-center gap-2 animate-fade-in">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
+                    <span>{taskDefaultsStatusMsg}</span>
+                  </div>
+                )}
+
+                {/* Save Task Defaults Button */}
+                <button
+                  onClick={handleSaveTaskDefaults}
+                  className="w-full py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-2 text-xs cursor-pointer"
+                >
+                  <Check className="w-4 h-4" />
+                  <span>Save Default Task Adding Presets</span>
+                </button>
+              </div>
+            </div>
+            )}
+          </div>
+        )}
+
+        {/* 24-Hours Name Engine (Day Zones) */}
+        {isCardVisible('dayZones') && (
+        <div className="glass-panel p-4 sm:p-5 rounded-2xl border border-amber-300/40 dark:border-amber-800/40 space-y-3.5 lg:col-span-2 shadow-sm bg-gradient-to-b from-amber-50/20 to-transparent dark:from-amber-950/10 dark:to-transparent">
+          {/* Header Bar */}
+          <div className="flex flex-col md:flex-row md:items-center justify-between border-b border-theme-border/70 pb-3 gap-2.5">
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-amber-500 to-orange-400 text-white flex items-center justify-center shadow-md shadow-amber-500/20 shrink-0">
+                <Sunrise className="w-4 h-4 stroke-[2.5]" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <h3 className="text-sm font-black text-theme-text uppercase tracking-wider font-display">
+                    24-Hour Name Engine
+                  </h3>
+                  <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800 flex items-center gap-1">
+                    <CheckCircle2 className="w-3 h-3" />
+                    <span>{totalZoneHours}h / 24.0h Covered (100%)</span>
+                  </span>
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-100 dark:bg-blue-950 text-blue-800 dark:text-blue-300 border border-blue-300 dark:border-blue-800">
+                    0 Overlaps • 0 Gaps
+                  </span>
+                </div>
+                <p className="text-[11px] text-theme-muted mt-0.5">
+                  Contiguous 24-hour closed loop. Adjusting any boundary auto-syncs adjacent zones to guarantee exact 24h coverage.
+                </p>
+              </div>
             </div>
 
-            {/* Customize Enable Toggle */}
-            <div className="flex items-center gap-2.5 self-start sm:self-auto bg-theme-card-hover px-3 py-1.5 rounded-xl border border-theme-border shadow-2xs">
-              <span className="text-xs font-bold text-theme-text">Customize Enable</span>
-              <label className="relative inline-flex items-center cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={periodCustomizeEnabled}
-                  onChange={(e) => setPeriodCustomizeEnabled(e.target.checked)}
-                  className="sr-only peer"
-                />
-                <div className="w-9 h-5 bg-slate-300 peer-focus:outline-none rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-amber-500"></div>
-              </label>
+            {/* Presets & Customize Toggle */}
+            <div className="flex items-center gap-2 flex-wrap self-start md:self-auto">
+              {/* Presets Quick Pills */}
+              <div className="flex items-center gap-1 bg-theme-card p-1 rounded-xl border border-theme-border text-[11px] font-bold">
+                <span className="text-[10px] text-theme-muted uppercase px-1.5 hidden sm:inline">Presets:</span>
+                <button
+                  type="button"
+                  onClick={() => applyPreset('classic')}
+                  className="px-2 py-0.5 rounded-lg hover:bg-theme-card-hover text-theme-text transition-colors cursor-pointer"
+                  title="7 Classic Optimus Zones (EarlyMorning to Deep Night)"
+                >
+                  Classic 7
+                </button>
+                <button
+                  type="button"
+                  onClick={() => applyPreset('executive')}
+                  className="px-2 py-0.5 rounded-lg hover:bg-theme-card-hover text-blue-600 dark:text-blue-400 transition-colors cursor-pointer"
+                  title="5 Executive Zones (Routine, Deep Work, Execution, Evening, Sleep)"
+                >
+                  Executive 5
+                </button>
+                <button
+                  type="button"
+                  onClick={() => applyPreset('quarter')}
+                  className="px-2 py-0.5 rounded-lg hover:bg-theme-card-hover text-purple-600 dark:text-purple-400 transition-colors cursor-pointer"
+                  title="4 Simple 6-Hour Quarters"
+                >
+                  Quarter 4
+                </button>
+                <button
+                  type="button"
+                  onClick={() => applyPreset('circadian')}
+                  className="px-2 py-0.5 rounded-lg hover:bg-theme-card-hover text-emerald-600 dark:text-emerald-400 transition-colors cursor-pointer"
+                  title="6 Circadian Energy Zones"
+                >
+                  Circadian 6
+                </button>
+              </div>
+
+              {/* Master Toggle */}
+              <div className="flex items-center gap-2 bg-theme-card-hover px-2.5 py-1 rounded-xl border border-theme-border shadow-2xs">
+                <span className="text-xs font-bold text-theme-text whitespace-nowrap">Engine Active</span>
+                <label className="relative inline-flex items-center cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={periodCustomizeEnabled}
+                    onChange={(e) => {
+                      setPeriodCustomizeEnabled(e.target.checked);
+                      updateTimePeriodSettings({
+                        isEnabled: e.target.checked,
+                        periods: periodsList
+                      });
+                    }}
+                    className="sr-only peer"
+                  />
+                  <div className="w-8 h-4.5 bg-slate-300 peer-focus:outline-none rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-3.5 after:w-3.5 after:transition-all peer-checked:bg-amber-500"></div>
+                </label>
+              </div>
             </div>
           </div>
 
           {/* Feedback Message */}
           {periodSaveMsg && (
-            <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-600 dark:text-emerald-400 text-xs font-bold animate-slide-up flex items-center gap-2">
-              <CheckCircle2 className="w-4 h-4" />
+            <div className="p-2.5 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-600 dark:text-emerald-400 text-xs font-bold animate-slide-up flex items-center gap-2">
+              <CheckCircle2 className="w-4 h-4 shrink-0" />
               <span>{periodSaveMsg}</span>
             </div>
           )}
 
           {!periodCustomizeEnabled ? (
-            <div className="p-6 rounded-xl bg-slate-50/50 dark:bg-slate-900/30 border border-dashed border-theme-border text-center space-y-2">
-              <Moon className="w-8 h-8 text-theme-muted mx-auto opacity-50" />
+            <div className="p-5 rounded-xl bg-slate-50/50 dark:bg-slate-900/30 border border-dashed border-theme-border text-center space-y-1.5">
+              <Moon className="w-6 h-6 text-theme-muted mx-auto opacity-50" />
               <p className="text-xs font-bold text-theme-muted">
-                Named Time Periods are currently disabled. Toggle &ldquo;Customize Enable&rdquo; above to activate Day Zone nomenclature across your schedules.
+                24-Hour Name Engine is currently disabled. Toggle &ldquo;Engine Active&rdquo; to turn on Day Zone nomenclature across all views.
               </p>
             </div>
           ) : (
-            <div className="space-y-4">
-              {/* Periods Grid / List */}
-              <div className="space-y-2.5">
-                <div className="hidden sm:grid grid-cols-12 gap-2 px-3 text-[11px] font-bold text-theme-muted uppercase tracking-wider">
-                  <div className="col-span-1">Icon</div>
-                  <div className="col-span-4">Day Zone Name</div>
-                  <div className="col-span-3">Start Time</div>
-                  <div className="col-span-3">End Time</div>
-                  <div className="col-span-1 text-right">Action</div>
+            <div className="space-y-3">
+              {/* Visual 24-Hour Continuum Segmented Bar */}
+              <div className="bg-theme-card p-2 rounded-xl border border-theme-border shadow-2xs space-y-1">
+                <div className="flex items-center justify-between text-[10px] font-bold text-theme-muted uppercase tracking-wider px-1">
+                  <span>24-Hour Timeline Distribution</span>
+                  <span>1440m / 24.0h Closed Loop</span>
                 </div>
+                
+                <div className="w-full h-6 rounded-lg overflow-hidden flex border border-theme-border/80 bg-slate-900/10 shadow-inner">
+                  {periodsList.map((period, idx) => {
+                    const dur = getPeriodDurationMinutes(period);
+                    const pct = (dur / 1440) * 100;
+                    const colors = [
+                      'from-amber-400 to-amber-500',
+                      'from-yellow-400 to-amber-400',
+                      'from-orange-400 to-orange-500',
+                      'from-lime-500 to-emerald-500',
+                      'from-teal-400 to-cyan-500',
+                      'from-indigo-500 to-indigo-600',
+                      'from-purple-500 to-purple-600',
+                      'from-blue-500 to-blue-600',
+                      'from-pink-500 to-rose-500'
+                    ];
+                    const bgGrad = colors[idx % colors.length];
 
-                {periodsList.map((period) => (
-                  <div
-                    key={period.id}
-                    className="p-3 rounded-xl bg-theme-card-hover border border-theme-border grid grid-cols-1 sm:grid-cols-12 gap-2.5 items-center transition-all hover:border-amber-400/50 hover:shadow-xs"
-                  >
-                    {/* Emoji */}
-                    <div className="sm:col-span-1 flex items-center gap-2">
-                      <input
-                        type="text"
-                        value={period.emoji || '⏰'}
-                        onChange={(e) => handlePeriodChange(period.id, 'emoji', e.target.value)}
-                        className="w-10 text-center py-1.5 rounded-lg bg-theme-card border border-theme-border text-sm"
-                        title="Emoji / Icon"
-                        maxLength={2}
-                      />
-                    </div>
-
-                    {/* Zone Name */}
-                    <div className="sm:col-span-4">
-                      <label className="text-[10px] font-bold text-theme-muted uppercase sm:hidden block mb-0.5">Zone Name</label>
-                      <input
-                        type="text"
-                        value={period.name}
-                        onChange={(e) => handlePeriodChange(period.id, 'name', e.target.value)}
-                        placeholder="e.g. EarlyMorning"
-                        className="w-full px-3 py-1.5 rounded-lg bg-theme-card border border-theme-border text-xs font-bold text-theme-text focus:outline-none focus:border-amber-500"
-                      />
-                    </div>
-
-                    {/* Start Time */}
-                    <div className="sm:col-span-3">
-                      <label className="text-[10px] font-bold text-theme-muted uppercase sm:hidden block mb-0.5">Start Time</label>
-                      <input
-                        type="text"
-                        value={period.startTime}
-                        onChange={(e) => handlePeriodChange(period.id, 'startTime', e.target.value)}
-                        placeholder="05:00 AM"
-                        className="w-full px-2.5 py-1.5 rounded-lg bg-theme-card border border-theme-border text-xs font-mono font-bold text-theme-text focus:outline-none focus:border-blue-500"
-                      />
-                    </div>
-
-                    {/* End Time */}
-                    <div className="sm:col-span-3">
-                      <label className="text-[10px] font-bold text-theme-muted uppercase sm:hidden block mb-0.5">End Time</label>
-                      <input
-                        type="text"
-                        value={period.endTime}
-                        onChange={(e) => handlePeriodChange(period.id, 'endTime', e.target.value)}
-                        placeholder="08:59 AM"
-                        className="w-full px-2.5 py-1.5 rounded-lg bg-theme-card border border-theme-border text-xs font-mono font-bold text-theme-text focus:outline-none focus:border-blue-500"
-                      />
-                    </div>
-
-                    {/* Delete */}
-                    <div className="sm:col-span-1 flex items-center justify-end">
-                      <button
-                        type="button"
-                        onClick={() => handleDeletePeriod(period.id)}
-                        disabled={periodsList.length <= 1}
-                        className="p-1.5 rounded-lg text-theme-muted hover:text-red-500 hover:bg-theme-card transition-colors disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"
-                        title="Remove Zone"
+                    return (
+                      <div
+                        key={period.id}
+                        style={{ width: `${pct}%` }}
+                        className={`h-full bg-gradient-to-r ${bgGrad} text-white flex items-center justify-center text-[10px] font-bold px-1 transition-all border-r border-white/20 last:border-r-0 hover:brightness-110 cursor-pointer overflow-hidden relative group`}
+                        title={`${period.name}: ${period.startTime} – ${period.endTime} (${(dur / 60).toFixed(1)}h • ${pct.toFixed(0)}%)`}
                       >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </div>
-                  </div>
-                ))}
+                        <span className="truncate flex items-center gap-1 drop-shadow-xs">
+                          <span>{period.emoji || '⏰'}</span>
+                          {pct >= 9 && <span className="hidden sm:inline">{period.name}</span>}
+                          {pct >= 6 && <span className="text-[9px] opacity-90">{(dur / 60).toFixed(1)}h</span>}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
 
-              {/* Action Buttons: Add Zone, Reset, Save */}
-              <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-2">
+              {/* High-Density Smart Table of Zones */}
+              <div className="bg-theme-card rounded-xl border border-theme-border overflow-hidden shadow-2xs">
+                {/* Table Header */}
+                <div className="hidden sm:grid grid-cols-12 gap-2 px-3 py-1.5 bg-theme-card-hover/80 border-b border-theme-border text-[10px] font-bold text-theme-muted uppercase tracking-wider items-center">
+                  <div className="col-span-1"># & Icon</div>
+                  <div className="col-span-4">Zone Name</div>
+                  <div className="col-span-4">Time Window (Auto-Chained)</div>
+                  <div className="col-span-1 text-center">Duration</div>
+                  <div className="col-span-2 text-right">Smart Actions</div>
+                </div>
+
+                {/* Table Rows */}
+                <div className="divide-y divide-theme-border/60">
+                  {periodsList.map((period, index) => {
+                    const dur = getPeriodDurationMinutes(period);
+                    const durHours = (dur / 60).toFixed(1);
+                    const pct = ((dur / 1440) * 100).toFixed(1);
+
+                    return (
+                      <div
+                        key={period.id}
+                        className="px-3 py-1.5 grid grid-cols-1 sm:grid-cols-12 gap-2 items-center hover:bg-theme-card-hover/40 transition-colors"
+                      >
+                        {/* # & Emoji */}
+                        <div className="sm:col-span-1 flex items-center gap-1.5">
+                          <span className="text-[10px] font-mono font-bold text-theme-muted w-4">
+                            #{index + 1}
+                          </span>
+                          <input
+                            type="text"
+                            value={period.emoji || '⏰'}
+                            onChange={(e) => handlePeriodMetaChange(period.id, 'emoji', e.target.value)}
+                            className="w-7 h-7 text-center rounded-lg bg-theme-card border border-theme-border text-xs focus:outline-none focus:border-amber-500"
+                            title="Emoji Icon"
+                            maxLength={2}
+                          />
+                        </div>
+
+                        {/* Zone Name */}
+                        <div className="sm:col-span-4">
+                          <input
+                            type="text"
+                            value={period.name}
+                            onChange={(e) => handlePeriodMetaChange(period.id, 'name', e.target.value)}
+                            placeholder="e.g. EarlyMorning"
+                            className="w-full px-2.5 py-1 rounded-lg bg-theme-card border border-theme-border text-xs font-bold text-theme-text focus:outline-none focus:border-amber-500 transition-colors"
+                          />
+                        </div>
+
+                        {/* Time Window: Start -> End with Steppers */}
+                        <div className="sm:col-span-4 flex items-center gap-1.5 flex-wrap">
+                          {/* Locked Start Time Pill (Inherited from prev zone) */}
+                          <span 
+                            className="px-2 py-1 rounded-lg bg-theme-card-hover border border-theme-border font-mono text-[11px] font-bold text-theme-muted"
+                            title={`Start Time is automatically locked to previous zone's end time`}
+                          >
+                            {period.startTime}
+                          </span>
+
+                          <ArrowRight className="w-3 h-3 text-theme-muted shrink-0" />
+
+                          {/* Editable End Time with Steppers */}
+                          <div className="flex items-center gap-1">
+                            <input
+                              type="text"
+                              value={period.endTime}
+                              onChange={(e) => handleBoundaryChange(index, e.target.value)}
+                              placeholder="09:00 AM"
+                              className="w-20 px-2 py-1 rounded-lg bg-theme-card border border-theme-border font-mono text-[11px] font-bold text-theme-text text-center focus:outline-none focus:border-blue-500"
+                              title="Edit boundary (updates next zone's start time automatically)"
+                            />
+
+                            {/* -15m Stepper */}
+                            <button
+                              type="button"
+                              onClick={() => handleNudgeBoundary(index, -15)}
+                              className="w-6 h-6 rounded bg-theme-card-hover hover:bg-theme-border text-[10px] font-bold text-theme-text flex items-center justify-center border border-theme-border transition-colors cursor-pointer"
+                              title="Nudge boundary -15m"
+                            >
+                              -15
+                            </button>
+
+                            {/* +15m Stepper */}
+                            <button
+                              type="button"
+                              onClick={() => handleNudgeBoundary(index, 15)}
+                              className="w-6 h-6 rounded bg-theme-card-hover hover:bg-theme-border text-[10px] font-bold text-theme-text flex items-center justify-center border border-theme-border transition-colors cursor-pointer"
+                              title="Nudge boundary +15m"
+                            >
+                              +15
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Duration Pill */}
+                        <div className="sm:col-span-1 text-center">
+                          <span 
+                            className="px-1.5 py-0.5 rounded-full text-[10px] font-mono font-bold bg-amber-100 dark:bg-amber-950/80 text-amber-900 dark:text-amber-300 border border-amber-300/60 dark:border-amber-800"
+                            title={`${dur} minutes (${pct}% of 24-hour day)`}
+                          >
+                            {durHours}h
+                          </span>
+                        </div>
+
+                        {/* Smart Actions: Split & Delete */}
+                        <div className="sm:col-span-2 flex items-center justify-end gap-1.5">
+                          {/* Split Button */}
+                          <button
+                            type="button"
+                            onClick={() => handleSplitPeriod(index)}
+                            className="px-2 py-1 rounded-lg bg-theme-card-hover hover:bg-blue-50 hover:text-blue-600 dark:hover:bg-blue-950/60 dark:hover:text-blue-300 text-[10px] font-bold text-theme-muted border border-theme-border transition-colors flex items-center gap-1 cursor-pointer"
+                            title="Split this zone into 2 equal halves"
+                          >
+                            <Scissors className="w-3 h-3" />
+                            <span>Split</span>
+                          </button>
+
+                          {/* Delete Button */}
+                          <button
+                            type="button"
+                            onClick={() => handleDeletePeriod(period.id)}
+                            disabled={periodsList.length <= 1}
+                            className="p-1 rounded-lg text-theme-muted hover:text-red-500 hover:bg-theme-card transition-colors disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"
+                            title="Remove zone and merge time into previous zone"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Action Toolbar */}
+              <div className="flex flex-col sm:flex-row items-center justify-between gap-2.5 pt-1">
                 <div className="flex items-center gap-2 w-full sm:w-auto">
                   <button
                     type="button"
                     onClick={handleAddPeriod}
-                    className="flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-theme-card-hover hover:bg-theme-border text-xs font-bold text-theme-text border border-theme-border transition-all cursor-pointer"
+                    className="flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-xl bg-theme-card-hover hover:bg-theme-border text-xs font-bold text-theme-text border border-theme-border transition-all cursor-pointer shadow-2xs"
+                    title="Finds the longest zone and splits it smoothly"
                   >
                     <Plus className="w-3.5 h-3.5" />
-                    <span>Add Zone</span>
+                    <span>+ Add Zone (Smart Split)</span>
                   </button>
 
                   <button
                     type="button"
                     onClick={handleResetPeriods}
-                    className="flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-theme-card-hover hover:bg-theme-border text-xs font-bold text-amber-600 dark:text-amber-400 border border-theme-border transition-all cursor-pointer"
-                    title="Restore default 7 periods"
+                    className="flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-xl bg-theme-card-hover hover:bg-theme-border text-xs font-bold text-amber-600 dark:text-amber-400 border border-theme-border transition-all cursor-pointer shadow-2xs"
+                    title="Restore default 7 contiguous periods"
                   >
                     <RotateCcw className="w-3.5 h-3.5" />
-                    <span>Reset Defaults</span>
+                    <span>Reset 7 Defaults</span>
                   </button>
                 </div>
 
                 <button
                   type="button"
                   onClick={handleSavePeriods}
-                  className="w-full sm:w-auto flex items-center justify-center gap-2 px-5 py-2 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white text-xs font-bold shadow-md shadow-amber-500/20 transition-all cursor-pointer"
+                  className="w-full sm:w-auto flex items-center justify-center gap-1.5 px-4 py-1.5 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white text-xs font-bold shadow-md shadow-amber-500/20 transition-all cursor-pointer active:scale-98"
                 >
-                  <Check className="w-4 h-4" />
+                  <Check className="w-4 h-4 stroke-[3]" />
                   <span>Save Day Zones</span>
                 </button>
               </div>
 
-              {/* Live Interactive Day Zone Tester */}
-              <div className="p-3.5 rounded-xl bg-amber-50/40 dark:bg-amber-950/20 border border-amber-200/60 dark:border-amber-900/40 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+              {/* Compact Live Interactive Day Zone Tester */}
+              <div className="p-2.5 rounded-xl bg-amber-50/50 dark:bg-amber-950/20 border border-amber-200/70 dark:border-amber-900/50 flex flex-col md:flex-row items-start md:items-center justify-between gap-2">
                 <div className="flex items-center gap-2">
                   <Sparkles className="w-4 h-4 text-amber-500 shrink-0" />
-                  <div>
-                    <span className="text-xs font-bold text-theme-text">Live Day Zone Tester</span>
-                    <p className="text-[11px] text-theme-muted">
-                      Type any time (e.g. 06:15 AM, 02:00 PM, 03:00 AM) to verify how it gets labeled:
-                    </p>
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <span className="text-xs font-bold text-theme-text">Live 24h Time Zone Tester:</span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const nowStr = new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
+                        setTestTimeInput(nowStr);
+                      }}
+                      className="px-1.5 py-0.2 rounded bg-amber-200 dark:bg-amber-900 text-amber-900 dark:text-amber-200 text-[10px] font-extrabold hover:brightness-110 cursor-pointer"
+                    >
+                      Now
+                    </button>
+                    {['08:00 AM', '01:30 PM', '06:00 PM', '10:30 PM', '03:00 AM'].map(sample => (
+                      <button
+                        key={sample}
+                        type="button"
+                        onClick={() => setTestTimeInput(sample)}
+                        className="px-1.5 py-0.2 rounded bg-theme-card text-theme-muted hover:text-theme-text text-[10px] font-mono font-bold border border-theme-border cursor-pointer"
+                      >
+                        {sample}
+                      </button>
+                    ))}
                   </div>
                 </div>
 
-                <div className="flex items-center gap-2 w-full sm:w-auto">
+                <div className="flex items-center gap-2 w-full md:w-auto">
                   <input
                     type="text"
                     value={testTimeInput}
                     onChange={(e) => setTestTimeInput(e.target.value)}
                     placeholder="01:30 PM"
-                    className="w-24 px-2 py-1 rounded-lg bg-theme-card border border-theme-border font-mono font-bold text-xs text-theme-text"
+                    className="w-24 px-2 py-1 rounded-lg bg-theme-card border border-theme-border font-mono font-bold text-xs text-theme-text text-center focus:outline-none focus:border-amber-500"
                   />
-                  <div className="px-3 py-1 rounded-lg bg-amber-100 dark:bg-amber-900/60 text-amber-900 dark:text-amber-200 border border-amber-300 dark:border-amber-800 text-xs font-bold flex items-center gap-1.5 whitespace-nowrap">
-                    <span>{getTimePeriodForTime(testTimeInput, periodsList)?.emoji || '⏰'}</span>
-                    <span>{getTimePeriodForTime(testTimeInput, periodsList)?.name || 'Unmapped'}</span>
-                  </div>
+                  {(() => {
+                    const resolved = getTimePeriodForTime(testTimeInput, periodsList);
+                    if (!resolved) {
+                      return (
+                        <div className="px-2.5 py-1 rounded-lg bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs font-bold flex items-center gap-1 whitespace-nowrap">
+                          <span>⚠️ Unmapped</span>
+                        </div>
+                      );
+                    }
+                    const dur = getPeriodDurationMinutes(resolved);
+                    return (
+                      <div className="px-2.5 py-1 rounded-lg bg-amber-100 dark:bg-amber-900/60 text-amber-900 dark:text-amber-200 border border-amber-300 dark:border-amber-800 text-xs font-bold flex items-center gap-1.5 whitespace-nowrap shadow-2xs">
+                        <span>{resolved.emoji || '⏰'}</span>
+                        <span className="font-extrabold">{resolved.name}</span>
+                        <span className="font-mono text-[10px] text-amber-700 dark:text-amber-300">
+                          ({resolved.startTime} - {resolved.endTime} • {(dur/60).toFixed(1)}h)
+                        </span>
+                      </div>
+                    );
+                  })()}
                 </div>
               </div>
             </div>
           )}
         </div>
+        )}
 
         {/* Category & SubCategory CRUD */}
-        <div className="glass-panel p-6 rounded-2xl border border-theme-border space-y-4">
+        {isCardVisible('categories') && (
+        <div className="glass-panel p-5 rounded-2xl border border-theme-border space-y-4 shadow-xs">
           <div className="flex items-center justify-between border-b border-theme-border pb-3">
             <h3 className="text-sm font-bold text-theme-text uppercase tracking-wider flex items-center gap-2">
               <FolderKanban className="w-4 h-4 text-emerald-500" />
@@ -1384,9 +1895,11 @@ export const AdminSettingsView: React.FC = () => {
             ))}
           </div>
         </div>
+        )}
 
         {/* Buffer Status & Free-Time Activity Menu Management */}
-        <div className="glass-panel p-6 rounded-2xl border border-theme-border space-y-4">
+        {isCardVisible('bufferStatus') && (
+        <div className="glass-panel p-5 rounded-2xl border border-theme-border space-y-4 shadow-xs">
           <div className="flex items-center justify-between border-b border-theme-border pb-3">
             <div>
               <h3 className="text-sm font-bold text-theme-text uppercase tracking-wider flex items-center gap-2">
@@ -1437,9 +1950,11 @@ export const AdminSettingsView: React.FC = () => {
             ))}
           </div>
         </div>
+        )}
 
         {/* Emergency Buffer Presets & Categories Management */}
-        <div className="glass-panel p-6 rounded-2xl border border-theme-border space-y-4">
+        {isCardVisible('emergencyBuffer') && (
+        <div className="glass-panel p-5 rounded-2xl border border-theme-border space-y-4 shadow-xs">
           <div className="flex items-center justify-between border-b border-theme-border pb-3">
             <div>
               <h3 className="text-sm font-bold text-theme-text uppercase tracking-wider flex items-center gap-2">
@@ -1489,9 +2004,11 @@ export const AdminSettingsView: React.FC = () => {
             ))}
           </div>
         </div>
+        )}
 
         {/* Security & Access Protection Shield */}
-        <div className="glass-panel p-6 rounded-2xl border border-theme-border space-y-4">
+        {isCardVisible('security') && (
+        <div className="glass-panel p-5 rounded-2xl border border-theme-border space-y-4 shadow-xs">
           <div className="flex items-center justify-between border-b border-theme-border pb-3">
             <h3 className="text-sm font-bold text-theme-text uppercase tracking-wider flex items-center gap-2">
               <ShieldCheck className="w-4 h-4 text-blue-500" />
@@ -1598,8 +2115,11 @@ export const AdminSettingsView: React.FC = () => {
             </button>
           </div>
         </div>
+        )}
+
         {/* Real-Time Cloud Database Sync (Supabase) */}
-        <div className="glass-panel p-6 rounded-2xl border border-theme-border space-y-4">
+        {isCardVisible('cloudSync') && (
+        <div className={`glass-panel p-5 rounded-2xl border border-theme-border space-y-4 shadow-xs ${activeTab === 'security' ? 'lg:col-span-2' : ''}`}>
           <div className="flex items-center justify-between border-b border-theme-border pb-3">
             <h3 className="text-sm font-bold text-theme-text uppercase tracking-wider flex items-center gap-2">
               <Database className="w-4 h-4 text-sky-500" />
@@ -1805,9 +2325,11 @@ export const AdminSettingsView: React.FC = () => {
             </button>
           </div>
         </div>
+        )}
 
         {/* Complete 100% Data Backup & Recovery Hub */}
-        <div className="glass-panel p-6 rounded-2xl border border-theme-border space-y-4">
+        {isCardVisible('backupHub') && (
+        <div className="glass-panel p-5 rounded-2xl border border-theme-border space-y-4 shadow-xs">
           <div className="flex items-center justify-between border-b border-theme-border pb-3 flex-wrap gap-2">
             <h3 className="text-sm font-bold text-theme-text uppercase tracking-wider flex items-center gap-2">
               <Database className="w-4 h-4 text-purple-500" />
@@ -1907,6 +2429,22 @@ export const AdminSettingsView: React.FC = () => {
             </div>
           </div>
         </div>
+        )}
+
+        {/* Empty State for Search Filter */}
+        {searchQuery && !(['capacity', 'priorities', 'taskDefaults', 'dayZones', 'categories', 'bufferStatus', 'emergencyBuffer', 'security', 'cloudSync', 'backupHub'] as const).some(isCardVisible) && (
+          <div className="lg:col-span-2 p-12 text-center rounded-2xl border border-dashed border-theme-border bg-theme-card/50 space-y-2 animate-fade-in">
+            <Search className="w-8 h-8 text-theme-muted mx-auto opacity-50" />
+            <h4 className="text-sm font-bold text-theme-text">No Settings Found for &ldquo;{searchQuery}&rdquo;</h4>
+            <p className="text-xs text-theme-muted">Try searching for keywords like &ldquo;sleep&rdquo;, &ldquo;priority&rdquo;, &ldquo;backup&rdquo;, &ldquo;pin&rdquo;, &ldquo;cloud&rdquo;, or &ldquo;buffer&rdquo;.</p>
+            <button
+              onClick={() => setSearchQuery('')}
+              className="px-3 py-1.5 rounded-xl bg-blue-600 text-white text-xs font-bold hover:bg-blue-700 transition-colors mt-2 cursor-pointer"
+            >
+              Clear Search
+            </button>
+          </div>
+        )}
 
       </div>
 

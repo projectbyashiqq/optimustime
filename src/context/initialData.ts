@@ -20,7 +20,7 @@ export const DEFAULT_NAMED_TIME_PERIODS: NamedTimePeriod[] = [
     id: 'period-1',
     name: 'EarlyMorning',
     startTime: '05:00 AM',
-    endTime: '08:59 AM',
+    endTime: '09:00 AM',
     emoji: '🌅',
     color: '#f59e0b'
   },
@@ -28,7 +28,7 @@ export const DEFAULT_NAMED_TIME_PERIODS: NamedTimePeriod[] = [
     id: 'period-2',
     name: 'Morning',
     startTime: '09:00 AM',
-    endTime: '11:59 AM',
+    endTime: '12:00 PM',
     emoji: '☀️',
     color: '#3b82f6'
   },
@@ -43,8 +43,8 @@ export const DEFAULT_NAMED_TIME_PERIODS: NamedTimePeriod[] = [
   {
     id: 'period-4',
     name: 'After Lunch',
-    startTime: '03:31 PM',
-    endTime: '05:29 PM',
+    startTime: '03:30 PM',
+    endTime: '05:30 PM',
     emoji: '☕',
     color: '#8b5cf6'
   },
@@ -52,7 +52,7 @@ export const DEFAULT_NAMED_TIME_PERIODS: NamedTimePeriod[] = [
     id: 'period-5',
     name: 'Evening',
     startTime: '05:30 PM',
-    endTime: '07:59 PM',
+    endTime: '08:00 PM',
     emoji: '🌇',
     color: '#ec4899'
   },
@@ -67,8 +67,8 @@ export const DEFAULT_NAMED_TIME_PERIODS: NamedTimePeriod[] = [
   {
     id: 'period-7',
     name: 'deep night',
-    startTime: '02:01 AM',
-    endTime: '04:59 AM',
+    startTime: '02:00 AM',
+    endTime: '05:00 AM',
     emoji: '🌌',
     color: '#475569'
   }

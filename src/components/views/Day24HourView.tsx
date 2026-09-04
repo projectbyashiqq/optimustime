@@ -8,7 +8,8 @@ import {
   isTaskInRunningSlot,
   toISODateString,
   addMinutesToTime,
-  isTaskInSleepWindow
+  isTaskInSleepWindow,
+  getTimePeriodForTime
 } from '../../utils/timeUtils';
 import { 
   Play, 
@@ -46,6 +47,7 @@ export const Day24HourView: React.FC<Day24HourViewProps> = ({
     openBufferNoteModal,
     capacitySettings, 
     prioritySettings,
+    timePeriodSettings,
     startTask, 
     pauseTask, 
     completeTask, 
@@ -392,6 +394,24 @@ export const Day24HourView: React.FC<Day24HourViewProps> = ({
                         <span>SLEEP</span>
                       </span>
                     )}
+
+                    {timePeriodSettings?.isEnabled && (() => {
+                      const period = getTimePeriodForTime(task.startTime, timePeriodSettings);
+                      if (!period) return null;
+                      return (
+                        <span 
+                          className={`text-[9px] font-bold px-1.5 py-0.2 rounded-full border flex items-center gap-0.5 shrink-0 ${
+                            isWorking 
+                              ? 'bg-white/20 border-white/40 text-white' 
+                              : 'bg-amber-500/10 text-amber-800 dark:text-amber-200 border-amber-300 dark:border-amber-800'
+                          }`}
+                          title={`Day Zone: ${period.name} (${period.startTime} - ${period.endTime})`}
+                        >
+                          <span>{period.emoji || '⏰'}</span>
+                          <span>{period.name}</span>
+                        </span>
+                      );
+                    })()}
 
                     <span className={`text-[11px] font-bold truncate ${
                       isWorking ? 'text-white' :

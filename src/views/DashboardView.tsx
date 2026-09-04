@@ -392,7 +392,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
       <div className="glass-panel p-2.5 sm:px-3 sm:py-2 rounded-2xl flex flex-col md:flex-row items-stretch md:items-center justify-between gap-2.5 border border-theme-border shadow-sm">
         
         {/* Left Side: Date Selector, Quick Chips & Action */}
-        <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5 max-w-full">
+        <div className="flex items-center gap-2 overflow-x-auto no-scrollbar py-0.5 max-w-full">
+          {/* Prominent & Elegant Date Selector */}
           <div 
             onClick={() => {
               try {
@@ -401,11 +402,13 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
                 dateInputRef.current?.focus();
               }
             }}
-            className="flex items-center gap-1.5 bg-theme-card-hover hover:bg-theme-card hover:border-blue-500 px-2.5 py-1 rounded-xl border border-theme-border shrink-0 cursor-pointer transition-all shadow-2xs group active:scale-98 relative"
-            title="Click anywhere to open full calendar"
+            className="flex items-center gap-2.5 bg-theme-card-hover hover:bg-theme-card hover:border-blue-500/80 px-3.5 py-1.5 rounded-xl border border-theme-border shrink-0 cursor-pointer transition-all shadow-sm group active:scale-98 relative select-none whitespace-nowrap"
+            title="Click to open full calendar"
           >
-            <Calendar className="w-3.5 h-3.5 text-blue-500 shrink-0 group-hover:scale-110 transition-transform" />
-            <span className="font-bold text-xs text-theme-text font-mono tracking-tight">
+            <div className="p-1 rounded-lg bg-blue-500/10 text-blue-500 group-hover:bg-blue-500/20 group-hover:scale-110 transition-all shrink-0">
+              <Calendar className="w-4 h-4" />
+            </div>
+            <span className="font-extrabold text-sm sm:text-base text-theme-text font-mono tracking-tight whitespace-nowrap">
               {formatDisplayDate(selectedDate)}
             </span>
             <input
@@ -413,69 +416,20 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
               type="date"
               value={selectedDate}
               onChange={(e) => setSelectedDate(e.target.value)}
-              className="absolute inset-0 opacity-0 pointer-events-none w-full h-full"
+              className="absolute inset-0 opacity-0 pointer-events-none w-full h-full cursor-pointer"
             />
-            <span className="text-[11px] font-bold px-1.5 py-0.2 rounded bg-theme-card text-theme-muted border border-theme-border font-mono group-hover:text-theme-text group-hover:border-blue-400/50">
+            <span className="text-xs font-bold px-2 py-0.5 rounded-md bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/25 font-mono uppercase tracking-wider whitespace-nowrap">
               {dayOfWeek.slice(0, 3)}
             </span>
           </div>
 
-          {/* Live Clock + Time Period Pill */}
-          <div
-            className="hidden sm:flex items-center gap-2 px-3 py-1 rounded-xl border shrink-0 transition-all duration-500"
-            style={{
-              background: currentPeriod?.color
-                ? `${currentPeriod.color}18`
-                : 'var(--theme-card-hover)',
-              borderColor: currentPeriod?.color
-                ? `${currentPeriod.color}55`
-                : 'var(--theme-border)'
-            }}
-            title={currentPeriod ? `Time Period: ${currentPeriod.name} (${currentPeriod.startTime} – ${currentPeriod.endTime})` : 'Current Time'}
-          >
-            {/* Pulsing dot */}
-            <div className="relative flex h-2 w-2 shrink-0">
-              <span
-                className="animate-ping absolute inline-flex h-full w-full rounded-full opacity-75"
-                style={{ backgroundColor: currentPeriod?.color || '#3b82f6' }}
-              />
-              <span
-                className="relative inline-flex rounded-full h-2 w-2"
-                style={{ backgroundColor: currentPeriod?.color || '#3b82f6' }}
-              />
-            </div>
-
-            {/* Period emoji */}
-            {currentPeriod?.emoji && (
-              <span className="text-sm leading-none" aria-hidden="true">{currentPeriod.emoji}</span>
-            )}
-
-            {/* Live time */}
-            <span className="font-mono text-xs font-black tracking-wider text-theme-text">
-              {liveTimeStr}
-            </span>
-
-            {/* Period name chip */}
-            {currentPeriod && (
-              <span
-                className="hidden lg:inline-flex items-center text-[10px] font-bold px-1.5 py-0.5 rounded-lg"
-                style={{
-                  backgroundColor: `${currentPeriod.color}22`,
-                  color: currentPeriod.color
-                }}
-              >
-                {currentPeriod.name}
-              </span>
-            )}
-          </div>
-
-          <div className="flex items-center gap-1">
+          <div className="flex items-center gap-1 shrink-0">
             <button
               onClick={() => {
                 const d = new Date();
                 setSelectedDate(toISODateString(d));
               }}
-              className={`btn-pro px-3 py-1 rounded-xl text-xs ${
+              className={`btn-pro px-3 py-1.5 rounded-xl text-xs whitespace-nowrap shrink-0 ${
                 selectedDate === toISODateString(new Date())
                   ? 'btn-pro-primary'
                   : 'btn-pro-glass text-theme-muted hover:text-theme-text'
@@ -490,26 +444,37 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
                 d.setDate(d.getDate() + 1);
                 setSelectedDate(toISODateString(d));
               }}
-              className="btn-pro btn-pro-glass px-3 py-1 rounded-xl text-xs text-theme-muted hover:text-theme-text font-semibold"
+              className="btn-pro btn-pro-glass px-3 py-1.5 rounded-xl text-xs text-theme-muted hover:text-theme-text font-semibold whitespace-nowrap shrink-0"
             >
               Tomorrow
             </button>
+
+            {timePeriodSettings?.isEnabled && currentPeriod && selectedDate === toISODateString(new Date()) && (
+              <div 
+                className="hidden lg:flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-amber-500/10 text-amber-900 dark:text-amber-200 border border-amber-300 dark:border-amber-800 text-xs font-bold shrink-0 shadow-2xs animate-fade-in"
+                title={`Active Day Zone: ${currentPeriod.name} (${currentPeriod.startTime} - ${currentPeriod.endTime})`}
+              >
+                <span>{currentPeriod.emoji || '⏰'}</span>
+                <span className="font-extrabold">{currentPeriod.name}</span>
+                <span className="text-[10px] font-mono opacity-80">({currentPeriod.startTime} - {currentPeriod.endTime})</span>
+              </div>
+            )}
           </div>
 
           {/* Morning Rollover Review Quick-Pill */}
           {morningReviewTasks.length > 0 && (
             <button
               onClick={() => setIsMorningReviewOpen(prev => !prev)}
-              className={`btn-pro flex items-center gap-1.5 px-3 py-1 rounded-xl text-xs font-bold transition-all ${
+              className={`btn-pro flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap shrink-0 transition-all ${
                 isMorningReviewOpen
                   ? 'btn-pro-warning ring-1 ring-amber-400/60'
                   : 'btn-pro-glass border-amber-300 dark:border-amber-800 text-amber-900 dark:text-amber-200 hover:bg-amber-100 dark:hover:bg-amber-950/60'
               }`}
               title="Review Unfinished Tasks from Yesterday (Granular Manual Control)"
             >
-              <Sunrise className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
-              <span className="hidden md:inline">Morning Review</span>
-              <span className={`text-[11px] font-mono font-bold px-1.5 py-0.2 rounded-full ${
+              <Sunrise className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 shrink-0" />
+              <span className="hidden md:inline whitespace-nowrap">Morning Review</span>
+              <span className={`text-[11px] font-mono font-bold px-1.5 py-0.2 rounded-full shrink-0 ${
                 isMorningReviewOpen ? 'bg-white/30 text-white' : 'bg-amber-500 text-white'
               }`}>
                 {morningReviewTasks.length}
@@ -520,16 +485,16 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
           {/* Priority Backlog Toggle Button */}
           <button
             onClick={() => setShowPriorityBacklog(!showPriorityBacklog)}
-            className={`flex items-center gap-1 px-2 py-1 rounded-xl text-xs font-bold transition-all shadow-sm ${
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap shrink-0 transition-all shadow-sm ${
               showPriorityBacklog
                 ? 'bg-gradient-to-r from-red-500 to-amber-500 text-white ring-1 ring-red-400/40'
                 : 'bg-theme-card-hover text-theme-text hover:bg-theme-border border border-theme-border'
             }`}
             title="Toggle Priority Queue"
           >
-            <Flame className={`w-3.5 h-3.5 ${showPriorityBacklog ? 'text-white' : 'text-red-500'}`} />
-            <span className="hidden md:inline">Priority Queue</span>
-            <span className={`text-[9px] font-black px-1.5 py-0.2 rounded-full ${
+            <Flame className={`w-3.5 h-3.5 shrink-0 ${showPriorityBacklog ? 'text-white' : 'text-red-500'}`} />
+            <span className="hidden md:inline whitespace-nowrap">Priority Queue</span>
+            <span className={`text-[9px] font-black px-1.5 py-0.5 rounded-full shrink-0 ${
               showPriorityBacklog ? 'bg-white/25 text-white' : 'bg-red-100 dark:bg-red-950 text-red-800 dark:text-red-300'
             }`}>
               {priorityBacklogTasks.length}
@@ -539,12 +504,12 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
           {/* Recurring Hub Button */}
           <button
             onClick={() => setIsRecurringHubOpen(true)}
-            className="flex items-center gap-1 px-2 py-1 rounded-xl text-xs font-bold bg-theme-card-hover text-theme-muted hover:text-theme-text border border-theme-border transition-colors"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap shrink-0 bg-theme-card-hover text-theme-muted hover:text-theme-text border border-theme-border transition-colors"
             title="Manage All Recurring Tasks & Schedules"
           >
-            <Repeat className="w-3.5 h-3.5 text-indigo-500" />
-            <span className="hidden md:inline">Recurring Hub</span>
-            <span className="text-[9px] font-black px-1.5 py-0.2 rounded-full bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-300">
+            <Repeat className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
+            <span className="hidden md:inline whitespace-nowrap">Recurring Hub</span>
+            <span className="text-[9px] font-black px-1.5 py-0.5 rounded-full bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-300 shrink-0">
               {tasks.filter(t => t.recurrence && t.recurrence !== 'None').length}
             </span>
           </button>
@@ -552,7 +517,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
           {/* + Buffer Note Button */}
           <button
             onClick={() => openBufferNoteModal({ date: selectedDate })}
-            className="flex items-center gap-1 px-2 py-1 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white rounded-xl shadow-sm transition-all transform active:scale-95 shrink-0"
+            className="flex items-center gap-1 px-2.5 py-1.5 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white rounded-xl shadow-sm transition-all transform active:scale-95 shrink-0 whitespace-nowrap"
             title="Log Buffer Note / Free Time"
           >
             <Plus className="w-3 h-3 stroke-[3]" />
@@ -562,7 +527,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
           {/* + Emergency Sign Button */}
           <button
             onClick={() => openEmergencyModal({ date: selectedDate })}
-            className="flex items-center gap-1 px-2 py-1 bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-700 hover:to-rose-700 text-white rounded-xl shadow-sm shadow-red-500/25 transition-all transform active:scale-95 shrink-0"
+            className="flex items-center gap-1 px-2.5 py-1.5 bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-700 hover:to-rose-700 text-white rounded-xl shadow-sm shadow-red-500/25 transition-all transform active:scale-95 shrink-0 whitespace-nowrap"
             title="🚨 Emergency BUFFER (Loadshedding, Illness, Crisis) & Reschedule Day"
           >
             <Plus className="w-3 h-3 stroke-[3]" />
@@ -572,10 +537,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
 
         {/* Right Side: Mode Switcher & Primary Schedule CTA */}
         <div className="flex items-center justify-between md:justify-end gap-2 shrink-0 pt-2 md:pt-0 border-t md:border-t-0 border-theme-border/50">
-          <div className="flex items-center gap-0.5 p-0.5 bg-theme-card-hover rounded-xl border border-theme-border shadow-inner">
+          <div className="flex items-center gap-0.5 p-0.5 bg-theme-card-hover rounded-xl border border-theme-border shadow-inner shrink-0">
             <button
               onClick={() => setDashboardMode('time')}
-              className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold transition-all ${
+              className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold whitespace-nowrap shrink-0 transition-all ${
                 dashboardMode === 'time'
                   ? 'bg-blue-600 text-white shadow-sm shadow-blue-500/30'
                   : 'text-theme-muted hover:text-theme-text hover:bg-theme-card/50'
@@ -588,7 +553,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
 
             <button
               onClick={() => setDashboardMode('priority')}
-              className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold transition-all ${
+              className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold whitespace-nowrap shrink-0 transition-all ${
                 dashboardMode === 'priority'
                   ? 'bg-blue-600 text-white shadow-sm shadow-blue-500/30'
                   : 'text-theme-muted hover:text-theme-text hover:bg-theme-card/50'
@@ -602,7 +567,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
 
           <button
             onClick={() => onOpenTaskModal(undefined, selectedDate)}
-            className="flex items-center gap-1 px-3 py-1.5 bg-gradient-to-r from-blue-600 to-sky-500 hover:from-blue-700 hover:to-sky-600 text-white text-xs font-bold rounded-xl shadow-sm transition-all transform active:scale-95 whitespace-nowrap"
+            className="flex items-center gap-1 px-3 py-1.5 bg-gradient-to-r from-blue-600 to-sky-500 hover:from-blue-700 hover:to-sky-600 text-white text-xs font-bold rounded-xl shadow-sm transition-all transform active:scale-95 whitespace-nowrap shrink-0"
           >
             <Plus className="w-3.5 h-3.5 stroke-[3]" />
             <span>Schedule</span>
@@ -1123,7 +1088,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
 
                                     {/* Tertiary Context: Day Zone (Subtle) */}
                                     {timePeriodSettings?.isEnabled && (() => {
-                                      const period = getTimePeriodForTime(task.startTime, timePeriodSettings.periods);
+                                      const period = getTimePeriodForTime(task.startTime, timePeriodSettings);
                                       if (!period) return null;
                                       return (
                                         <span 
@@ -1465,7 +1430,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
                                         {task.startTime} - {task.endTime}
                                       </span>
                                       {timePeriodSettings?.isEnabled && (() => {
-                                        const period = getTimePeriodForTime(task.startTime, timePeriodSettings.periods);
+                                        const period = getTimePeriodForTime(task.startTime, timePeriodSettings);
                                         if (!period) return null;
                                         return (
                                           <span 
