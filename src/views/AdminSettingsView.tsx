@@ -722,22 +722,30 @@ export const AdminSettingsView: React.FC = () => {
   };
 
   const handleSaveCapacity = () => {
+    let sMin = parse12HourToMinutes(sleepStartTime);
+    let eMin = parse12HourToMinutes(sleepEndTime);
+    if (eMin <= sMin) eMin += 1440;
+    const computedSleepHours = Math.round(((eMin - sMin) / 60) * 4) / 4;
+    const wakingHours = Math.max(0, 24 - computedSleepHours);
+    const targetWork = Math.max(1, Math.round((wakingHours - 2) * 4) / 4);
+    const targetBuffer = Math.max(0.5, Math.round((wakingHours - targetWork) * 4) / 4);
+
     const chosenBuffer = taskDefaults.defaultBufferMinutes !== undefined
       ? taskDefaults.defaultBufferMinutes
       : (capacitySettings.defaultBufferMinutes !== undefined ? capacitySettings.defaultBufferMinutes : 0);
 
     updateCapacitySettings({
       ...capacitySettings,
-      maxWorkHours: Number(maxWorkHours),
-      sleepHours: Number(sleepHours),
-      bufferHours: Number(bufferHours),
-      dayStartTime,
-      dayEndTime,
+      maxWorkHours: Number(targetWork),
+      sleepHours: Number(computedSleepHours),
+      bufferHours: Number(targetBuffer),
+      dayStartTime: sleepEndTime,
+      dayEndTime: sleepStartTime,
       sleepStartTime,
       sleepEndTime,
       defaultBufferMinutes: Number(chosenBuffer),
       autoSleepScheduleEnabled,
-      isManualMode,
+      isManualMode: true,
       splitScheduleSessions: splitSessions
     });
 
@@ -746,7 +754,7 @@ export const AdminSettingsView: React.FC = () => {
       defaultBufferMinutes: Number(chosenBuffer)
     });
 
-    setCapacityStatusMsg('Capacity & Circadian Red-Line Protocol saved successfully! ✅');
+    setCapacityStatusMsg('Sleep Schedule & Daily Capacity saved successfully! 🌙✅');
     setTimeout(() => setCapacityStatusMsg(null), 4000);
   };
 
@@ -938,910 +946,190 @@ export const AdminSettingsView: React.FC = () => {
         {/* Daily Capacity & Red-Line Protocol (24-Hours Locked System Tools) */}
         {isCardVisible('capacity') && (
         <div className={`glass-panel p-5 sm:p-6 rounded-2xl border border-theme-border space-y-5 relative z-20 ${activeTab === 'capacity' ? 'lg:col-span-2' : ''}`}>
-          <div className="flex items-center justify-between border-b border-theme-border pb-4 flex-wrap gap-2">
+          <div className="flex items-center justify-between border-b border-theme-border pb-4 flex-wrap gap-3">
             <div>
               <h3 className="text-sm font-black text-theme-text uppercase tracking-wider flex items-center gap-2">
-                <ShieldCheck className="w-4 h-4 text-blue-500" />
-                <span>Daily Capacity & Red-Line Protocol</span>
+                <Moon className="w-4 h-4 text-indigo-500" />
+                <span>Daily Capacity & Sleep Protocol</span>
               </h3>
               <p className="text-[11px] text-theme-muted mt-0.5">
-                24-Hours Locked System Tools • Work Target, Sleep Window & Automated Buffer
+                Configure your restorative sleep window. Active waking capacity is automatically derived.
               </p>
             </div>
             
-            {/* Mode Switcher & Allocation Summary Badge */}
-            <div className="flex items-center gap-2 flex-wrap">
-              <button
-                type="button"
-                onClick={() => setIsManualMode(!isManualMode)}
-                className={`px-3 py-1.5 rounded-full text-xs font-black flex items-center gap-1.5 shadow-xs transition-all cursor-pointer ${
-                  isManualMode
-                    ? 'bg-blue-100 text-blue-900 dark:bg-blue-950/80 dark:text-blue-300 border border-blue-300 dark:border-blue-700'
-                    : 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/80 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-700'
-                }`}
-                title={isManualMode ? "Switch to 24.0h Auto-Balanced Protocol" : "Switch to Full Manual Control Mode"}
-              >
-                {isManualMode ? (
-                  <>
-                    <Sliders className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
-                    <span>⚙️ Manual Control Mode (Unlocked)</span>
-                  </>
-                ) : (
-                  <>
-                    <Lock className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
-                    <span>🔒 24.0h Auto-Balanced Protocol</span>
-                  </>
-                )}
-              </button>
-              
-              {/* Live Hours Sum Pill */}
-              <div className={`px-2.5 py-1 rounded-full font-mono text-[11px] font-black border ${
-                Math.abs((maxWorkHours + bufferHours + sleepHours) - 24) < 0.05
-                  ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300 border-emerald-300 dark:border-emerald-800'
-                  : 'bg-amber-50 text-amber-800 dark:bg-amber-950/50 dark:text-amber-300 border-amber-300 dark:border-amber-700'
-              }`}>
-                {(maxWorkHours + bufferHours + sleepHours).toFixed(1)}h / 24h
-              </div>
-            </div>
+            {/* Live Sleep Duration Badge */}
+            {(() => {
+              let sMin = parse12HourToMinutes(sleepStartTime);
+              let eMin = parse12HourToMinutes(sleepEndTime);
+              if (eMin <= sMin) eMin += 1440;
+              const durMin = eMin - sMin;
+              const durH = Math.round((durMin / 60) * 4) / 4;
+              return (
+                <div className="flex items-center gap-2">
+                  <div className="px-3.5 py-1.5 rounded-full font-mono text-xs font-bold bg-indigo-50 text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 flex items-center gap-1.5 shadow-2xs">
+                    <span>🌙</span>
+                    <span>{formatDurationHuman(durMin)} Sleep</span>
+                    <span className="text-[10px] opacity-75 font-sans">({(durH / 1.5).toFixed(1)} Cycles)</span>
+                  </div>
+                </div>
+              );
+            })()}
           </div>
 
-          <div className="space-y-5 text-xs">
-
-            {/* Dedicated Split Routine Blueprint: Apple-Grade Circadian Master Routine */}
-            <div className="p-4 sm:p-6 rounded-3xl bg-slate-50/90 dark:bg-white/[0.03] border border-slate-200/90 dark:border-white/10 space-y-4 shadow-xs backdrop-blur-xl">
-              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 pb-2 border-b border-slate-200/70 dark:border-white/10">
-                <div className="space-y-0.5">
-                  <div className="flex items-center gap-2">
-                    <div className="w-8 h-8 rounded-xl bg-indigo-500/10 dark:bg-indigo-400/10 text-indigo-600 dark:text-indigo-400 flex items-center justify-center text-base shrink-0">
-                      🌙
-                    </div>
-                    <div>
-                      <h4 className="font-black text-theme-text text-xs uppercase tracking-wide flex items-center gap-2">
-                        <span>Split Schedule Blueprint</span>
-                        <span className="px-2 py-0.5 rounded-full bg-indigo-500/10 text-indigo-700 dark:text-indigo-300 font-mono font-bold text-[9px] border border-indigo-500/20">
-                          MASTER ROUTINE
-                        </span>
-                      </h4>
-                      <p className="text-[11px] text-theme-muted">
-                        Segmented circadian routine • Each phase is completely customizable with live synchronization
-                      </p>
-                    </div>
-                  </div>
-                </div>
-                
-                <div className="flex items-center gap-2 flex-wrap shrink-0">
-                  <button
-                    type="button"
-                    onClick={handleResetToNightOwl}
-                    className="px-3 py-1.5 rounded-xl bg-theme-card hover:bg-theme-card-hover border border-theme-border text-theme-muted hover:text-theme-text font-bold text-[11px] transition-all cursor-pointer active:scale-95"
-                    title="Reset to standard Night-Owl Split Schedule"
-                  >
-                    ↺ Reset Default Night-Owl
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={handleApplySplitBlueprint}
-                    className="px-4 py-1.5 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white font-bold text-xs shadow-sm hover:shadow-md active:scale-95 transition-all flex items-center gap-1.5 cursor-pointer"
-                    title="Apply these exact session times directly to Work Starts, Work Ends, Bedtime, Wake-up, and Capacity Targets"
-                  >
-                    <Sparkles className="w-3.5 h-3.5" />
-                    <span>Apply to Schedule Protocol</span>
-                  </button>
-                </div>
+          <div className="space-y-4 text-xs">
+            {/* 1. Interactive Bedtime & Wake-Up Window */}
+            <div className="p-4 sm:p-5 rounded-2xl bg-indigo-500/[0.03] dark:bg-indigo-500/[0.03] border border-indigo-200/80 dark:border-indigo-900/40 space-y-4">
+              <div className="flex items-center justify-between flex-wrap gap-2">
+                <span className="font-bold text-theme-text text-xs uppercase tracking-wider flex items-center gap-1.5">
+                  <Clock className="w-3.5 h-3.5 text-indigo-500" />
+                  <span>Sleep Window Boundaries</span>
+                </span>
+                <span className="text-[11px] text-theme-muted">
+                  Waking schedule will automatically align from Wake-Up to Bedtime
+                </span>
               </div>
 
-              {/* Dynamic Apple-Grade Session Phase Cards */}
-              <div className="space-y-3 pt-1">
-                {splitSessions.map((session, index) => {
-                  const sMin = parse12HourToMinutes(session.startTime);
-                  let eMin = parse12HourToMinutes(session.endTime);
-                  if (eMin <= sMin) eMin += 1440;
-                  const durMin = eMin - sMin;
-                  const durHuman = formatDurationHuman(durMin);
-
-                  const isSleep = session.type === 'sleep';
-                  const isWork = session.type === 'work';
-                  const isBuffer = session.type === 'buffer';
-
-                  const badgeColor = isSleep
-                    ? 'text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-950/60 border-indigo-200 dark:border-indigo-800'
-                    : isWork
-                    ? 'text-blue-700 dark:text-blue-300 bg-blue-50 dark:bg-blue-950/60 border-blue-200 dark:border-blue-800'
-                    : isBuffer
-                    ? 'text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/60 border-amber-200 dark:border-amber-800'
-                    : 'text-purple-700 dark:text-purple-300 bg-purple-50 dark:bg-purple-950/60 border-purple-200 dark:border-purple-800';
-
-                  return (
-                    <div
-                      key={session.id || `split-${index}`}
-                      className="p-4 rounded-2xl bg-theme-card/90 dark:bg-slate-900/70 border border-slate-200/80 dark:border-white/10 shadow-2xs space-y-3 transition-all hover:border-indigo-300/80 dark:hover:border-indigo-700/60"
-                    >
-                      {/* Top Row: Phase Number, Type Selector, Title, and Actions */}
-                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <span className="font-mono text-[10px] font-black px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400">
-                            #{index + 1 < 10 ? `0${index + 1}` : index + 1}
-                          </span>
-
-                          <select
-                            value={session.type}
-                            onChange={(e) => handleUpdateSplitSession(session.id, { type: e.target.value as any })}
-                            className="text-xs font-bold px-2.5 py-1 rounded-xl bg-theme-bg border border-theme-border text-theme-text focus:outline-none focus:ring-1 focus:ring-indigo-500 cursor-pointer"
-                          >
-                            <option value="work">⚡ Work Focus</option>
-                            <option value="sleep">🌙 Sleep Window</option>
-                            <option value="buffer">☕ Buffer / Rest</option>
-                            <option value="custom">🎯 Custom Phase</option>
-                          </select>
-
-                          <span className={`px-2.5 py-0.5 rounded-full font-mono text-[11px] font-bold border ${badgeColor}`}>
-                            ⏱ {durHuman}
-                          </span>
-                        </div>
-
-                        {splitSessions.length > 1 && (
-                          <button
-                            type="button"
-                            onClick={() => handleRemoveSplitSession(session.id)}
-                            className="self-end sm:self-center px-2 py-1 rounded-lg text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950/40 text-xs font-bold transition-colors flex items-center gap-1 cursor-pointer"
-                            title="Delete this phase"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                            <span className="sm:hidden">Remove</span>
-                          </button>
-                        )}
-                      </div>
-
-                      {/* Middle: Title & Directive Inputs */}
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                        <div>
-                          <label className="text-[10px] font-bold text-theme-muted uppercase tracking-wider block mb-1">
-                            Phase Title
-                          </label>
-                          <input
-                            type="text"
-                            value={session.name}
-                            onChange={(e) => handleUpdateSplitSession(session.id, { name: e.target.value })}
-                            placeholder="e.g. Session 1 (Night Focus)"
-                            className="w-full text-xs font-bold bg-theme-bg/80 border border-theme-border rounded-xl px-3 py-1.5 text-theme-text placeholder:text-theme-muted focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
-                          />
-                        </div>
-
-                        <div>
-                          <label className="text-[10px] font-bold text-theme-muted uppercase tracking-wider block mb-1">
-                            Focus Directive / Notes
-                          </label>
-                          <input
-                            type="text"
-                            value={session.note || ''}
-                            onChange={(e) => handleUpdateSplitSession(session.id, { note: e.target.value })}
-                            placeholder="e.g. Late night deep uninterrupted focus..."
-                            className="w-full text-xs bg-theme-bg/80 border border-theme-border rounded-xl px-3 py-1.5 text-theme-text placeholder:text-theme-muted focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
-                          />
-                        </div>
-                      </div>
-
-                      {/* Bottom: Spacious TimePickers */}
-                      <div className="p-3 rounded-xl bg-slate-50/80 dark:bg-white/[0.02] border border-slate-200/60 dark:border-white/5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-                        <div className="flex items-center gap-3 w-full sm:w-auto flex-1 max-w-xl">
-                          <div className="flex-1 min-w-[140px]">
-                            <TimePicker
-                              label="Phase Start"
-                              value={session.startTime}
-                              onChange={(val) => handleUpdateSplitSession(session.id, { startTime: val })}
-                            />
-                          </div>
-
-                          <div className="pt-5 shrink-0 text-slate-400">
-                            <ArrowRight className="w-4 h-4" />
-                          </div>
-
-                          <div className="flex-1 min-w-[140px]">
-                            <TimePicker
-                              label="Phase End"
-                              value={session.endTime}
-                              onChange={(val) => handleUpdateSplitSession(session.id, { endTime: val })}
-                              align="right"
-                            />
-                          </div>
-                        </div>
-
-                        <div className="shrink-0 font-mono text-[11px] font-bold text-slate-500 dark:text-slate-400">
-                          Total Phase: <span className="text-theme-text font-black">{durHuman}</span>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-
-              {/* Add Phase & Total Coverage Row */}
-              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 pt-2 border-t border-slate-200/70 dark:border-white/10">
-                <button
-                  type="button"
-                  onClick={handleAddSplitSession}
-                  className="px-4 py-2 rounded-xl bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/40 dark:hover:bg-indigo-900/60 border border-indigo-200 dark:border-indigo-800 text-indigo-700 dark:text-indigo-300 font-bold text-xs flex items-center gap-2 transition-all cursor-pointer active:scale-95"
-                >
-                  <Plus className="w-3.5 h-3.5" />
-                  <span>+ Add Split Phase</span>
-                </button>
-
-                <div className="text-[11px] text-theme-muted flex items-center gap-1.5 font-medium">
-                  <span>💡 Tip: Click</span>
-                  <span className="font-bold text-indigo-600 dark:text-indigo-400">"Apply to Schedule Protocol"</span>
-                  <span>to push all session boundaries to the pillars below.</span>
-                </div>
-              </div>
-            </div>
-
-            {/* Pillar 1: Work Time Target & Shift Window */}
-            <div className="p-5 rounded-3xl bg-blue-500/[0.03] dark:bg-blue-500/[0.03] border border-blue-200/80 dark:border-blue-900/40 space-y-4 shadow-xs">
-              <div className="flex items-center justify-between flex-wrap gap-2 pb-2 border-b border-blue-100 dark:border-blue-950/50">
-                <div className="flex items-center gap-2.5">
-                  <div className="w-7 h-7 rounded-xl bg-blue-600 text-white flex items-center justify-center font-black text-xs shadow-xs">
-                    1
-                  </div>
-                  <div>
-                    <h4 className="font-bold text-theme-text text-xs flex items-center gap-1.5">
-                      <Zap className="w-3.5 h-3.5 text-blue-500" />
-                      <span>Work Time Target & Shift Window</span>
-                    </h4>
-                    <p className="text-[10px] text-theme-muted">
-                      Daily deep-work capacity threshold and active working schedule boundaries
-                    </p>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-2 flex-wrap">
-                  {(() => {
-                    let sMin = parse12HourToMinutes(dayStartTime);
-                    let eMin = parse12HourToMinutes(dayEndTime);
-                    if (eMin <= sMin) eMin += 1440;
-                    return (
-                      <span className="text-[10px] font-mono px-2.5 py-1 rounded-full bg-blue-100/70 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800">
-                        Shift Span: {formatDurationHuman(eMin - sMin)}
-                      </span>
-                    );
-                  })()}
-                  <span className="font-mono font-bold text-xs px-3 py-1 rounded-full bg-blue-600 text-white shadow-xs">
-                    Target: {maxWorkHours}h ({Math.round(maxWorkHours * 60)}m)
-                  </span>
-                </div>
-              </div>
-
-              {/* Work Target Quick Presets */}
-              <div className="flex items-center gap-2 flex-wrap">
-                <span className="text-[11px] font-bold text-theme-muted uppercase tracking-wider">Target Presets:</span>
-                {[10, 12, 14, 15, 16].map((targetH) => (
-                  <button
-                    key={targetH}
-                    type="button"
-                    onClick={() => updateValue('work', targetH)}
-                    className={`px-3 py-1 rounded-xl text-xs font-bold transition-all cursor-pointer active:scale-95 ${
-                      maxWorkHours === targetH
-                        ? 'bg-blue-600 text-white shadow-xs'
-                        : 'bg-theme-card text-theme-muted border border-theme-border hover:border-blue-400'
-                    }`}
-                  >
-                    {targetH} Hours
-                  </button>
-                ))}
-              </div>
-
-              {/* Work Target Stepper + Time Pickers */}
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 pt-1">
-                <div>
-                  <label className="font-bold text-theme-text block mb-1 text-xs">
-                    Work Target Budget
-                  </label>
-                  <div className="flex items-center gap-2">
-                    {/* Hours Stepper */}
-                    <div className="flex-1 bg-theme-bg/80 rounded-xl border border-theme-border p-1.5 flex items-center justify-between gap-1 shadow-2xs">
-                      <button
-                        type="button"
-                        onClick={() => updateValue('work', Math.max(0, maxWorkHours - 1))}
-                        className="w-7 h-7 rounded-lg bg-theme-card hover:bg-theme-card-hover border border-theme-border flex items-center justify-center text-theme-muted hover:text-theme-text transition-all active:scale-95 cursor-pointer"
-                        title="Decrease 1 Hour"
-                      >
-                        <Minus className="w-3 h-3" />
-                      </button>
-                      <div className="flex flex-col items-center justify-center min-w-[36px]">
-                        <input
-                          type="number"
-                          min="0"
-                          max="24"
-                          value={Math.floor(maxWorkHours)}
-                          onChange={(e) => {
-                            const newH = Math.max(0, parseInt(e.target.value, 10) || 0);
-                            const currentM = Math.round((maxWorkHours % 1) * 60);
-                            updateValue('work', newH + currentM / 60);
-                          }}
-                          className="w-12 text-center font-mono font-black text-sm bg-transparent text-blue-600 dark:text-blue-400 focus:outline-none"
-                        />
-                        <span className="text-[9px] font-black text-theme-muted uppercase">HRS</span>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => updateValue('work', Math.min(24, maxWorkHours + 1))}
-                        className="w-7 h-7 rounded-lg bg-theme-card hover:bg-theme-card-hover border border-theme-border flex items-center justify-center text-theme-muted hover:text-theme-text transition-all active:scale-95 cursor-pointer"
-                        title="Increase 1 Hour"
-                      >
-                        <Plus className="w-3 h-3" />
-                      </button>
-                    </div>
-
-                    {/* Minutes Stepper */}
-                    <div className="flex-1 bg-theme-bg/80 rounded-xl border border-theme-border p-1.5 flex items-center justify-between gap-1 shadow-2xs">
-                      <button
-                        type="button"
-                        onClick={() => updateValue('work', Math.max(0, maxWorkHours - 0.25))}
-                        className="w-7 h-7 rounded-lg bg-theme-card hover:bg-theme-card-hover border border-theme-border flex items-center justify-center text-theme-muted hover:text-theme-text transition-all active:scale-95 cursor-pointer"
-                        title="Decrease 15 Minutes"
-                      >
-                        <Minus className="w-3 h-3" />
-                      </button>
-                      <div className="flex flex-col items-center justify-center min-w-[36px]">
-                        <input
-                          type="number"
-                          min="0"
-                          max="59"
-                          step="15"
-                          value={Math.round((maxWorkHours % 1) * 60)}
-                          onChange={(e) => {
-                            const newM = Math.max(0, Math.min(59, parseInt(e.target.value, 10) || 0));
-                            const currentH = Math.floor(maxWorkHours);
-                            updateValue('work', currentH + newM / 60);
-                          }}
-                          className="w-12 text-center font-mono font-black text-sm bg-transparent text-blue-600 dark:text-blue-400 focus:outline-none"
-                        />
-                        <span className="text-[9px] font-black text-theme-muted uppercase">MIN</span>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => updateValue('work', Math.min(24, maxWorkHours + 0.25))}
-                        className="w-7 h-7 rounded-lg bg-theme-card hover:bg-theme-card-hover border border-theme-border flex items-center justify-center text-theme-muted hover:text-theme-text transition-all active:scale-95 cursor-pointer"
-                        title="Increase 15 Minutes"
-                      >
-                        <Plus className="w-3 h-3" />
-                      </button>
-                    </div>
-                  </div>
-                </div>
-
-                <div>
-                  <TimePicker
-                    label="Work Starts From"
-                    value={dayStartTime}
-                    onChange={(val) => {
-                      setDayStartTime(val);
-                      if (!isManualMode) {
-                        setSleepEndTime(val);
-                      }
-                    }}
-                  />
-                </div>
-
-                <div>
-                  <TimePicker
-                    label="Work Ends At"
-                    value={dayEndTime}
-                    onChange={(val) => {
-                      setDayEndTime(val);
-                      if (!isManualMode) {
-                        setSleepStartTime(val);
-                      }
-                    }}
-                    align="right"
-                  />
-                </div>
-              </div>
-            </div>
-
-            {/* Pillar 2: Estimated Sleep Time Setup (Restored & Perfected) */}
-            <div className="p-5 rounded-3xl bg-indigo-500/[0.03] dark:bg-indigo-500/[0.03] border border-indigo-200/80 dark:border-indigo-900/40 space-y-4 shadow-xs">
-              <div className="flex items-center justify-between flex-wrap gap-2 pb-2 border-b border-indigo-100 dark:border-indigo-950/50">
-                <div className="flex items-center gap-2.5">
-                  <div className="w-7 h-7 rounded-xl bg-indigo-600 text-white flex items-center justify-center font-black text-xs shadow-xs">
-                    2
-                  </div>
-                  <div>
-                    <h4 className="font-bold text-theme-text text-xs flex items-center gap-1.5">
-                      <Moon className="w-3.5 h-3.5 text-indigo-500" />
-                      <span>Estimated Sleep Time Setup</span>
-                    </h4>
-                    <p className="text-[10px] text-theme-muted">
-                      Ultradian 90-minute restorative sleep cycles & circadian anchors
-                    </p>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-2 flex-wrap">
-                  {(() => {
-                    let sMin = parse12HourToMinutes(sleepStartTime);
-                    let eMin = parse12HourToMinutes(sleepEndTime);
-                    if (eMin <= sMin) eMin += 1440;
-                    return (
-                      <span className="text-[10px] font-mono px-2.5 py-1 rounded-full bg-indigo-100/70 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800">
-                        Anchor Span: {formatDurationHuman(eMin - sMin)}
-                      </span>
-                    );
-                  })()}
-                  <span className="font-mono font-bold text-xs px-3 py-1 rounded-full bg-indigo-600 text-white shadow-xs">
-                    Sleep: {sleepHours}h ({(sleepHours / 1.5).toFixed(1)} Cycles)
-                  </span>
-                </div>
-              </div>
-
-              {/* Sleep Presets */}
-              <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
-                {[
-                  { name: 'Sprint', hours: 6, cycles: 4.0, time: '12:00 – 06:00' },
-                  { name: 'Optimal', hours: 7, cycles: 4.6, time: '11:00 – 06:00' },
-                  { name: 'Night-Owl', hours: 6.75, cycles: 4.5, time: '02:15 – 09:00' },
-                  { name: 'Standard', hours: 8, cycles: 5.3, time: '11:00 – 07:00' },
-                  { name: 'Recovery', hours: 9, cycles: 6.0, time: '10:00 – 07:00' }
-                ].map((s) => (
-                  <button
-                    key={s.name}
-                    type="button"
-                    onClick={() => {
-                      updateValue('sleep', s.hours);
-                      if (s.name === 'Night-Owl') {
-                        setSleepStartTime('02:15 AM');
-                        setSleepEndTime('09:00 AM');
-                      }
-                    }}
-                    className={`p-2.5 rounded-2xl border text-left transition-all cursor-pointer active:scale-95 ${
-                      Math.abs(sleepHours - s.hours) < 0.15
-                        ? 'bg-indigo-50 dark:bg-indigo-950/70 border-indigo-500 shadow-xs'
-                        : 'bg-theme-card border-theme-border hover:border-indigo-400'
-                    }`}
-                  >
-                    <div className="flex items-center justify-between">
-                      <span className="font-bold text-theme-text text-xs">{s.name}</span>
-                      <span className="px-1.5 py-0.5 rounded-md bg-indigo-100 dark:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300 font-mono font-bold text-[10px]">
-                        {s.hours}h
-                      </span>
-                    </div>
-                    <div className="text-[10px] text-theme-muted mt-0.5 font-medium">{s.cycles} Cycles</div>
-                    <div className="text-[9px] font-mono text-theme-muted mt-1">{s.time}</div>
-                  </button>
-                ))}
-              </div>
-
-              {/* Sleep Target Stepper + Time Pickers */}
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 pt-1">
-                <div>
-                  <div className="flex items-center justify-between mb-1">
-                    <label className="font-bold text-theme-text text-xs">
-                      Sleep Target Budget
+              {/* TimePickers: Bedtime -> Wake-up */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="p-3.5 rounded-xl bg-theme-card/90 border border-theme-border/80 shadow-2xs space-y-2">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-bold text-theme-text flex items-center gap-1.5">
+                      <span>🌙 Bedtime / Sleep Starts</span>
                     </label>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        let sMin = parse12HourToMinutes(sleepStartTime);
-                        let eMin = parse12HourToMinutes(sleepEndTime);
-                        if (eMin <= sMin) eMin += 1440;
-                        const anchorH = Math.round(((eMin - sMin) / 60) * 4) / 4;
-                        updateValue('sleep', anchorH);
-                      }}
-                      className="text-[10px] font-mono font-bold text-indigo-600 dark:text-indigo-400 hover:underline cursor-pointer"
-                      title="Set target equal to the anchor duration"
-                    >
-                      ⚡ Sync from Anchors
-                    </button>
+                    <span className="text-[10px] text-theme-muted font-medium">Night anchor</span>
                   </div>
-                  <div className="flex items-center gap-2">
-                    {/* Hours Stepper */}
-                    <div className="flex-1 bg-theme-bg/80 rounded-xl border border-theme-border p-1.5 flex items-center justify-between gap-1 shadow-2xs">
-                      <button
-                        type="button"
-                        onClick={() => updateValue('sleep', Math.max(0, sleepHours - 1))}
-                        className="w-7 h-7 rounded-lg bg-theme-card hover:bg-theme-card-hover border border-theme-border flex items-center justify-center text-theme-muted hover:text-theme-text transition-all active:scale-95 cursor-pointer"
-                        title="Decrease 1 Hour"
-                      >
-                        <Minus className="w-3 h-3" />
-                      </button>
-                      <div className="flex flex-col items-center justify-center min-w-[36px]">
-                        <input
-                          type="number"
-                          min="0"
-                          max="24"
-                          value={Math.floor(sleepHours)}
-                          onChange={(e) => {
-                            const newH = Math.max(0, parseInt(e.target.value, 10) || 0);
-                            const currentM = Math.round((sleepHours % 1) * 60);
-                            updateValue('sleep', newH + currentM / 60);
-                          }}
-                          className="w-12 text-center font-mono font-black text-sm bg-transparent text-indigo-600 dark:text-indigo-400 focus:outline-none"
-                        />
-                        <span className="text-[9px] font-black text-theme-muted uppercase">HRS</span>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => updateValue('sleep', Math.min(24, sleepHours + 1))}
-                        className="w-7 h-7 rounded-lg bg-theme-card hover:bg-theme-card-hover border border-theme-border flex items-center justify-center text-theme-muted hover:text-theme-text transition-all active:scale-95 cursor-pointer"
-                        title="Increase 1 Hour"
-                      >
-                        <Plus className="w-3 h-3" />
-                      </button>
-                    </div>
-
-                    {/* Minutes Stepper */}
-                    <div className="flex-1 bg-theme-bg/80 rounded-xl border border-theme-border p-1.5 flex items-center justify-between gap-1 shadow-2xs">
-                      <button
-                        type="button"
-                        onClick={() => updateValue('sleep', Math.max(0, sleepHours - 0.25))}
-                        className="w-7 h-7 rounded-lg bg-theme-card hover:bg-theme-card-hover border border-theme-border flex items-center justify-center text-theme-muted hover:text-theme-text transition-all active:scale-95 cursor-pointer"
-                        title="Decrease 15 Minutes"
-                      >
-                        <Minus className="w-3 h-3" />
-                      </button>
-                      <div className="flex flex-col items-center justify-center min-w-[36px]">
-                        <input
-                          type="number"
-                          min="0"
-                          max="59"
-                          step="15"
-                          value={Math.round((sleepHours % 1) * 60)}
-                          onChange={(e) => {
-                            const newM = Math.max(0, Math.min(59, parseInt(e.target.value, 10) || 0));
-                            const currentH = Math.floor(sleepHours);
-                            updateValue('sleep', currentH + newM / 60);
-                          }}
-                          className="w-12 text-center font-mono font-black text-sm bg-transparent text-indigo-600 dark:text-indigo-400 focus:outline-none"
-                        />
-                        <span className="text-[9px] font-black text-theme-muted uppercase">MIN</span>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => updateValue('sleep', Math.min(24, sleepHours + 0.25))}
-                        className="w-7 h-7 rounded-lg bg-theme-card hover:bg-theme-card-hover border border-theme-border flex items-center justify-center text-theme-muted hover:text-theme-text transition-all active:scale-95 cursor-pointer"
-                        title="Increase 15 Minutes"
-                      >
-                        <Plus className="w-3 h-3" />
-                      </button>
-                    </div>
-                  </div>
-                </div>
-
-                <div>
                   <TimePicker
-                    label="Bedtime / Sleep Anchor"
                     value={sleepStartTime}
                     onChange={(val) => {
                       setSleepStartTime(val);
-                      if (!isManualMode) {
-                        setDayEndTime(val);
-                      }
+                      let sMin = parse12HourToMinutes(val);
+                      let eMin = parse12HourToMinutes(sleepEndTime);
+                      if (eMin <= sMin) eMin += 1440;
+                      setSleepHours(Math.round(((eMin - sMin) / 60) * 4) / 4);
                     }}
                   />
                 </div>
 
-                <div>
+                <div className="p-3.5 rounded-xl bg-theme-card/90 border border-theme-border/80 shadow-2xs space-y-2">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-bold text-theme-text flex items-center gap-1.5">
+                      <span>☀️ Wake-Up / Sleep Ends</span>
+                    </label>
+                    <span className="text-[10px] text-theme-muted font-medium">Morning anchor</span>
+                  </div>
                   <TimePicker
-                    label="Wake-Up Time Anchor"
                     value={sleepEndTime}
                     onChange={(val) => {
                       setSleepEndTime(val);
-                      if (!isManualMode) {
-                        setDayStartTime(val);
-                      }
+                      let sMin = parse12HourToMinutes(sleepStartTime);
+                      let eMin = parse12HourToMinutes(val);
+                      if (eMin <= sMin) eMin += 1440;
+                      setSleepHours(Math.round(((eMin - sMin) / 60) * 4) / 4);
                     }}
                     align="right"
                   />
                 </div>
               </div>
-
-              {/* Auto-Schedule Sleep Cycle in 24-Hour Tracker Switch */}
-              <div className="p-3.5 rounded-2xl bg-indigo-50/60 dark:bg-indigo-950/40 border border-indigo-200/80 dark:border-indigo-900/60 flex items-center justify-between gap-3">
-                <div className="space-y-0.5">
-                  <div className="flex items-center gap-1.5 font-bold text-theme-text text-xs">
-                    <Moon className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
-                    <span>Auto-Schedule Sleep Cycle in 24-Hour Tracker</span>
-                  </div>
-                  <p className="text-[11px] text-theme-muted">
-                    When enabled, automatically generates sleep cycles in the 24-Hour Tracker during bedtime hours ({sleepStartTime} → {sleepEndTime}).
-                  </p>
-                </div>
-
-                <label className="relative inline-flex items-center cursor-pointer shrink-0">
-                  <input
-                    type="checkbox"
-                    checked={autoSleepScheduleEnabled}
-                    onChange={(e) => setAutoSleepScheduleEnabled(e.target.checked)}
-                    className="sr-only peer"
-                  />
-                  <div className="w-11 h-6 bg-slate-300 peer-focus:outline-none rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-slate-600 peer-checked:bg-indigo-600"></div>
-                </label>
-              </div>
             </div>
 
-            {/* Pillar 3: Daily Buffer & Leisure Budget */}
-            <div className="p-5 rounded-3xl bg-amber-500/[0.03] dark:bg-amber-500/[0.03] border border-amber-200/80 dark:border-amber-900/40 space-y-4 shadow-xs">
-              <div className="flex items-center justify-between flex-wrap gap-2 pb-2 border-b border-amber-100 dark:border-amber-950/50">
-                <div className="flex items-center gap-2.5">
-                  <div className="w-7 h-7 rounded-xl bg-amber-500 text-white flex items-center justify-center font-black text-xs shadow-xs">
-                    3
-                  </div>
-                  <div>
-                    <h4 className="font-bold text-theme-text text-xs flex items-center gap-1.5">
-                      <Coffee className="w-3.5 h-3.5 text-amber-500" />
-                      <span>Daily Buffer & Leisure Budget</span>
-                    </h4>
-                    <p className="text-[10px] text-theme-muted">
-                      Allocated daily whitespace, restorative breathing room, and transition downtime balancing your 24-hour cycle
-                    </p>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-2 flex-wrap">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const remaining = Math.max(0, Math.round((24 - maxWorkHours - sleepHours) * 4) / 4);
-                      updateValue('buffer', remaining);
-                    }}
-                    className="text-xs font-mono font-bold px-3 py-1 rounded-full bg-amber-100 hover:bg-amber-200 dark:bg-amber-900/50 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800 transition-all cursor-pointer active:scale-95"
-                    title="Calculate remaining hours to complete 24.0h"
-                  >
-                    🎯 Auto-Balance to 24h ({Math.max(0, 24 - maxWorkHours - sleepHours).toFixed(2)}h)
-                  </button>
-                  <span className="font-mono font-bold text-xs px-3 py-1 rounded-full bg-amber-500 text-white shadow-xs">
-                    Buffer: {bufferHours}h ({Math.round(bufferHours * 60)}m)
-                  </span>
-                </div>
-              </div>
-
-              {/* Buffer Presets */}
-              <div className="flex items-center gap-2 flex-wrap">
-                <span className="text-[11px] font-bold text-theme-muted uppercase tracking-wider">Buffer Presets:</span>
+            {/* 2. Quick Circadian Sleep Presets */}
+            <div className="space-y-2">
+              <span className="text-[10px] font-bold text-theme-muted uppercase tracking-wider block">
+                Circadian Presets:
+              </span>
+              <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
                 {[
-                  { label: '1.5 Hours', hours: 1.5 },
-                  { label: '2.0 Hours', hours: 2.0 },
-                  { label: '2.25 Hours', hours: 2.25 },
-                  { label: '3.0 Hours', hours: 3.0 },
-                  { label: '4.0 Hours', hours: 4.0 },
-                  { label: '5.0 Hours', hours: 5.0 },
-                ].map((preset) => (
-                  <button
-                    key={preset.label}
-                    type="button"
-                    onClick={() => updateValue('buffer', preset.hours)}
-                    className={`px-3 py-1 rounded-xl text-xs font-bold transition-all cursor-pointer active:scale-95 ${
-                      Math.abs(bufferHours - preset.hours) < 0.1
-                        ? 'bg-amber-500 text-white shadow-xs'
-                        : 'bg-theme-card text-theme-muted border border-theme-border hover:border-amber-400'
-                    }`}
-                  >
-                    {preset.label}
-                  </button>
-                ))}
-              </div>
-
-              {/* Buffer Target Stepper & Task Break Minutes */}
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 pt-1">
-                <div>
-                  <label className="font-bold text-theme-text block mb-1 text-xs">
-                    Daily Buffer Target Budget
-                  </label>
-                  <div className="flex items-center gap-2">
-                    {/* Hours Stepper */}
-                    <div className="flex-1 bg-theme-bg/80 rounded-xl border border-theme-border p-1.5 flex items-center justify-between gap-1 shadow-2xs">
-                      <button
-                        type="button"
-                        onClick={() => updateValue('buffer', Math.max(0, bufferHours - 1))}
-                        className="w-7 h-7 rounded-lg bg-theme-card hover:bg-theme-card-hover border border-theme-border flex items-center justify-center text-theme-muted hover:text-theme-text transition-all active:scale-95 cursor-pointer"
-                        title="Decrease 1 Hour"
-                      >
-                        <Minus className="w-3 h-3" />
-                      </button>
-                      <div className="flex flex-col items-center justify-center min-w-[36px]">
-                        <input
-                          type="number"
-                          min="0"
-                          max="24"
-                          value={Math.floor(bufferHours)}
-                          onChange={(e) => {
-                            const newH = Math.max(0, parseInt(e.target.value, 10) || 0);
-                            const currentM = Math.round((bufferHours % 1) * 60);
-                            updateValue('buffer', newH + currentM / 60);
-                          }}
-                          className="w-12 text-center font-mono font-black text-sm bg-transparent text-amber-600 dark:text-amber-400 focus:outline-none"
-                        />
-                        <span className="text-[9px] font-black text-theme-muted uppercase">HRS</span>
+                  { label: 'Optimal', h: 7, cycles: 4.6, start: '11:00 PM', end: '06:00 AM' },
+                  { label: 'Night-Owl', h: 6.75, cycles: 4.5, start: '02:15 AM', end: '09:00 AM' },
+                  { label: 'Standard', h: 8, cycles: 5.3, start: '11:00 PM', end: '07:00 AM' },
+                  { label: 'Sprint', h: 6, cycles: 4.0, start: '12:00 AM', end: '06:00 AM' },
+                  { label: 'Recovery', h: 9, cycles: 6.0, start: '10:00 PM', end: '07:00 AM' },
+                ].map((p) => {
+                  const isActive = sleepStartTime === p.start && sleepEndTime === p.end;
+                  return (
+                    <button
+                      key={p.label}
+                      type="button"
+                      onClick={() => {
+                        setSleepStartTime(p.start);
+                        setSleepEndTime(p.end);
+                        setSleepHours(p.h);
+                      }}
+                      className={`p-2.5 rounded-xl border text-left transition-all cursor-pointer active:scale-95 ${
+                        isActive
+                          ? 'bg-indigo-50 dark:bg-indigo-950/70 border-indigo-500 shadow-xs ring-1 ring-indigo-500/20'
+                          : 'bg-theme-card border-theme-border hover:border-indigo-400'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="font-bold text-theme-text text-xs">{p.label}</span>
+                        <span className="text-[10px] font-mono font-bold text-indigo-600 dark:text-indigo-400">
+                          {p.h}h
+                        </span>
                       </div>
-                      <button
-                        type="button"
-                        onClick={() => updateValue('buffer', Math.min(24, bufferHours + 1))}
-                        className="w-7 h-7 rounded-lg bg-theme-card hover:bg-theme-card-hover border border-theme-border flex items-center justify-center text-theme-muted hover:text-theme-text transition-all active:scale-95 cursor-pointer"
-                        title="Increase 1 Hour"
-                      >
-                        <Plus className="w-3 h-3" />
-                      </button>
-                    </div>
-
-                    {/* Minutes Stepper */}
-                    <div className="flex-1 bg-theme-bg/80 rounded-xl border border-theme-border p-1.5 flex items-center justify-between gap-1 shadow-2xs">
-                      <button
-                        type="button"
-                        onClick={() => updateValue('buffer', Math.max(0, bufferHours - 0.25))}
-                        className="w-7 h-7 rounded-lg bg-theme-card hover:bg-theme-card-hover border border-theme-border flex items-center justify-center text-theme-muted hover:text-theme-text transition-all active:scale-95 cursor-pointer"
-                        title="Decrease 15 Minutes"
-                      >
-                        <Minus className="w-3 h-3" />
-                      </button>
-                      <div className="flex flex-col items-center justify-center min-w-[36px]">
-                        <input
-                          type="number"
-                          min="0"
-                          max="59"
-                          step="15"
-                          value={Math.round((bufferHours % 1) * 60)}
-                          onChange={(e) => {
-                            const newM = Math.max(0, Math.min(59, parseInt(e.target.value, 10) || 0));
-                            const currentH = Math.floor(bufferHours);
-                            updateValue('buffer', currentH + newM / 60);
-                          }}
-                          className="w-12 text-center font-mono font-black text-sm bg-transparent text-amber-600 dark:text-amber-400 focus:outline-none"
-                        />
-                        <span className="text-[9px] font-black text-theme-muted uppercase">MIN</span>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => updateValue('buffer', Math.min(24, bufferHours + 0.25))}
-                        className="w-7 h-7 rounded-lg bg-theme-card hover:bg-theme-card-hover border border-theme-border flex items-center justify-center text-theme-muted hover:text-theme-text transition-all active:scale-95 cursor-pointer"
-                        title="Increase 15 Minutes"
-                      >
-                        <Plus className="w-3 h-3" />
-                      </button>
-                    </div>
-                  </div>
-                </div>
-
-                <div>
-                  <label className="font-bold text-theme-text block mb-1 text-xs">
-                    Automated Task Break Buffer
-                  </label>
-                  <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
-                    <div className="flex items-center gap-1 flex-wrap">
-                      {[0, 5, 10, 15, 20, 30].map(m => (
-                        <button
-                          key={m}
-                          type="button"
-                          onClick={() => setDefaultBufferMinutes(m)}
-                          className={`px-3 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer active:scale-95 ${
-                            defaultBufferMinutes === m
-                              ? 'bg-amber-500 text-white shadow-xs'
-                              : 'bg-theme-card border border-theme-border text-theme-muted hover:border-amber-400'
-                          }`}
-                        >
-                          {m === 0 ? 'None' : `${m}m`}
-                        </button>
-                      ))}
-                    </div>
-
-                    <div className="flex items-center gap-1.5 shrink-0">
-                      <input
-                        type="number"
-                        min="0"
-                        max="120"
-                        step="5"
-                        value={defaultBufferMinutes}
-                        onChange={(e) => setDefaultBufferMinutes(Math.max(0, parseInt(e.target.value, 10) || 0))}
-                        className="w-16 h-8 bg-theme-card border border-amber-300 dark:border-amber-700 text-amber-600 dark:text-amber-400 font-mono font-bold text-center text-xs rounded-xl focus:outline-none"
-                      />
-                      <span className="text-[10px] font-bold text-theme-muted">min</span>
-                    </div>
-                  </div>
-                </div>
+                      <div className="text-[10px] text-theme-muted mt-0.5">{p.cycles} Cycles</div>
+                      <div className="text-[9px] font-mono text-theme-muted mt-1">{p.start} – {p.end}</div>
+                    </button>
+                  );
+                })}
               </div>
             </div>
 
-            {/* 4. Daily Allocation Bar & Presets */}
-            <div className="space-y-3.5 p-5 rounded-3xl bg-theme-card/70 dark:bg-theme-card/40 border border-theme-border/80 shadow-xs">
-              <div className="flex items-center justify-between flex-wrap gap-2 text-xs">
-                <div className="flex items-center gap-2">
-                  <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                  <span className="font-bold text-theme-text text-xs uppercase tracking-wider">
-                    Daily Capacity Distribution
-                  </span>
-                </div>
-                <div className="flex items-center gap-3 font-mono text-xs font-bold">
-                  <span className="flex items-center gap-1.5 text-blue-600 dark:text-blue-400">
-                    <span className="w-2.5 h-2.5 rounded-full bg-blue-500" />
-                    {maxWorkHours}h Work
-                  </span>
-                  <span className="text-theme-muted/40">•</span>
-                  <span className="flex items-center gap-1.5 text-amber-600 dark:text-amber-400">
-                    <span className="w-2.5 h-2.5 rounded-full bg-amber-500" />
-                    {bufferHours}h Buffer
-                  </span>
-                  <span className="text-theme-muted/40">•</span>
-                  <span className="flex items-center gap-1.5 text-indigo-600 dark:text-indigo-400">
-                    <span className="w-2.5 h-2.5 rounded-full bg-indigo-500" />
-                    {sleepHours}h Sleep
-                  </span>
-                </div>
-              </div>
-
-              {/* Visual Segmented Bar */}
-              {(() => {
-                const totalHours = Math.max(0.1, maxWorkHours + bufferHours + sleepHours);
-                const denom = Math.max(24, totalHours);
-                return (
-                  <div className="w-full h-6 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden flex p-1 border border-theme-border/60 shadow-inner gap-1">
-                    <div
-                      className="bg-gradient-to-r from-blue-600 to-blue-500 h-full rounded-l-full transition-all duration-300 flex items-center justify-center text-[10px] text-white font-black tracking-tight"
-                      style={{ width: `${(maxWorkHours / denom) * 100}%` }}
-                      title={`Work Target: ${maxWorkHours}h (${Math.round((maxWorkHours / totalHours) * 100)}%)`}
-                    >
-                      {maxWorkHours >= 3 ? `${maxWorkHours}h` : ''}
+            {/* 3. Daily Continuum Summary Card */}
+            {(() => {
+              let sMin = parse12HourToMinutes(sleepStartTime);
+              let eMin = parse12HourToMinutes(sleepEndTime);
+              if (eMin <= sMin) eMin += 1440;
+              const durMin = eMin - sMin;
+              const sleepH = Math.round((durMin / 60) * 4) / 4;
+              const wakingH = (24 - sleepH).toFixed(1);
+              return (
+                <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-white/[0.02] border border-slate-200/80 dark:border-white/5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+                  <div className="flex items-center gap-4 flex-wrap">
+                    <div className="flex items-center gap-2">
+                      <span className="w-2.5 h-2.5 rounded-full bg-indigo-500" />
+                      <span className="text-theme-muted font-medium">Sleep Window:</span>
+                      <span className="font-mono font-bold text-theme-text">{sleepStartTime} → {sleepEndTime} ({sleepH}h)</span>
                     </div>
-                    <div
-                      className="bg-gradient-to-r from-amber-500 to-amber-400 h-full transition-all duration-300 flex items-center justify-center text-[10px] text-white font-black tracking-tight"
-                      style={{ width: `${(bufferHours / denom) * 100}%` }}
-                      title={`Buffer & Leisure: ${bufferHours}h (${Math.round((bufferHours / totalHours) * 100)}%)`}
-                    >
-                      {bufferHours >= 2 ? `${bufferHours}h` : ''}
-                    </div>
-                    <div
-                      className="bg-gradient-to-r from-indigo-600 to-indigo-500 h-full rounded-r-full transition-all duration-300 flex items-center justify-center text-[10px] text-white font-black tracking-tight"
-                      style={{ width: `${(sleepHours / denom) * 100}%` }}
-                      title={`Sleep Target: ${sleepHours}h (${Math.round((sleepHours / totalHours) * 100)}%)`}
-                    >
-                      {sleepHours >= 3 ? `${sleepHours}h` : ''}
+                    <div className="flex items-center gap-2">
+                      <span className="w-2.5 h-2.5 rounded-full bg-blue-500" />
+                      <span className="text-theme-muted font-medium">Active Waking Continuum:</span>
+                      <span className="font-mono font-bold text-theme-text">{sleepEndTime} → {sleepStartTime} ({wakingH}h)</span>
                     </div>
                   </div>
-                );
-              })()}
-
-              {/* Clean Presets */}
-              <div className="flex items-center justify-between gap-2 flex-wrap pt-1">
-                <span className="text-[10px] font-bold text-theme-muted uppercase tracking-wider">Presets:</span>
-                <div className="flex items-center gap-2 flex-wrap">
-                  {[
-                    { label: '🌙 Split Routine', sub: '15h / 2.25h / 6.75h', w: 15, b: 2.25, s: 6.75, dStart: '12:01 AM', dEnd: '11:59 PM', sStart: '02:15 AM', sEnd: '09:00 AM' },
-                    { label: 'Standard', sub: '14h / 3h / 7h', w: 14, b: 3, s: 7, dStart: '06:00 AM', dEnd: '11:00 PM', sStart: '11:00 PM', sEnd: '06:00 AM' },
-                    { label: 'Deep Focus', sub: '13h / 3h / 8h', w: 13, b: 3, s: 8, dStart: '07:00 AM', dEnd: '11:00 PM', sStart: '11:00 PM', sEnd: '07:00 AM' },
-                    { label: 'Sprint', sub: '16h / 2h / 6h', w: 16, b: 2, s: 6, dStart: '06:00 AM', dEnd: '12:00 AM', sStart: '12:00 AM', sEnd: '06:00 AM' },
-                    { label: 'Wellness', sub: '11h / 5h / 8h', w: 11, b: 5, s: 8, dStart: '07:00 AM', dEnd: '10:00 PM', sStart: '10:00 PM', sEnd: '07:00 AM' },
-                  ].map((p) => {
-                    const isActive = Math.abs(maxWorkHours - p.w) < 0.1 && Math.abs(bufferHours - p.b) < 0.1 && Math.abs(sleepHours - p.s) < 0.1;
-                    return (
-                      <button
-                        key={p.label}
-                        type="button"
-                        onClick={() => {
-                          setMaxWorkHours(p.w);
-                          setBufferHours(p.b);
-                          setSleepHours(p.s);
-                          if (p.dStart) setDayStartTime(p.dStart);
-                          if (p.dEnd) setDayEndTime(p.dEnd);
-                          if (p.sStart) setSleepStartTime(p.sStart);
-                          if (p.sEnd) setSleepEndTime(p.sEnd);
-                        }}
-                        className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 active:scale-95 ${
-                          isActive
-                            ? 'bg-blue-600 text-white shadow-xs'
-                            : 'bg-theme-card hover:bg-theme-card-hover border border-theme-border text-theme-muted hover:text-theme-text'
-                        }`}
-                      >
-                        <span>{p.label}</span>
-                        <span className={`text-[10px] font-mono ${isActive ? 'text-blue-100' : 'text-theme-muted/70'}`}>
-                          {p.sub}
-                        </span>
-                      </button>
-                    );
-                  })}
+                  <div className="text-theme-muted font-mono text-[11px] self-end sm:self-center font-bold">
+                    24.0h Invariant
+                  </div>
                 </div>
+              );
+            })()}
+
+            {/* 4. Auto-Schedule Sleep Cycle Switch */}
+            <div className="p-3.5 rounded-xl bg-theme-card border border-theme-border flex items-center justify-between gap-3">
+              <div className="space-y-0.5">
+                <div className="flex items-center gap-1.5 font-bold text-theme-text text-xs">
+                  <Moon className="w-3.5 h-3.5 text-indigo-500" />
+                  <span>Auto-Schedule Sleep Cycle in 24-Hour Tracker</span>
+                </div>
+                <p className="text-[11px] text-theme-muted">
+                  When enabled, automatically generates sleep cycles in the 24-Hour Tracker during bedtime hours ({sleepStartTime} → {sleepEndTime}).
+                </p>
               </div>
+
+              <label className="relative inline-flex items-center cursor-pointer shrink-0">
+                <input
+                  type="checkbox"
+                  checked={autoSleepScheduleEnabled}
+                  onChange={(e) => setAutoSleepScheduleEnabled(e.target.checked)}
+                  className="sr-only peer"
+                />
+                <div className="w-11 h-6 bg-slate-300 peer-focus:outline-none rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-slate-600 peer-checked:bg-indigo-600"></div>
+              </label>
             </div>
 
             {/* Save Status Alert Message */}
             {capacityStatusMsg && (
-              <div className="p-3.5 rounded-2xl bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-300 dark:border-emerald-800 text-emerald-800 dark:text-emerald-200 text-xs font-bold flex items-center gap-2.5 animate-fade-in shadow-xs">
+              <div className="p-3 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-300 dark:border-emerald-800 text-emerald-800 dark:text-emerald-200 text-xs font-bold flex items-center gap-2.5 animate-fade-in shadow-xs">
                 <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
                 <span>{capacityStatusMsg}</span>
               </div>
@@ -1850,10 +1138,10 @@ export const AdminSettingsView: React.FC = () => {
             {/* Save Button */}
             <button
               onClick={handleSaveCapacity}
-              className="w-full py-3.5 bg-gradient-to-r from-blue-600 via-indigo-600 to-sky-500 hover:from-blue-700 hover:via-indigo-700 hover:to-sky-600 text-white rounded-2xl font-bold shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-2 text-xs cursor-pointer active:scale-98"
+              className="w-full py-3 bg-gradient-to-r from-indigo-600 via-blue-600 to-indigo-600 hover:from-indigo-700 hover:via-blue-700 hover:to-indigo-700 text-white rounded-xl font-bold shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-2 text-xs cursor-pointer active:scale-98"
             >
               <Check className="w-4 h-4" />
-              <span>Save 24-Hours Locked Capacity & Red-Line Protocol</span>
+              <span>Save Sleep & Capacity Protocol</span>
             </button>
           </div>
         </div>
