@@ -389,8 +389,8 @@ export const AllTasksView: React.FC<AllTasksViewProps> = ({ onOpenTaskModal, onO
     const isDue = isIncomplete || 
       (task.status === 'Pending' && isTaskPastDue(task.taskDate, task.startTime, task.endTime, now)) ||
       (task.status === 'Working' && isTaskPastDue(task.taskDate, task.startTime, task.endTime, now));
-    const simultaneousList = findSimultaneousTasks(task, tasks);
-    const isSimultaneous = simultaneousList.length > 0;
+    const isSimultaneous = Boolean(task.isSimultaneous);
+    const simultaneousList = isSimultaneous ? findSimultaneousTasks(task, tasks) : [];
     const isInSleep = isTaskInSleepWindow(task, capacitySettings);
 
     return (
@@ -401,10 +401,10 @@ export const AllTasksView: React.FC<AllTasksViewProps> = ({ onOpenTaskModal, onO
             ? 'bg-red-50/40 dark:bg-red-950/30 border-red-300 dark:border-red-900/60 shadow-2xs hover:border-red-400'
             : isRunning
               ? isInSleep
-                ? 'bg-slate-900 text-slate-100 dark:bg-slate-950 border-blue-500 shadow-md ring-1 ring-blue-500/80'
+                ? 'bg-gradient-to-br from-[#060e22] via-[#0b1736] to-[#171238] text-slate-100 border-cyan-400/90 shadow-[0_0_25px_rgba(6,182,212,0.3)] ring-2 ring-cyan-500/50'
                 : 'bg-gradient-to-r from-blue-50/90 via-sky-50/60 to-theme-card dark:from-blue-950/70 dark:via-sky-950/40 dark:to-theme-card border-blue-500 shadow-md ring-1 ring-blue-500/50'
               : isInSleep
-              ? 'bg-slate-900/95 text-slate-100 dark:bg-slate-950 border-indigo-900/90 shadow-2xs'
+              ? 'bg-gradient-to-br from-[#080c18]/98 via-[#0e1428]/98 to-[#181332]/98 text-slate-100 border-indigo-500/35 shadow-sm'
               : isSimultaneous
                 ? 'bg-purple-50/20 dark:bg-purple-950/10 border-purple-300 dark:border-purple-800/80 shadow-2xs'
                 : 'bg-theme-card hover:bg-theme-card-hover border-theme-border shadow-2xs'
@@ -482,8 +482,11 @@ export const AllTasksView: React.FC<AllTasksViewProps> = ({ onOpenTaskModal, onO
           )}
 
           {isSimultaneous && (
-            <span className="text-[9px] font-black px-1.5 py-0.2 bg-gradient-to-r from-purple-600 to-indigo-600 text-white rounded shrink-0 shadow-2xs" title={`Simultaneous with ${simultaneousList.map(s => s.projectCode).join(', ')}`}>
-              🔀 SIMUL ({simultaneousList.length})
+            <span 
+              className="text-[9px] font-black px-1.5 py-0.2 bg-gradient-to-r from-purple-600 to-indigo-600 text-white rounded shrink-0 shadow-2xs" 
+              title={simultaneousList.length > 0 ? `Simultaneous with ${simultaneousList.map(s => s.projectCode).join(', ')}` : 'Marked to run simultaneously (Free on Gap Finder)'}
+            >
+              🔀 SIMUL{simultaneousList.length > 0 ? ` (${simultaneousList.length})` : ''}
             </span>
           )}
 
@@ -623,8 +626,8 @@ export const AllTasksView: React.FC<AllTasksViewProps> = ({ onOpenTaskModal, onO
     const isDue = isIncomplete || 
       (task.status === 'Pending' && isTaskPastDue(task.taskDate, task.startTime, task.endTime, now)) ||
       (task.status === 'Working' && isTaskPastDue(task.taskDate, task.startTime, task.endTime, now));
-    const simultaneousList = findSimultaneousTasks(task, tasks);
-    const isSimultaneous = simultaneousList.length > 0;
+    const isSimultaneous = Boolean(task.isSimultaneous);
+    const simultaneousList = isSimultaneous ? findSimultaneousTasks(task, tasks) : [];
     const isInSleep = isTaskInSleepWindow(task, capacitySettings);
 
     return (
@@ -635,10 +638,10 @@ export const AllTasksView: React.FC<AllTasksViewProps> = ({ onOpenTaskModal, onO
             ? 'bg-red-50/30 dark:bg-red-950/20 border-red-300 dark:border-red-900/60 shadow-sm'
             : isRunning
               ? isInSleep
-                ? 'bg-slate-900 text-slate-100 dark:bg-slate-950 dark:text-slate-100 border-blue-500 shadow-xl shadow-blue-500/30 ring-2 ring-blue-500/80'
+                ? 'bg-gradient-to-br from-[#060e22] via-[#0b1736] to-[#171238] text-slate-100 border-cyan-400/90 shadow-[0_0_35px_rgba(6,182,212,0.35)] ring-2 ring-cyan-500/50'
                 : 'bg-gradient-to-r from-blue-50/90 via-sky-50/50 to-theme-card dark:from-blue-950/60 dark:via-sky-950/30 dark:to-theme-card border-blue-500 shadow-xl shadow-blue-500/20 ring-2 ring-blue-500/60'
               : isInSleep
-              ? 'bg-slate-900/95 text-slate-100 dark:bg-slate-950 dark:text-slate-100 border-indigo-900/90 shadow-md ring-1 ring-indigo-500/40 hover:border-indigo-400'
+              ? 'bg-gradient-to-br from-[#080c18]/98 via-[#0e1428]/98 to-[#181332]/98 text-slate-100 border-indigo-500/35 shadow-xl shadow-indigo-950/30 ring-1 ring-indigo-500/30 hover:border-indigo-400/60'
               : isSimultaneous
                 ? 'bg-purple-50/20 dark:bg-purple-950/10 border-purple-300 dark:border-purple-800 hover:shadow-md'
                 : 'bg-theme-card border-theme-border hover:shadow-md'
@@ -716,10 +719,10 @@ export const AllTasksView: React.FC<AllTasksViewProps> = ({ onOpenTaskModal, onO
                 {isSimultaneous && (
                   <span 
                     className="text-[10px] font-black px-2 py-0.5 bg-gradient-to-r from-purple-600 to-indigo-600 text-white rounded-full flex items-center gap-1 shadow-sm shadow-purple-500/20"
-                    title={`Co-running simultaneously with: ${simultaneousList.map(s => `${s.projectCode} (${s.title})`).join(', ')}`}
+                    title={simultaneousList.length > 0 ? `Co-running simultaneously with: ${simultaneousList.map(s => `${s.projectCode} (${s.title})`).join(', ')}` : 'Marked to run simultaneously (Free on Gap Finder)'}
                   >
                     <Zap className="w-2.5 h-2.5 text-yellow-300" />
-                    <span>🔀 SIMULTANEOUS ({simultaneousList.length})</span>
+                    <span>🔀 SIMULTANEOUS{simultaneousList.length > 0 ? ` (${simultaneousList.length})` : ''}</span>
                   </span>
                 )}
 
@@ -747,7 +750,7 @@ export const AllTasksView: React.FC<AllTasksViewProps> = ({ onOpenTaskModal, onO
 
               {/* Task Title (Auto-scaled dynamic typography) + Appointed Duration */}
               <div className="flex items-baseline gap-2 flex-wrap">
-                <h4 className={getTaskTitleClasses(task.title, task.status === 'Done', isInSleep && !isDue)}>
+                <h4 className={getTaskTitleClasses(task.title, task.status === 'Done', isInSleep && !isDue, isWorking)}>
                   {task.title}
                 </h4>
                 <span className={`font-mono text-xs font-bold px-2 py-0.5 rounded-md border shadow-2xs ${
@@ -760,7 +763,7 @@ export const AllTasksView: React.FC<AllTasksViewProps> = ({ onOpenTaskModal, onO
               </div>
 
               {/* Simultaneous Co-Running Twin Details */}
-              {isSimultaneous && (
+              {isSimultaneous && simultaneousList.length > 0 && (
                 <div className="text-[11px] font-semibold text-purple-700 dark:text-purple-300 bg-purple-50/80 dark:bg-purple-950/40 px-2.5 py-1 rounded-lg border border-purple-200/80 dark:border-purple-800/80 flex items-center gap-1.5 flex-wrap">
                   <span className="font-bold flex items-center gap-1">
                     <Zap className="w-3 h-3 text-purple-600 dark:text-purple-400" />

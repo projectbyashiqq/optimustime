@@ -430,5 +430,144 @@ body, button, input, select, textarea {
   box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.25), 0 0 12px rgba(59, 130, 246, 0.6);
 }
 
+/* =========================================================================
+   GOD-LEVEL NIGHT TASK & WORKING AESTHETICS
+   ========================================================================= */
+
+/* Luxury Cosmic Midnight Night Task Card (Pending / Normal State) */
+.card-night-cosmic {
+  background: linear-gradient(135deg, #090D16 0%, #0F172A 50%, #16122C 100%) !important;
+  color: #F8FAFC !important;
+  border: 1px solid rgba(99, 102, 241, 0.35) !important;
+  box-shadow: 0 10px 30px -10px rgba(15, 23, 42, 0.8), 0 0 20px -5px rgba(99, 102, 241, 0.2) !important;
+  position: relative;
+  overflow: hidden;
+}
+
+.card-night-cosmic::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 220px;
+  height: 100%;
+  background: radial-gradient(circle at 100% 0%, rgba(129, 140, 248, 0.15) 0%, transparent 70%);
+  pointer-events: none;
+}
+
+.card-night-cosmic:hover {
+  border-color: rgba(129, 140, 248, 0.6) !important;
+  box-shadow: 0 14px 35px -8px rgba(15, 23, 42, 0.9), 0 0 28px -4px rgba(99, 102, 241, 0.3) !important;
+}
+
+/* God-Level Cyber Midnight Night Working State (When "Start" is clicked at Night) */
+.card-night-working {
+  background: linear-gradient(135deg, #050B18 0%, #08152E 50%, #11102A 100%) !important;
+  color: #FFFFFF !important;
+  border: 1.5px solid #22D3EE !important;
+  box-shadow: 0 0 35px -5px rgba(6, 182, 212, 0.45), 0 15px 35px -10px rgba(2, 6, 23, 0.9) !important;
+  position: relative;
+  overflow: hidden;
+}
+
+.card-night-working::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  width: 4.5px;
+  background: linear-gradient(180deg, #22D3EE 0%, #38BDF8 40%, #818CF8 100%);
+  box-shadow: 0 0 12px #22D3EE, 0 0 20px rgba(6, 182, 212, 0.7);
+  animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  z-index: 10;
+}
+
+.card-night-working::after {
+  content: '';
+  position: absolute;
+  top: -50%;
+  right: -20%;
+  width: 260px;
+  height: 260px;
+  background: radial-gradient(circle, rgba(6, 182, 212, 0.18) 0%, transparent 65%);
+  pointer-events: none;
+}
+
+/* Overdue Night Task */
+.card-night-due {
+  background: linear-gradient(135deg, #1A0912 0%, #200D1D 50%, #150921 100%) !important;
+  color: #FFFFFF !important;
+  border: 1.5px solid #EF4444 !important;
+  box-shadow: 0 0 30px -5px rgba(239, 68, 68, 0.4), 0 12px 30px -8px rgba(15, 23, 42, 0.8) !important;
+  position: relative;
+  overflow: hidden;
+}
+
+/* Night Card Elements */
+.card-night-title {
+  color: #FFFFFF !important;
+  font-weight: 900 !important;
+  letter-spacing: -0.02em;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.85);
+}
+
+.card-night-working-title {
+  background: linear-gradient(90deg, #FFFFFF 0%, #E0F2FE 35%, #67E8F9 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  font-weight: 900 !important;
+  filter: drop-shadow(0 2px 8px rgba(6, 182, 212, 0.45));
+}
+
+.night-time-pill {
+  background: rgba(255, 255, 255, 0.12) !important;
+  color: #E0E7FF !important;
+  border: 1px solid rgba(255, 255, 255, 0.2) !important;
+  backdrop-filter: blur(8px);
+  font-family: var(--font-mono, monospace);
+  font-weight: 700;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12);
+}
+
+.night-btn-icon {
+  width: 2.125rem;
+  height: 2.125rem;
+  border-radius: 0.625rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.1) !important;
+  border: 1px solid rgba(255, 255, 255, 0.16) !important;
+  color: #CBD5E1 !important;
+  transition: all 180ms ease;
+  cursor: pointer;
+  backdrop-filter: blur(6px);
+}
+
+.night-btn-icon:hover {
+  background: rgba(255, 255, 255, 0.22) !important;
+  color: #FFFFFF !important;
+  border-color: rgba(255, 255, 255, 0.32) !important;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
+}
+
+.night-btn-start {
+  background: linear-gradient(135deg, #3B82F6 0%, #6366F1 50%, #8B5CF6 100%) !important;
+  color: #FFFFFF !important;
+  border: 1px solid rgba(255, 255, 255, 0.32) !important;
+  box-shadow: 0 4px 14px rgba(99, 102, 241, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.35) !important;
+  font-weight: 800 !important;
+  transition: all 180ms ease;
+}
+
+.night-btn-start:hover {
+  filter: brightness(1.12);
+  box-shadow: 0 6px 20px rgba(99, 102, 241, 0.7), inset 0 1px 0 rgba(255, 255, 255, 0.5) !important;
+  transform: translateY(-1px);
+}
+
+
 
 

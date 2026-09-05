@@ -231,8 +231,8 @@ export const CategoryView: React.FC<CategoryViewProps> = ({ onOpenTaskModal }) =
     const isDue = isIncomplete || 
       (task.status === 'Pending' && isTaskPastDue(task.taskDate, task.startTime, task.endTime, nowTime)) ||
       (task.status === 'Working' && isTaskPastDue(task.taskDate, task.startTime, task.endTime, nowTime));
-    const simultaneousList = findSimultaneousTasks(task, tasks);
-    const isSimultaneous = simultaneousList.length > 0;
+    const isSimultaneous = Boolean(task.isSimultaneous);
+    const simultaneousList = isSimultaneous ? findSimultaneousTasks(task, tasks) : [];
     const isInSleep = isTaskInSleepWindow(task, capacitySettings);
 
     return (
@@ -253,67 +253,39 @@ export const CategoryView: React.FC<CategoryViewProps> = ({ onOpenTaskModal }) =
         }`}
       >
         {/* Left Core Data: Priority + Code + Title + Time + Badges */}
-        <div className="flex items-center gap-2 min-w-0 flex-1 flex-wrap sm:flex-nowrap">
-          {/* Priority Badge */}
-          <div
-            className={`px-2 py-0.5 rounded-lg text-center font-black text-xs min-w-[36px] shrink-0 font-mono shadow-2xs ${
-              task.priority === 'P1'
-                ? 'bg-gradient-to-tr from-rose-600 via-red-500 to-amber-400 text-white shadow-sm shadow-red-500/40 animate-pulse'
-                : ''
-            }`}
-            style={task.priority === 'P1' ? undefined : { backgroundColor: priorityMeta?.bgColor, color: priorityMeta?.color }}
+        <div className="flex items-center gap-2.5 flex-1 min-w-0 flex-wrap">
+          {/* Status & Priority Badge */}
+          <span 
+            className="text-[11px] font-black px-2 py-0.5 rounded-lg shrink-0 font-mono shadow-2xs flex items-center gap-1"
+            style={{ backgroundColor: priorityMeta.bgColor, color: priorityMeta.color }}
           >
-            {task.priority}
-          </div>
+            {task.priority === 'P1' && <Sparkles className="w-2.5 h-2.5 text-yellow-300 fill-yellow-300" />}
+            <span>{task.priority}</span>
+          </span>
 
-          {/* Project Code */}
-          <span className="font-mono font-bold text-[11px] text-blue-600 dark:text-blue-400 bg-theme-card-hover px-1.5 py-0.5 rounded border border-theme-border shrink-0">
+          <span className="font-mono text-xs font-black text-blue-600 dark:text-blue-400 shrink-0">
             {task.projectCode}
           </span>
 
-          {/* Title (Clickable to Edit) */}
-          <div className="flex items-center gap-1.5 min-w-0 flex-1">
-            <span
-              onClick={() => onOpenTaskModal(task)}
-              title={task.title}
-              className={`font-bold text-xs truncate cursor-pointer hover:text-blue-600 transition-colors ${
-                task.status === 'Done'
-                  ? 'line-through text-theme-muted'
-                  : isInSleep
-                  ? 'text-white'
-                  : 'text-theme-text'
-              }`}
-            >
-              {task.title}
-            </span>
-            <span className="font-mono text-[10px] font-bold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/60 px-1.5 py-0.2 rounded border border-blue-200 dark:border-blue-900/60 shadow-2xs shrink-0">
-              ~{task.appointedMinutes}m
-            </span>
-          </div>
-
-          {/* Scheduled Time Window */}
-          <div className="flex items-center gap-1 text-[11px] font-mono font-semibold text-theme-muted bg-theme-card-hover px-1.5 py-0.5 rounded border border-theme-border shrink-0 whitespace-nowrap">
-            <Clock className="w-3 h-3 text-blue-500 shrink-0" />
-            <span>{task.startTime} - {task.endTime}</span>
-          </div>
-
-          {/* Date */}
-          <span className="font-mono text-[10px] text-theme-muted hidden sm:inline-flex items-center gap-0.5 shrink-0 bg-theme-card-hover px-1.5 py-0.5 rounded border border-theme-border">
-            <Calendar className="w-2.5 h-2.5 text-blue-500" />
-            <span>{formatDisplayDate(task.taskDate)} ({getDayOfWeekFromDate(task.taskDate).slice(0, 3)})</span>
+          <span className="font-mono text-xs font-semibold text-theme-muted bg-theme-card-hover px-1.5 py-0.5 rounded border border-theme-border shrink-0">
+            {task.startTime} – {task.endTime}
           </span>
 
-          {/* Subcategory Badge */}
+          <span className="text-xs font-bold text-theme-text truncate group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
+            {task.title}
+          </span>
+
+          {/* Sub-Category Badge */}
           {task.subCategory && (
-            <span className="text-[10px] font-semibold text-theme-muted px-1.5 py-0.2 rounded bg-theme-card-hover border border-theme-border shrink-0 hidden lg:inline-flex">
+            <span className="text-[10px] font-semibold px-2 py-0.5 rounded-md bg-theme-card-hover text-theme-muted border border-theme-border shrink-0">
               {task.subCategory}
             </span>
           )}
 
-          {/* Status Indicators */}
+          {/* Signal / Flags Badges */}
           {task.isMandatorySchedule && (
-            <span className="text-[9px] font-black px-1.5 py-0.2 bg-amber-100 dark:bg-amber-950/80 text-amber-800 dark:text-amber-300 rounded border border-amber-300 dark:border-amber-700/80 shrink-0" title="Mandatory Fixed Schedule">
-              LOCK
+            <span className="text-[9px] font-black px-1.5 py-0.2 bg-amber-500/15 text-amber-700 dark:text-amber-400 rounded border border-amber-500/30 shrink-0 flex items-center gap-0.5" title="Mandatory Fixed Schedule">
+              <Lock className="w-2.5 h-2.5 text-amber-500" /> FIXED
             </span>
           )}
 
@@ -324,8 +296,8 @@ export const CategoryView: React.FC<CategoryViewProps> = ({ onOpenTaskModal }) =
           )}
 
           {isSimultaneous && (
-            <span className="text-[9px] font-black px-1.5 py-0.2 bg-gradient-to-r from-purple-600 to-indigo-600 text-white rounded shrink-0 shadow-2xs" title={`Simultaneous with ${simultaneousList.map(s => s.projectCode).join(', ')}`}>
-              🔀 SIMUL ({simultaneousList.length})
+            <span className="text-[9px] font-black px-1.5 py-0.2 bg-gradient-to-r from-purple-600 to-indigo-600 text-white rounded shrink-0 shadow-2xs" title={simultaneousList.length > 0 ? `Simultaneous with ${simultaneousList.map(s => s.projectCode).join(', ')}` : 'Marked to run simultaneously in parallel'}>
+              🔀 SIMUL{simultaneousList.length > 0 ? ` (${simultaneousList.length})` : ''}
             </span>
           )}
 
@@ -464,8 +436,8 @@ export const CategoryView: React.FC<CategoryViewProps> = ({ onOpenTaskModal }) =
     const isDue = isIncomplete || 
       (task.status === 'Pending' && isTaskPastDue(task.taskDate, task.startTime, task.endTime, nowTime)) ||
       (task.status === 'Working' && isTaskPastDue(task.taskDate, task.startTime, task.endTime, nowTime));
-    const simultaneousList = findSimultaneousTasks(task, tasks);
-    const isSimultaneous = simultaneousList.length > 0;
+    const isSimultaneous = Boolean(task.isSimultaneous);
+    const simultaneousList = isSimultaneous ? findSimultaneousTasks(task, tasks) : [];
     const isInSleep = isTaskInSleepWindow(task, capacitySettings);
 
     return (
@@ -558,10 +530,10 @@ export const CategoryView: React.FC<CategoryViewProps> = ({ onOpenTaskModal }) =
                 {isSimultaneous && (
                   <span 
                     className="text-[10px] font-black px-2 py-0.5 bg-gradient-to-r from-purple-600 to-indigo-600 text-white rounded-full flex items-center gap-1 shadow-sm shadow-purple-500/20"
-                    title={`Co-running simultaneously with: ${simultaneousList.map(s => `${s.projectCode} (${s.title})`).join(', ')}`}
+                    title={simultaneousList.length > 0 ? `Co-running simultaneously with: ${simultaneousList.map(s => `${s.projectCode} (${s.title})`).join(', ')}` : 'Marked to run simultaneously (Free on Gap Finder)'}
                   >
                     <Zap className="w-2.5 h-2.5 text-yellow-300" />
-                    <span>🔀 SIMULTANEOUS ({simultaneousList.length})</span>
+                    <span>🔀 SIMULTANEOUS{simultaneousList.length > 0 ? ` (${simultaneousList.length})` : ''}</span>
                   </span>
                 )}
 

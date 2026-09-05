@@ -417,16 +417,11 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
   const wakingEnd = capacitySettings.dayEndTime || '11:00 PM';
   const scheduledDateTasks = tasks.filter(t => isTaskScheduledForDate(t, selectedDate));
   const tasksForGaps = scheduledDateTasks.map(t => {
-    const simList = findSimultaneousTasks(t, scheduledDateTasks);
-    const isSimul = Boolean(
-      (t as any).isSimultaneous ||
-      (t.simultaneousWithIds && t.simultaneousWithIds.length > 0) ||
-      simList.length > 0
-    );
+    const isSimul = Boolean((t as any).isSimultaneous);
     return {
       ...t,
       isSimultaneous: isSimul,
-      simultaneousWithIds: isSimul ? (t.simultaneousWithIds?.length ? t.simultaneousWithIds : ['simultaneous-active']) : []
+      simultaneousWithIds: isSimul ? (t.simultaneousWithIds || []) : []
     };
   });
 
@@ -444,10 +439,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
     <div className="space-y-4 animate-fade-in">
       
       {/* Sleek Compact Top Bar: Responsive & Multi-Device Optimized */}
-      <div className="glass-panel p-2 sm:px-3 sm:py-2 rounded-2xl flex flex-col md:flex-row items-stretch md:items-center justify-between gap-2.5 border border-theme-border shadow-sm">
+      <div className="glass-panel p-2 sm:px-3 sm:py-2.5 rounded-2xl flex flex-wrap items-center justify-between gap-2 sm:gap-2.5 border border-theme-border shadow-sm">
         
         {/* Left Side: Apple-Graded Unified Date & Live Time Control */}
-        <div className="flex-1 min-w-0 flex items-center gap-2 overflow-x-auto no-scrollbar py-0.5">
+        <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap min-w-0">
           {/* Unified Apple Glass Date & Live Pro Time Capsule */}
           <div 
             onClick={() => {
@@ -549,7 +544,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
               title="Review Unfinished Tasks from Yesterday (Granular Manual Control)"
             >
               <Sunrise className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 shrink-0" />
-              <span className="hidden md:inline whitespace-nowrap">Morning Review</span>
+              <span className="whitespace-nowrap">Morning Review</span>
               <span className={`text-[11px] font-mono font-bold px-1.5 py-0.2 rounded-full shrink-0 ${
                 isMorningReviewOpen ? 'bg-white/30 text-white' : 'bg-amber-500 text-white'
               }`}>
@@ -569,7 +564,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
             title="Toggle Priority Queue"
           >
             <Flame className={`w-3.5 h-3.5 shrink-0 ${showPriorityBacklog ? 'text-white' : 'text-red-500'}`} />
-            <span className="hidden md:inline whitespace-nowrap">Priority Queue</span>
+            <span className="whitespace-nowrap">Priority Queue</span>
             <span className={`text-[9px] font-black px-1.5 py-0.5 rounded-full shrink-0 ${
               showPriorityBacklog ? 'bg-white/25 text-white' : 'bg-red-100 dark:bg-red-950 text-red-800 dark:text-red-300'
             }`}>
@@ -580,11 +575,11 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
           {/* Recurring Hub Button */}
           <button
             onClick={openRecurringHub}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap shrink-0 bg-theme-card-hover text-theme-muted hover:text-theme-text border border-theme-border transition-colors"
+            className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap shrink-0 bg-theme-card-hover text-theme-muted hover:text-theme-text border border-theme-border transition-colors hover:border-indigo-400"
             title="Manage All Recurring Tasks & Schedules"
           >
             <Repeat className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
-            <span className="hidden md:inline whitespace-nowrap">Recurring Hub</span>
+            <span className="whitespace-nowrap">Recurring</span>
             <span className="text-[9px] font-black px-1.5 py-0.5 rounded-full bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-300 shrink-0">
               {tasks.filter(t => t.recurrence && t.recurrence !== 'None').length}
             </span>
@@ -602,11 +597,11 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
         </div>
 
         {/* Right Side: Mode Switcher & Primary Schedule CTA */}
-        <div className="flex items-center justify-between md:justify-end gap-2 shrink-0 pt-2 md:pt-0 border-t md:border-t-0 border-theme-border/50 pl-2">
+        <div className="flex items-center gap-2 shrink-0 ml-auto pt-1 sm:pt-0">
           <div className="flex items-center gap-0.5 p-0.5 bg-theme-card-hover/80 rounded-full border border-theme-border/80 shadow-2xs shrink-0">
             <button
               onClick={() => setDashboardMode('time')}
-              className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold whitespace-nowrap shrink-0 transition-all cursor-pointer active:scale-95 ${
+              className={`flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3 py-1 rounded-full text-xs font-semibold whitespace-nowrap shrink-0 transition-all cursor-pointer active:scale-95 ${
                 dashboardMode === 'time'
                   ? 'bg-blue-600 text-white shadow-sm shadow-blue-500/25 ring-1 ring-white/20'
                   : 'text-theme-muted hover:text-theme-text hover:bg-theme-card/50'
@@ -619,7 +614,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
 
             <button
               onClick={() => setDashboardMode('priority')}
-              className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold whitespace-nowrap shrink-0 transition-all cursor-pointer active:scale-95 ${
+              className={`flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3 py-1 rounded-full text-xs font-semibold whitespace-nowrap shrink-0 transition-all cursor-pointer active:scale-95 ${
                 dashboardMode === 'priority'
                   ? 'bg-blue-600 text-white shadow-sm shadow-blue-500/25 ring-1 ring-white/20'
                   : 'text-theme-muted hover:text-theme-text hover:bg-theme-card/50'
@@ -633,7 +628,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
 
           <button
             onClick={() => onOpenTaskModal(undefined, selectedDate)}
-            className="flex items-center gap-1.5 px-4 py-1.5 bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold rounded-full shadow-sm shadow-blue-600/30 transition-all active:scale-95 whitespace-nowrap shrink-0 cursor-pointer min-w-fit"
+            className="flex items-center gap-1.5 px-3.5 sm:px-4 py-1.5 bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold rounded-full shadow-sm shadow-blue-600/30 transition-all active:scale-95 whitespace-nowrap shrink-0 cursor-pointer"
           >
             <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
             <span>Schedule</span>
@@ -1063,8 +1058,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
                         (task.status === 'Pending' && isTaskPastDue(task.taskDate, task.startTime, task.endTime, nowTime)) ||
                         (task.status === 'Working' && isTaskPastDue(task.taskDate, task.startTime, task.endTime, nowTime));
 
-                      const simultaneousList = findSimultaneousTasks(task, dateTasks);
-                      const isSimultaneous = simultaneousList.length > 0;
+                      const isSimultaneous = Boolean(task.isSimultaneous);
+                      const simultaneousList = isSimultaneous ? findSimultaneousTasks(task, dateTasks) : [];
                       const isInSleep = isTaskInSleepWindow(task, capacitySettings);
 
                       const isFirstIncomplete = isIncomplete && (idx === 0 || arr[idx - 1].status !== 'Incomplete');
@@ -1094,23 +1089,35 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
                           )}
                           <div
                             className={`p-4 rounded-2xl border transition-all duration-200 relative overflow-hidden ${
-                              isDue
-                                ? 'bg-red-50/30 dark:bg-red-950/20 border-red-300 dark:border-red-900/60 shadow-sm'
-                                : isWorking
-                                  ? 'bg-theme-card border-blue-500/80 shadow-lg shadow-blue-500/15 ring-1 ring-blue-500/40 card-working-ambient'
-                                  : isRunning
-                                    ? 'bg-theme-card border-blue-400/60 shadow-md ring-1 ring-blue-400/30'
-                                    : isInSleep
-                                      ? 'bg-slate-900/95 text-slate-100 dark:bg-slate-950 dark:text-slate-100 border-indigo-900/90 shadow-md ring-1 ring-indigo-500/40'
+                              isInSleep && !isNoTime
+                                ? isDue
+                                  ? 'card-night-due'
+                                  : isWorking
+                                    ? 'card-night-working'
+                                    : isRunning
+                                      ? 'card-night-working'
+                                      : 'card-night-cosmic'
+                                : isDue
+                                  ? 'bg-red-50/30 dark:bg-red-950/20 border-red-300 dark:border-red-900/60 shadow-sm'
+                                  : isWorking
+                                    ? 'bg-theme-card border-blue-500/80 shadow-lg shadow-blue-500/15 ring-1 ring-blue-500/40 card-working-ambient'
+                                    : isRunning
+                                      ? 'bg-theme-card border-blue-400/60 shadow-md ring-1 ring-blue-400/30'
                                       : isSimultaneous
                                         ? 'bg-theme-card border-purple-300 dark:border-purple-800 hover:shadow-md'
                                         : 'bg-theme-card border-theme-border hover:border-blue-300 dark:hover:border-blue-700 hover:shadow-md'
                             }`}
                           >
-                            {/* Seamless Card Border State: 3.5px Pulsing Left Accent Bar when Working */}
-                            {isWorking && <div className="glow-accent-bar animate-pulse" />}
+                            {/* Seamless Card Border State: Pulsing Left Accent Bar when Working */}
+                            {isWorking && (
+                              <div className={`glow-accent-bar animate-pulse ${
+                                isInSleep && !isNoTime 
+                                  ? 'bg-gradient-to-b from-cyan-400 via-sky-400 to-indigo-500 shadow-[0_0_12px_rgba(6,182,212,0.8)]' 
+                                  : ''
+                              }`} />
+                            )}
 
-                            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 relative z-10">
                               
                               {/* Left: Priority + Time + Title */}
                               <div className="flex items-start gap-3 flex-1">
@@ -1120,9 +1127,21 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
                                   className={`px-2.5 py-1.5 rounded-xl text-center font-black text-xs sm:text-sm min-w-[46px] shrink-0 flex items-center justify-center transition-all ${
                                     task.priority === 'P1'
                                       ? 'bg-gradient-to-tr from-rose-600 via-red-500 to-amber-400 text-white shadow-md shadow-red-500/30 ring-1 ring-red-400/80 border border-red-300 dark:border-red-400 animate-pulse font-display'
+                                      : isInSleep && !isNoTime
+                                      ? 'font-mono border border-indigo-400/40 bg-indigo-950/80 text-white shadow-sm'
                                       : 'font-mono border border-theme-border/60 shadow-2xs'
                                   }`}
-                                  style={task.priority === 'P1' ? undefined : { backgroundColor: priorityMeta?.bgColor, color: priorityMeta?.color }}
+                                  style={
+                                    task.priority === 'P1'
+                                      ? undefined
+                                      : isInSleep && !isNoTime
+                                      ? { 
+                                          color: '#FFFFFF', 
+                                          borderColor: priorityMeta?.color ? `${priorityMeta.color}80` : 'rgba(99,102,241,0.5)', 
+                                          backgroundColor: priorityMeta?.color ? `${priorityMeta.color}35` : 'rgba(15,23,42,0.8)' 
+                                        }
+                                      : { backgroundColor: priorityMeta?.bgColor, color: priorityMeta?.color }
+                                  }
                                 >
                                   {task.priority === 'P1' ? (
                                     <span className="flex items-center gap-0.5 tracking-tight font-black">
@@ -1130,7 +1149,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
                                       <span>P1</span>
                                     </span>
                                   ) : (
-                                    <span>{task.priority}</span>
+                                    <span className="font-bold">{task.priority}</span>
                                   )}
                                 </div>
 
@@ -1138,10 +1157,20 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
                                   
                                   {/* Primary Tier (High Contrast): Task Title + Secondary Tier: Duration */}
                                   <div className="flex items-baseline gap-2 flex-wrap">
-                                    <h4 className={getTaskTitleClasses(task.title, task.status === 'Done', isInSleep && !isDue, isWorking)}>
+                                    <h4 className={
+                                      isInSleep && !isNoTime
+                                        ? isWorking
+                                          ? 'card-night-working-title text-lg sm:text-xl font-display leading-snug'
+                                          : 'card-night-title text-lg sm:text-xl font-display leading-snug'
+                                        : getTaskTitleClasses(task.title, task.status === 'Done', false, isWorking)
+                                    }>
                                       {task.title}
                                     </h4>
-                                    <span className="font-mono text-xs font-bold px-2 py-0.5 rounded-md border shadow-2xs text-theme-muted bg-theme-card-hover/80 border-theme-border">
+                                    <span className={`font-mono text-xs font-bold px-2 py-0.5 rounded-md border shadow-2xs ${
+                                      isInSleep && !isNoTime
+                                        ? 'night-time-pill'
+                                        : 'text-theme-muted bg-theme-card-hover/80 border-theme-border'
+                                    }`}>
                                       {isNoTime ? (task.appointedMinutes > 0 ? `~${task.appointedMinutes}m (Free)` : '⚡ Free Time') : `~${task.appointedMinutes}m`}
                                     </span>
                                   </div>
@@ -1155,7 +1184,11 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
                                         <span>Anytime • Free Time Slot</span>
                                       </span>
                                     ) : (
-                                      <span className="font-mono text-xs font-bold px-2 py-0.5 rounded border text-theme-text bg-theme-card-hover border-theme-border">
+                                      <span className={`font-mono text-xs font-bold px-2 py-0.5 rounded border ${
+                                        isInSleep && !isNoTime
+                                          ? 'night-time-pill'
+                                          : 'text-theme-text bg-theme-card-hover border-theme-border'
+                                      }`}>
                                         {task.startTime} - {task.endTime}
                                       </span>
                                     )}
@@ -1163,7 +1196,11 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
                                     {/* Cross-Midnight 2-Date Continuity Badge */}
                                     {taskCrossesMidnight(task.startTime, task.endTime) && (
                                       <span 
-                                        className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-full border border-purple-300 dark:border-purple-800 bg-purple-50/80 dark:bg-purple-950/40 text-purple-700 dark:text-purple-300 flex items-center gap-1 shrink-0"
+                                        className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded-full border flex items-center gap-1 shrink-0 ${
+                                          isInSleep && !isNoTime
+                                            ? 'border-purple-400/50 bg-purple-900/60 text-purple-200'
+                                            : 'border-purple-300 dark:border-purple-800 bg-purple-50/80 dark:bg-purple-950/40 text-purple-700 dark:text-purple-300'
+                                        }`}
                                         title={`Spans midnight across 2 calendar days (${task.taskDate} → ${getTaskEndDate(task.taskDate, task.startTime, task.endTime)})`}
                                       >
                                         <span>🌙</span>
@@ -1172,12 +1209,18 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
                                     )}
 
                                     {/* Tertiary Tier: Project Code */}
-                                    <span className="text-[11px] font-mono font-bold text-theme-muted hover:text-blue-500 transition-colors">
+                                    <span className={`text-[11px] font-mono font-bold transition-colors ${
+                                      isInSleep && !isNoTime
+                                        ? 'text-cyan-300 bg-white/10 px-1.5 py-0.5 rounded border border-cyan-400/20 hover:text-cyan-200'
+                                        : 'text-theme-muted hover:text-blue-500'
+                                    }`}>
                                       {task.projectCode}
                                     </span>
 
                                     {/* Tertiary Tier: Category / SubCategory */}
-                                    <span className="text-[11px] font-medium text-theme-muted">
+                                    <span className={`text-[11px] font-medium ${
+                                      isInSleep && !isNoTime ? 'text-slate-300' : 'text-theme-muted'
+                                    }`}>
                                        {task.category}
                                        {task.subCategory ? ` / ${task.subCategory}` : ''}
                                      </span>
@@ -1185,7 +1228,11 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
                                     {/* Rescheduled Tracker Badge */}
                                     {Boolean(task.rescheduleCount && task.rescheduleCount > 0) && (
                                       <span 
-                                        className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-full border border-purple-300 dark:border-purple-800 bg-purple-50/80 dark:bg-purple-950/40 text-purple-700 dark:text-purple-300 flex items-center gap-1 shrink-0"
+                                        className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded-full border flex items-center gap-1 shrink-0 ${
+                                          isInSleep && !isNoTime
+                                            ? 'border-purple-400/40 bg-purple-500/20 text-purple-200'
+                                            : 'border-purple-300 dark:border-purple-800 bg-purple-50/80 dark:bg-purple-950/40 text-purple-700 dark:text-purple-300'
+                                        }`}
                                         title={`Rescheduled ${task.rescheduleCount}x • Originally added: ${formatDisplayDate(task.originallyAddedAt || task.dateAdded)}`}
                                       >
                                         <RotateCcw className="w-2.5 h-2.5" />
@@ -1194,12 +1241,16 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
                                     )}
 
                                     {/* Tertiary Context: Day Zone (Subtle) */}
-                                    {timePeriodSettings?.isEnabled && (() => {
+                                    {timePeriodSettings?.isEnabled && !isNoTime && (() => {
                                       const period = getTimePeriodForTime(task.startTime, timePeriodSettings);
                                       if (!period) return null;
                                       return (
                                         <span 
-                                          className="text-[11px] font-medium px-2 py-0.5 rounded-full border border-theme-border/70 bg-theme-card-hover/40 text-theme-muted flex items-center gap-1 shrink-0"
+                                          className={`text-[11px] font-medium px-2 py-0.5 rounded-full border flex items-center gap-1 shrink-0 ${
+                                            isInSleep && !isNoTime
+                                              ? 'border-indigo-400/40 bg-indigo-950/70 text-indigo-200'
+                                              : 'border-theme-border/70 bg-theme-card-hover/40 text-theme-muted'
+                                          }`}
                                           title={`Day Zone: ${period.name} (${period.startTime} - ${period.endTime})`}
                                         >
                                           <span>{period.emoji || '⏰'}</span>
@@ -1209,12 +1260,12 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
                                     })()}
 
                                      {/* Tertiary Context: Sleep Window (Subtle) */}
-                                     {isInSleep && (
+                                     {isInSleep && !isNoTime && (
                                        <span 
-                                         className="text-[11px] font-semibold px-2 py-0.5 rounded-full border border-indigo-200/80 dark:border-indigo-800/50 bg-indigo-50/50 dark:bg-indigo-950/30 text-indigo-700 dark:text-indigo-300 flex items-center gap-1 shrink-0"
+                                         className="text-[11px] font-semibold px-2 py-0.5 rounded-full border border-indigo-400/50 bg-indigo-900/60 text-indigo-200 flex items-center gap-1 shrink-0 shadow-2xs"
                                          title={`Sleep / Recovery Window (${capacitySettings?.sleepStartTime || '11:00 PM'} - ${capacitySettings?.sleepEndTime || '06:00 AM'})`}
                                        >
-                                         <Moon className="w-2.5 h-2.5 text-indigo-400" />
+                                         <Moon className="w-2.5 h-2.5 text-indigo-300" />
                                          <span>Sleep Zone</span>
                                        </span>
                                      )}
@@ -1222,7 +1273,11 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
                                     {/* Tertiary Context: Mandatory Fixed Schedule (Subtle) */}
                                     {task.isMandatorySchedule && (
                                       <span 
-                                        className="text-[11px] font-medium px-2 py-0.5 rounded-full border border-theme-border/70 bg-theme-card-hover/40 text-theme-muted flex items-center gap-1 shrink-0"
+                                        className={`text-[11px] font-medium px-2 py-0.5 rounded-full border flex items-center gap-1 shrink-0 ${
+                                          isInSleep && !isNoTime
+                                            ? 'border-white/15 bg-white/10 text-slate-300'
+                                            : 'border-theme-border/70 bg-theme-card-hover/40 text-theme-muted'
+                                        }`}
                                         title="Mandatory Fixed Schedule"
                                       >
                                         <Lock className="w-2.5 h-2.5 text-theme-muted" />
@@ -1233,11 +1288,15 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
                                     {/* Tertiary Context: Simultaneous (Subtle) */}
                                     {isSimultaneous && (
                                       <span 
-                                        className="text-[11px] font-semibold px-2 py-0.5 rounded-full border border-purple-200/80 dark:border-purple-800/50 bg-purple-50/50 dark:bg-purple-950/30 text-purple-700 dark:text-purple-300 flex items-center gap-1 shrink-0"
+                                        className={`text-[11px] font-semibold px-2 py-0.5 rounded-full border flex items-center gap-1 shrink-0 ${
+                                          isInSleep && !isNoTime
+                                            ? 'border-purple-400/50 bg-purple-900/60 text-purple-200'
+                                            : 'border-purple-200/80 dark:border-purple-800/50 bg-purple-50/50 dark:bg-purple-950/30 text-purple-700 dark:text-purple-300'
+                                        }`}
                                         title={`Co-running simultaneously with: ${simultaneousList.map(s => `${s.projectCode} (${s.title})`).join(', ')}`}
                                       >
-                                        <Zap className="w-2.5 h-2.5 text-purple-500" />
-                                        <span>Simultaneous ({simultaneousList.length})</span>
+                                        <Zap className="w-2.5 h-2.5 text-purple-400" />
+                                        <span>{simultaneousList.length > 0 ? `Simultaneous (${simultaneousList.length})` : 'Simultaneous'}</span>
                                       </span>
                                     )}
 
@@ -1251,12 +1310,16 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
                                         <span>{isIncomplete ? '⚠️ INCOMPLETE' : isWorking ? '⚡ OVERTIME DUE' : '🚨 DUE NOW'}</span>
                                       </span>
                                     ) : isRunning ? (
-                                      <span className="text-[11px] font-black tracking-wider px-2.5 py-0.5 bg-blue-600 text-white rounded-full flex items-center gap-1.5 shadow-md shadow-blue-500/40">
+                                      <span className={`text-[11px] font-black tracking-wider px-2.5 py-0.5 rounded-full flex items-center gap-1.5 shadow-md ${
+                                        isInSleep && !isNoTime
+                                          ? 'bg-gradient-to-r from-cyan-500 to-blue-600 text-white shadow-cyan-500/40 ring-1 ring-white/30'
+                                          : 'bg-blue-600 text-white shadow-blue-500/40'
+                                      }`}>
                                         <span className="relative flex h-2 w-2">
-                                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-sky-200 opacity-90"></span>
+                                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-200 opacity-90"></span>
                                           <span className="relative inline-flex rounded-full h-2 w-2 bg-white"></span>
                                         </span>
-                                        <span>{isWorking ? '⚡ WORKING NOW' : '⚡ RUNNING TIME'}</span>
+                                        <span>{isWorking ? (isInSleep && !isNoTime ? '⚡ NIGHT WORKING' : '⚡ WORKING NOW') : '⚡ RUNNING TIME'}</span>
                                       </span>
                                     ) : null}
                                   </div>
@@ -1284,20 +1347,26 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
                                     className={`text-[11px] font-bold px-2.5 py-1 rounded-full border cursor-pointer focus:outline-none transition-colors ${
                                       task.status === 'Done' ? 'bg-emerald-600 text-white border-emerald-600 shadow-sm' :
                                       task.status === 'Terminated' ? 'bg-red-600 text-white border-red-600 shadow-sm' :
-                                      task.status === 'Working' ? 'bg-blue-600 text-white border-blue-600 shadow-sm animate-pulse' :
+                                      task.status === 'Working' ? (
+                                        isInSleep && !isNoTime 
+                                          ? 'bg-gradient-to-r from-cyan-600 to-blue-600 text-white border-cyan-400 shadow-sm animate-pulse'
+                                          : 'bg-blue-600 text-white border-blue-600 shadow-sm animate-pulse'
+                                      ) :
                                       task.status === 'Hold' ? 'bg-amber-100 text-amber-800 border-amber-300 dark:bg-amber-950' :
                                       task.status === 'Incomplete' ? 'bg-red-600 text-white border-red-600 shadow-sm' :
                                       task.status === 'Reschedule' ? 'bg-purple-100 text-purple-800 border-purple-300' :
-                                      'bg-slate-100 text-slate-700 border-slate-300 dark:bg-slate-800 dark:text-slate-300'
+                                      isInSleep && !isNoTime
+                                        ? 'bg-slate-900 text-white border-slate-700'
+                                        : 'bg-slate-100 text-slate-700 border-slate-300 dark:bg-slate-800 dark:text-slate-300'
                                     }`}
                                   >
-                                    <option value="Pending">● Pending</option>
-                                    <option value="Working">⚡ Working</option>
-                                    <option value="Done">✓ Done</option>
-                                    <option value="Hold">⏸ Hold</option>
-                                    <option value="Incomplete">⚠️ Incomplete</option>
-                                    <option value="Reschedule">↻ Reschedule</option>
-                                    <option value="Terminated">✕ Terminated</option>
+                                    <option value="Pending" className="bg-slate-900 text-white">● Pending</option>
+                                    <option value="Working" className="bg-slate-900 text-white">⚡ Working</option>
+                                    <option value="Done" className="bg-slate-900 text-white">✓ Done</option>
+                                    <option value="Hold" className="bg-slate-900 text-white">⏸ Hold</option>
+                                    <option value="Incomplete" className="bg-slate-900 text-white">⚠️ Incomplete</option>
+                                    <option value="Reschedule" className="bg-slate-900 text-white">↻ Reschedule</option>
+                                    <option value="Terminated" className="bg-slate-900 text-white">✕ Terminated</option>
                                   </select>
 
                                   {/* Live Countdown */}
@@ -1318,6 +1387,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
                                         <span className={`text-[11px] font-mono font-bold px-2.5 py-0.5 rounded-lg flex items-center gap-1 shadow-sm ${
                                           isOvertime
                                             ? 'bg-amber-400 text-amber-950 animate-pulse font-black'
+                                            : isInSleep && !isNoTime
+                                            ? 'bg-cyan-500/25 text-cyan-100 border border-cyan-400/50 font-black shadow-cyan-500/20'
                                             : 'bg-blue-600 text-white'
                                         }`}>
                                           <Hourglass className="w-3 h-3 animate-spin" />
@@ -1335,7 +1406,11 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
                                         const h = Math.floor(diffMin / 60);
                                         const m = diffMin % 60;
                                         return (
-                                          <span className="text-[11px] font-mono font-semibold text-blue-700 dark:text-blue-300 bg-blue-50 dark:bg-blue-950/60 px-2 py-0.5 rounded-lg border border-blue-200 dark:border-blue-800 flex items-center gap-1">
+                                          <span className={`text-[11px] font-mono font-semibold px-2 py-0.5 rounded-lg border flex items-center gap-1 ${
+                                            isInSleep && !isNoTime
+                                              ? 'night-time-pill'
+                                              : 'text-blue-700 dark:text-blue-300 bg-blue-50 dark:bg-blue-950/60 border-blue-200 dark:border-blue-800'
+                                          }`}>
                                             <Timer className="w-3 h-3 text-blue-500" />
                                             <span>Starts in {h > 0 ? `${h}h ` : ''}{m}m</span>
                                           </span>
@@ -1385,7 +1460,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
                                 </div>
 
                                 {task.description && (
-                                  <p className="text-xs sm:text-sm text-theme-muted line-clamp-1 font-normal">
+                                  <p className={`text-xs sm:text-sm line-clamp-1 font-normal ${
+                                    isInSleep && !isNoTime ? 'text-slate-300' : 'text-theme-muted'
+                                  }`}>
                                     {task.description}
                                   </p>
                                 )}
@@ -1403,7 +1480,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
                             </div>
 
                             {/* Right: Actions */}
-                            <div className="flex items-center gap-2 w-full sm:w-auto justify-end pt-2 sm:pt-0 border-t sm:border-t-0 border-theme-border">
+                            <div className={`flex items-center gap-2 w-full sm:w-auto justify-end pt-2 sm:pt-0 border-t sm:border-t-0 relative z-10 ${
+                              isInSleep && !isNoTime ? 'border-white/10' : 'border-theme-border'
+                            }`}>
                               {isWorking ? (
                                 <div className="flex items-center gap-1.5">
                                   <button
@@ -1415,7 +1494,11 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
                                   </button>
                                   <button
                                     onClick={() => completeTask(task.id)}
-                                    className="btn-pro btn-pro-success flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs shadow-sm"
+                                    className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold shadow-sm transition-all active:scale-95 ${
+                                      isInSleep && !isNoTime
+                                        ? 'bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-white shadow-emerald-500/30 ring-1 ring-white/20'
+                                        : 'btn-pro btn-pro-success'
+                                    }`}
                                   >
                                     <CheckCircle2 className="w-4 h-4 stroke-[2.5]" />
                                     <span>Done</span>
@@ -1424,7 +1507,11 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
                               ) : (
                                 <button
                                   onClick={() => startTask(task.id)}
-                                  className="btn-pro btn-pro-primary flex items-center gap-1.5 px-4 py-1.5 rounded-xl text-xs shadow-sm"
+                                  className={`flex items-center gap-1.5 px-4 py-1.5 rounded-xl text-xs font-bold shadow-sm active:scale-95 transition-all cursor-pointer ${
+                                    isInSleep && !isNoTime
+                                      ? 'night-btn-start'
+                                      : 'btn-pro btn-pro-primary'
+                                  }`}
                                 >
                                   <Play className="w-3.5 h-3.5 fill-white stroke-[2]" />
                                   <span>Start</span>
@@ -1442,7 +1529,11 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
                                 ) : (
                                   <button
                                     onClick={() => setReschedulingTask(task)}
-                                    className="btn-pro-icon hover:text-purple-600 hover:border-purple-300 dark:hover:border-purple-800"
+                                    className={
+                                      isInSleep && !isNoTime 
+                                        ? 'night-btn-icon'
+                                        : 'btn-pro-icon hover:text-purple-600 hover:border-purple-300 dark:hover:border-purple-800'
+                                    }
                                     title="Reschedule Task / Find Slot"
                                   >
                                     <RotateCcw className="w-3.5 h-3.5" />
@@ -1451,7 +1542,11 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
 
                                 <button
                                   onClick={() => onOpenTaskModal(task)}
-                                  className="btn-pro-icon"
+                                  className={
+                                    isInSleep && !isNoTime 
+                                      ? 'night-btn-icon'
+                                      : 'btn-pro-icon'
+                                  }
                                   title="Edit Task"
                                 >
                                   <Edit2 className="w-3.5 h-3.5" />
@@ -1459,7 +1554,11 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
 
                                 <button
                                   onClick={() => requestDeleteTask(task, selectedDate)}
-                                  className="btn-pro-icon hover:text-red-600 hover:border-red-300 dark:hover:border-red-800"
+                                  className={
+                                    isInSleep && !isNoTime 
+                                      ? 'night-btn-icon hover:!bg-red-500/30 hover:!border-red-400/50 hover:!text-red-300'
+                                      : 'btn-pro-icon hover:text-red-600 hover:border-red-300 dark:hover:border-red-800'
+                                  }
                                   title="Delete Task / Occurrence"
                                 >
                                   <Trash2 className="w-3.5 h-3.5" />
@@ -1924,86 +2023,124 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
                 </div>
 
                 {/* Hero Spotlight Slot Card (Apple Visionary Live Window) */}
-                {heroSpotlightSlot && (
-                  <div className="p-4 sm:p-5 rounded-2xl border border-emerald-500/30 dark:border-emerald-500/40 bg-gradient-to-b from-emerald-500/[0.09] via-teal-500/[0.03] to-transparent dark:from-emerald-500/[0.16] dark:via-teal-500/[0.05] dark:to-transparent shadow-[0_4px_24px_-4px_rgba(16,185,129,0.15)] space-y-3 animate-fade-in relative overflow-hidden group">
-                    <div className="absolute -right-8 -top-8 w-32 h-32 bg-emerald-500/15 rounded-full blur-2xl pointer-events-none" />
+                {heroSpotlightSlot && (() => {
+                  const isHeroSimul = Boolean(heroSpotlightSlot.isSimultaneous);
+                  return (
+                    <div className={`p-4 sm:p-5 rounded-2xl border space-y-3 animate-fade-in relative overflow-hidden group ${
+                      isHeroSimul
+                        ? 'border-purple-500/50 dark:border-purple-400/60 bg-gradient-to-b from-purple-500/[0.14] via-indigo-500/[0.05] to-transparent dark:from-purple-500/[0.25] dark:via-indigo-500/[0.1] dark:to-transparent shadow-[0_4px_28px_-4px_rgba(168,85,247,0.3)] ring-2 ring-purple-500/40'
+                        : 'border-emerald-500/30 dark:border-emerald-500/40 bg-gradient-to-b from-emerald-500/[0.09] via-teal-500/[0.03] to-transparent dark:from-emerald-500/[0.16] dark:via-teal-500/[0.05] dark:to-transparent shadow-[0_4px_24px_-4px_rgba(168,85,247,0.15)]'
+                    }`}>
+                      <div className={`absolute -right-8 -top-8 w-32 h-32 rounded-full blur-2xl pointer-events-none ${
+                        isHeroSimul ? 'bg-purple-500/20' : 'bg-emerald-500/15'
+                      }`} />
 
-                    {/* Top Status Header */}
-                    <div className="flex items-center justify-between gap-2 relative z-10">
-                      <div className="flex items-center gap-2">
-                        <span className="relative flex h-2.5 w-2.5">
-                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
-                          <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500" />
-                        </span>
-                        <span className="text-xs font-bold text-emerald-800 dark:text-emerald-300 font-display tracking-tight">
-                          Recommended Window • {heroSpotlightSlot.isImmediate ? 'Available Now' : heroSpotlightSlot.dateLabel}
-                        </span>
-                      </div>
-
-                      <div className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-emerald-500/15 text-emerald-800 dark:text-emerald-200 border border-emerald-500/30 text-xs font-bold font-mono shrink-0 shadow-2xs">
-                        <span>{formatDurationHuman(heroSpotlightSlot.durationMinutes)}</span>
-                        <span className="text-[9px] uppercase tracking-wider font-semibold opacity-75">free</span>
-                      </div>
-                    </div>
-
-                    {/* Hero Time Interval */}
-                    <div className="relative z-10 space-y-1.5">
-                      <div className="flex items-baseline gap-2 flex-wrap">
-                        <span className="font-mono text-xl sm:text-2xl font-bold tracking-tight text-theme-text">
-                          {heroSpotlightSlot.startTime} – {heroSpotlightSlot.endTime}
-                        </span>
-                        <span className="text-xs font-semibold px-2 py-0.5 rounded-md bg-black/[0.04] dark:bg-white/[0.06] text-theme-muted font-display">
-                          {heroSpotlightSlot.dateLabel}
-                        </span>
-                      </div>
-
-                      {/* Rhythm & Focus Tag Pills (Full Width - Zero Awkward Wrapping) */}
-                      <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
-                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg bg-amber-500/10 text-amber-800 dark:text-amber-300 border border-amber-500/20 text-xs font-semibold">
-                          <span>{heroSpotlightSlot.ultradianEmoji || '⚡'}</span>
-                          <span>{heroSpotlightSlot.ultradianLabel}</span>
-                        </span>
-                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg bg-blue-500/10 text-blue-800 dark:text-blue-300 border border-blue-500/20 text-xs font-semibold">
-                          <span>{heroSpotlightSlot.circadianEmoji}</span>
-                          <span>{heroSpotlightSlot.circadianLabel}</span>
-                        </span>
-                        {heroSpotlightSlot.isLateNight && (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg bg-indigo-500/10 text-indigo-700 dark:text-indigo-300 border border-indigo-500/20 text-xs font-semibold">
-                            <span>🌙</span>
-                            <span>Late Night</span>
+                      {/* Top Status Header */}
+                      <div className="flex items-center justify-between gap-2 relative z-10">
+                        <div className="flex items-center gap-2">
+                          <span className="relative flex h-2.5 w-2.5">
+                            <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${
+                              isHeroSimul ? 'bg-purple-400' : 'bg-emerald-400'
+                            }`} />
+                            <span className={`relative inline-flex rounded-full h-2.5 w-2.5 ${
+                              isHeroSimul ? 'bg-purple-500' : 'bg-emerald-500'
+                            }`} />
                           </span>
-                        )}
+                          <span className={`text-xs font-bold font-display tracking-tight ${
+                            isHeroSimul ? 'text-purple-800 dark:text-purple-300' : 'text-emerald-800 dark:text-emerald-300'
+                          }`}>
+                            {isHeroSimul ? '🔀 Recommended Simultaneous Window' : 'Recommended Window'} • {heroSpotlightSlot.isImmediate ? 'Available Now' : heroSpotlightSlot.dateLabel}
+                          </span>
+                        </div>
+
+                        <div className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full border text-xs font-bold font-mono shrink-0 shadow-2xs ${
+                          isHeroSimul
+                            ? 'bg-purple-500/15 text-purple-800 dark:text-purple-200 border-purple-500/30'
+                            : 'bg-emerald-500/15 text-emerald-800 dark:text-emerald-200 border-emerald-500/30'
+                        }`}>
+                          <span>{formatDurationHuman(heroSpotlightSlot.durationMinutes)}</span>
+                          <span className="text-[9px] uppercase tracking-wider font-semibold opacity-75">
+                            {isHeroSimul ? 'free (simultaneous)' : 'free'}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Hero Time Interval */}
+                      <div className="relative z-10 space-y-1.5">
+                        <div className="flex items-baseline gap-2 flex-wrap">
+                          <span className="font-mono text-xl sm:text-2xl font-bold tracking-tight text-theme-text">
+                            {heroSpotlightSlot.startTime} – {heroSpotlightSlot.endTime}
+                          </span>
+                          <span className="text-xs font-semibold px-2 py-0.5 rounded-md bg-black/[0.04] dark:bg-white/[0.06] text-theme-muted font-display">
+                            {heroSpotlightSlot.dateLabel}
+                          </span>
+                          {isHeroSimul && (
+                            <span className="text-xs font-bold px-2 py-0.5 rounded-md bg-purple-500/20 text-purple-700 dark:text-purple-300 border border-purple-500/30">
+                              🔀 Simultaneous Free Slot
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Rhythm & Focus Tag Pills (Full Width - Zero Awkward Wrapping) */}
+                        <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
+                          {isHeroSimul && (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg bg-purple-500/15 text-purple-800 dark:text-purple-200 border border-purple-500/30 text-xs font-semibold">
+                              <span>🔀</span>
+                              <span>Parallel Co-Run Available{heroSpotlightSlot.simultaneousTaskTitle ? ` with "${heroSpotlightSlot.simultaneousTaskTitle}"` : ''}</span>
+                            </span>
+                          )}
+                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg bg-amber-500/10 text-amber-800 dark:text-amber-300 border border-amber-500/20 text-xs font-semibold">
+                            <span>{heroSpotlightSlot.ultradianEmoji || '⚡'}</span>
+                            <span>{heroSpotlightSlot.ultradianLabel}</span>
+                          </span>
+                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg bg-blue-500/10 text-blue-800 dark:text-blue-300 border border-blue-500/20 text-xs font-semibold">
+                            <span>{heroSpotlightSlot.circadianEmoji}</span>
+                            <span>{heroSpotlightSlot.circadianLabel}</span>
+                          </span>
+                          {heroSpotlightSlot.isLateNight && (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg bg-indigo-500/10 text-indigo-700 dark:text-indigo-300 border border-indigo-500/20 text-xs font-semibold">
+                              <span>🌙</span>
+                              <span>Late Night</span>
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Dedicated Full-Width Action Row (No Crowding / No Text Squishing) */}
+                      <div className={`flex items-center gap-2 pt-2.5 border-t relative z-10 ${
+                        isHeroSimul ? 'border-purple-500/20' : 'border-emerald-500/20'
+                      }`}>
+                        <button
+                          onClick={() => onOpenTaskModal(undefined, heroSpotlightSlot.date, heroSpotlightSlot.startTime)}
+                          className={`flex-1 h-9 px-4 rounded-xl active:scale-[0.98] text-white text-xs font-bold shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer ${
+                            isHeroSimul
+                              ? 'bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 shadow-purple-500/25'
+                              : 'bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 shadow-emerald-500/25'
+                          }`}
+                          title={`Schedule task starting at ${heroSpotlightSlot.startTime}`}
+                        >
+                          <Plus className="w-4 h-4 stroke-[2.5]" />
+                          <span>{isHeroSimul ? 'Schedule In Parallel Slot' : 'Schedule In This Slot'}</span>
+                        </button>
+
+                        <button
+                          onClick={() => openBufferNoteModal({
+                            date: heroSpotlightSlot.date,
+                            startTime: heroSpotlightSlot.startTime,
+                            endTime: heroSpotlightSlot.endTime,
+                            durationMinutes: heroSpotlightSlot.durationMinutes,
+                            activityTag: heroSpotlightSlot.durationMinutes < 20 ? 'Break / Rest' : 'Deep Focus Buffer'
+                          })}
+                          className="h-9 px-3.5 rounded-xl bg-white/70 dark:bg-white/[0.08] hover:bg-white dark:hover:bg-white/[0.14] text-theme-muted hover:text-amber-600 dark:hover:text-amber-400 border border-theme-border/60 transition-all flex items-center gap-1.5 text-xs font-semibold cursor-pointer active:scale-95 shadow-2xs"
+                          title={`Log buffer note on ${heroSpotlightSlot.dateLabel}`}
+                        >
+                          <Coffee className="w-3.5 h-3.5" />
+                          <span className="hidden xs:inline">Quick Note</span>
+                        </button>
                       </div>
                     </div>
-
-                    {/* Dedicated Full-Width Action Row (No Crowding / No Text Squishing) */}
-                    <div className="flex items-center gap-2 pt-2.5 border-t border-emerald-500/20 relative z-10">
-                      <button
-                        onClick={() => onOpenTaskModal(undefined, heroSpotlightSlot.date, heroSpotlightSlot.startTime)}
-                        className="flex-1 h-9 px-4 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 active:scale-[0.98] text-white text-xs font-bold shadow-md shadow-emerald-500/25 transition-all flex items-center justify-center gap-2 cursor-pointer"
-                        title={`Schedule task starting at ${heroSpotlightSlot.startTime}`}
-                      >
-                        <Plus className="w-4 h-4 stroke-[2.5]" />
-                        <span>Schedule In This Slot</span>
-                      </button>
-
-                      <button
-                        onClick={() => openBufferNoteModal({
-                          date: heroSpotlightSlot.date,
-                          startTime: heroSpotlightSlot.startTime,
-                          endTime: heroSpotlightSlot.endTime,
-                          durationMinutes: heroSpotlightSlot.durationMinutes,
-                          activityTag: heroSpotlightSlot.durationMinutes < 20 ? 'Break / Rest' : 'Deep Focus Buffer'
-                        })}
-                        className="h-9 px-3.5 rounded-xl bg-white/70 dark:bg-white/[0.08] hover:bg-white dark:hover:bg-white/[0.14] text-theme-muted hover:text-amber-600 dark:hover:text-amber-400 border border-theme-border/60 transition-all flex items-center gap-1.5 text-xs font-semibold cursor-pointer active:scale-95 shadow-2xs"
-                        title={`Log buffer note on ${heroSpotlightSlot.dateLabel}`}
-                      >
-                        <Coffee className="w-3.5 h-3.5" />
-                        <span className="hidden xs:inline">Quick Note</span>
-                      </button>
-                    </div>
-                  </div>
-                )}
+                  );
+                })()}
 
                 {/* Datewise Grouped Slots (Apple Grouped List Style) */}
                 {datewiseGroups.length > 0 ? (
@@ -2034,63 +2171,94 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
                         <div className="space-y-1.5">
                           {group.slots.map((item) => {
                             const humanDur = formatDurationHuman(item.durationMinutes);
-
                             return (
                               <div
                                 key={item.slotId}
                                 onClick={() => onOpenTaskModal(undefined, item.date, item.startTime)}
-                                className="group p-2.5 sm:px-3 sm:py-2.5 rounded-xl border border-theme-border/60 hover:border-blue-500/40 bg-theme-card/70 hover:bg-theme-card-hover transition-all cursor-pointer shadow-2xs hover:shadow-xs active:scale-[0.99] flex items-center justify-between gap-3"
+                                className={`transition-all cursor-pointer active:scale-[0.99] flex flex-col gap-2 ${
+                                  item.isSimultaneous
+                                    ? 'group p-3 sm:px-3.5 sm:py-2.5 rounded-xl border border-purple-400/80 dark:border-purple-500/80 ring-2 ring-purple-500/30 dark:ring-purple-400/30 bg-purple-500/[0.07] dark:bg-purple-950/30 hover:border-purple-500 hover:ring-purple-500/50 shadow-[0_0_15px_rgba(168,85,247,0.18)]'
+                                    : 'group p-2.5 sm:px-3.5 sm:py-2.5 rounded-xl border border-theme-border/60 hover:border-blue-500/40 bg-theme-card/70 hover:bg-theme-card-hover shadow-2xs hover:shadow-xs'
+                                }`}
                               >
-                                {/* Left: Time Interval + Focus Type */}
-                                <div className="min-w-0 flex-1">
-                                  <div className="flex items-center gap-2 flex-wrap">
+                                {/* Top Row: Time Range + Duration + Night pill on left, Action Buttons on right */}
+                                <div className="flex items-center justify-between gap-2">
+                                  <div className="flex items-center gap-2 flex-wrap min-w-0">
+                                    {item.isSimultaneous && (
+                                      <div className="w-5 h-5 rounded-full bg-purple-500/20 border-2 border-purple-500 text-purple-600 dark:text-purple-300 flex items-center justify-center shrink-0 text-[10px] font-bold shadow-2xs">
+                                        🔀
+                                      </div>
+                                    )}
                                     <span className="font-mono text-xs sm:text-sm font-bold text-theme-text tracking-tight whitespace-nowrap">
                                       {item.startTime} – {item.endTime}
                                     </span>
-                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 font-mono text-[10px] font-bold">
+                                    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full font-mono text-[10px] font-bold shrink-0 ${
+                                      item.isSimultaneous
+                                        ? 'bg-purple-500/15 text-purple-700 dark:text-purple-300 border border-purple-500/25'
+                                        : 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300'
+                                    }`}>
                                       {humanDur}
                                     </span>
                                     {item.isLateNight && (
-                                      <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-indigo-500/10 text-indigo-700 dark:text-indigo-300">
+                                      <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-indigo-500/10 text-indigo-700 dark:text-indigo-300 shrink-0">
                                         🌙 Night
                                       </span>
                                     )}
-                                    {item.isSimultaneous && (
-                                      <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-purple-500/10 text-purple-700 dark:text-purple-300">
-                                        🔀 Co-run
-                                      </span>
-                                    )}
                                   </div>
-                                  <div className="text-[11px] text-theme-muted font-medium mt-0.5 flex items-center gap-1.5 truncate">
-                                    <span>{item.ultradianEmoji || '⚡'} {item.ultradianLabel}</span>
-                                    <span className="opacity-40">•</span>
-                                    <span>{item.circadianEmoji} {item.circadianLabel}</span>
+
+                                  {/* Right: Clean Action Buttons pinned to top right */}
+                                  <div className="flex items-center gap-1.5 shrink-0" onClick={(e) => e.stopPropagation()}>
+                                    <button
+                                      onClick={() => onOpenTaskModal(undefined, item.date, item.startTime)}
+                                      className={`h-7 px-3 rounded-full text-xs font-bold active:scale-95 transition-all flex items-center gap-1 cursor-pointer shrink-0 ${
+                                        item.isSimultaneous
+                                          ? 'text-white bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 shadow-sm shadow-purple-500/20'
+                                          : 'text-blue-600 dark:text-blue-400 bg-blue-500/10 hover:bg-blue-600 hover:text-white dark:bg-blue-500/15 dark:hover:bg-blue-500 dark:hover:text-white border border-blue-500/20'
+                                      }`}
+                                      title={`Schedule task on ${item.dateLabel} at ${item.startTime}`}
+                                    >
+                                      <Plus className="w-3 h-3 stroke-[2.5]" />
+                                      <span>{item.isSimultaneous ? 'Co-Schedule' : 'Schedule'}</span>
+                                    </button>
+                                    <button
+                                      onClick={() => openBufferNoteModal({
+                                        date: item.date,
+                                        startTime: item.startTime,
+                                        endTime: item.endTime,
+                                        durationMinutes: item.durationMinutes,
+                                        activityTag: item.durationMinutes < 20 ? 'Break / Rest' : 'Deep Focus Buffer'
+                                      })}
+                                      className="w-7 h-7 rounded-full text-theme-muted hover:text-amber-500 hover:bg-theme-card-hover border border-theme-border/60 transition-all flex items-center justify-center cursor-pointer active:scale-95 shrink-0"
+                                      title={`Log buffer note on ${item.dateLabel}`}
+                                    >
+                                      <Coffee className="w-3.5 h-3.5" />
+                                    </button>
                                   </div>
                                 </div>
 
-                                {/* Right: Clean Cupertino Action Buttons */}
-                                <div className="flex items-center gap-1.5 shrink-0" onClick={(e) => e.stopPropagation()}>
-                                  <button
-                                    onClick={() => onOpenTaskModal(undefined, item.date, item.startTime)}
-                                    className="h-7 px-3 rounded-full text-xs font-semibold text-blue-600 dark:text-blue-400 bg-blue-500/10 hover:bg-blue-600 hover:text-white dark:bg-blue-500/15 dark:hover:bg-blue-500 dark:hover:text-white border border-blue-500/20 active:scale-95 transition-all flex items-center gap-1 cursor-pointer"
-                                    title={`Schedule task on ${item.dateLabel} at ${item.startTime}`}
-                                  >
-                                    <Plus className="w-3 h-3 stroke-[2.5]" />
-                                    <span>Schedule</span>
-                                  </button>
-                                  <button
-                                    onClick={() => openBufferNoteModal({
-                                      date: item.date,
-                                      startTime: item.startTime,
-                                      endTime: item.endTime,
-                                      durationMinutes: item.durationMinutes,
-                                      activityTag: item.durationMinutes < 20 ? 'Break / Rest' : 'Deep Focus Buffer'
-                                    })}
-                                    className="w-7 h-7 rounded-full text-theme-muted hover:text-amber-500 hover:bg-theme-card-hover border border-theme-border/60 transition-all flex items-center justify-center cursor-pointer active:scale-95"
-                                    title={`Log buffer note on ${item.dateLabel}`}
-                                  >
-                                    <Coffee className="w-3.5 h-3.5" />
-                                  </button>
+                                {/* Simultaneous Free Slot Detail Badge (Dedicated row, full width, zero collision) */}
+                                {item.isSimultaneous && (
+                                  <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-purple-500/15 dark:bg-purple-950/40 border border-purple-500/30 text-[11px] font-bold text-purple-700 dark:text-purple-300 min-w-0">
+                                    <span className="shrink-0">🔀 Simultaneous Free Slot</span>
+                                    {item.simultaneousTaskTitle && (
+                                      <span className="opacity-80 font-normal truncate min-w-0 flex-1">
+                                        • ({item.simultaneousTaskTitle})
+                                      </span>
+                                    )}
+                                  </div>
+                                )}
+
+                                {/* Sub-Metadata: Parallel Co-Run Context & Ultradian */}
+                                <div className="text-[11px] text-theme-muted font-medium flex items-center gap-1.5 flex-wrap min-w-0">
+                                  {item.isSimultaneous && (
+                                    <>
+                                      <span className="text-purple-600 dark:text-purple-400 font-semibold shrink-0">Parallel Co-Run Available</span>
+                                      <span className="opacity-40 shrink-0">•</span>
+                                    </>
+                                  )}
+                                  <span className="shrink-0">{item.ultradianEmoji || '⚡'} {item.ultradianLabel}</span>
+                                  <span className="opacity-40 shrink-0">•</span>
+                                  <span className="shrink-0">{item.circadianEmoji} {item.circadianLabel}</span>
                                 </div>
                               </div>
                             );

@@ -743,8 +743,8 @@ export const PlansProjectsView: React.FC<PlansProjectsViewProps> = ({ onOpenTask
                   const isWorking = task.status === 'Working';
                   const isRunning = isTaskInRunningSlot(task.taskDate, task.startTime, task.endTime);
                   const isDue = isTaskPastDue(task.taskDate, task.startTime, task.endTime, nowTime);
-                  const simultaneousList = findSimultaneousTasks(task, tasks);
-                  const isSimultaneous = simultaneousList.length > 0;
+                  const isSimultaneous = Boolean(task.isSimultaneous);
+                  const simultaneousList = isSimultaneous ? findSimultaneousTasks(task, tasks) : [];
 
                   return (
                     <div
@@ -820,10 +820,10 @@ export const PlansProjectsView: React.FC<PlansProjectsViewProps> = ({ onOpenTask
                               {isSimultaneous && (
                                 <span 
                                   className="text-[10px] font-black px-2 py-0.5 bg-gradient-to-r from-purple-600 to-indigo-600 text-white rounded-full flex items-center gap-1 shadow-sm shadow-purple-500/20"
-                                  title={`Co-running simultaneously with: ${simultaneousList.map(s => `${s.projectCode} (${s.title})`).join(', ')}`}
+                                  title={simultaneousList.length > 0 ? `Co-running simultaneously with: ${simultaneousList.map(s => `${s.projectCode} (${s.title})`).join(', ')}` : 'Marked to run simultaneously in parallel'}
                                 >
                                   <Zap className="w-2.5 h-2.5 text-yellow-300" />
-                                  <span>🔀 SIMULTANEOUS ({simultaneousList.length})</span>
+                                  <span>🔀 SIMULTANEOUS{simultaneousList.length > 0 ? ` (${simultaneousList.length})` : ''}</span>
                                 </span>
                               )}
 

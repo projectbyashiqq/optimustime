@@ -277,11 +277,25 @@ const STORAGE_KEY = 'optimustime_app_state_v2';
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   // Load state from LocalStorage or Fallback
   const [tasks, setTasks] = useState<Task[]>(() => {
+    const normalizeTask = (t: Task): Task => {
+      const isNoTime = isNoTimeTask(t);
+      if (isNoTime && (t.startTime !== 'Anytime' || t.endTime !== 'Anytime' || !t.hasNoTime)) {
+        return {
+          ...t,
+          hasNoTime: true,
+          startTime: 'Anytime',
+          endTime: 'Anytime',
+          appointedMinutes: 0
+        };
+      }
+      return t;
+    };
     try {
       const saved = localStorage.getItem(`${STORAGE_KEY}_tasks`);
-      return sanitizeSimultaneousTasks(saved ? JSON.parse(saved) : INITIAL_TASKS);
+      const parsed: Task[] = saved ? JSON.parse(saved) : INITIAL_TASKS;
+      return sanitizeSimultaneousTasks(parsed.map(normalizeTask));
     } catch {
-      return sanitizeSimultaneousTasks(INITIAL_TASKS);
+      return sanitizeSimultaneousTasks(INITIAL_TASKS.map(normalizeTask));
     }
   });
 
@@ -1459,10 +1473,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const hasNoTime = Boolean(
         updated.hasNoTime ||
         updated.startTime === 'Anytime' ||
-        updated.startTime === 'Free Time'
+        updated.startTime === 'Free Time' ||
+        (updated.priority === 'P5' && updated.hasNoTime !== false && (!updated.startTime || updated.startTime === 'Anytime' || updated.startTime === 'Free Time'))
       );
       const normalizedUpdated: Task = {
         ...updated,
+        startTime: hasNoTime ? 'Anytime' : updated.startTime,
+        endTime: hasNoTime ? 'Anytime' : updated.endTime,
+        appointedMinutes: hasNoTime ? 0 : updated.appointedMinutes,
         hasNoTime,
         isSimultaneous: hasNoTime ? true : Boolean(updated.isSimultaneous),
         crossesMidnight: hasNoTime ? false : (updated.crossesMidnight ?? taskCrossesMidnight(updated.startTime, updated.endTime)),

@@ -159,12 +159,12 @@ export const TaskModal: React.FC<TaskModalProps> = ({
     )
   );
 
-  // Simultaneous execution option (Co-working / Parallel Slot - always true by default for Free Time / P5)
+  // Simultaneous execution option (Co-working / Parallel Slot - true by default for new P5 tasks)
   const [isSimultaneous, setIsSimultaneous] = useState<boolean>(
     Boolean(
-      taskToEdit?.isSimultaneous || 
-      (taskToEdit?.simultaneousWithIds && taskToEdit.simultaneousWithIds.length > 0) ||
-      (!taskToEdit && defaultPriorityCandidate === 'P5')
+      taskToEdit 
+        ? Boolean(taskToEdit.isSimultaneous)
+        : defaultPriorityCandidate === 'P5'
     )
   );
 
@@ -346,12 +346,6 @@ export const TaskModal: React.FC<TaskModalProps> = ({
     return detectConflicts(taskDate, startTime, endTime, taskToEdit?.id);
   }, [taskDate, startTime, endTime, taskToEdit?.id, detectConflicts]);
 
-  // If time or date changes such that there are no overlapping tasks, auto-turn off simultaneous flag (unless in Free Time mode)
-  useEffect(() => {
-    if (isSimultaneous && !hasNoTime && liveOverlaps.length === 0) {
-      setIsSimultaneous(false);
-    }
-  }, [liveOverlaps.length, isSimultaneous, hasNoTime]);
 
   // Sleep / Night Window Conflict Calculation & Warning
   const sleepWindowWarning = useMemo(() => {
@@ -578,7 +572,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
     const calculatedEndDate = hasNoTime ? effectiveTaskDate : (crosses ? getTaskEndDate(effectiveTaskDate, startTime, endTime) : effectiveTaskDate);
     const effectiveDayOfWeek = getDayOfWeekFromDate(effectiveTaskDate);
 
-    const actualSimultaneous = hasNoTime ? true : Boolean(isSimultaneous && liveOverlaps.length > 0);
+    const actualSimultaneous = Boolean(isSimultaneous);
     const actualSimultaneousIds = actualSimultaneous ? (hasNoTime ? [] : liveOverlaps.map(t => t.id)) : [];
 
     const payload = {
@@ -1735,7 +1729,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                   {/* Simultaneous Co-Working Switch */}
                   <label className={`p-3 rounded-2xl border transition-all cursor-pointer flex items-start gap-2.5 select-none ${
                     isSimultaneous
-                      ? 'bg-purple-500/10 border-purple-500/50 dark:border-purple-400/40 shadow-xs ring-1 ring-purple-500/20'
+                      ? 'bg-purple-500/10 border-purple-500/60 dark:border-purple-400/50 shadow-xs ring-2 ring-purple-500/25'
                       : 'bg-theme-card border-theme-border/80 hover:border-theme-border'
                   }`}>
                     <input
@@ -1745,22 +1739,26 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                       onChange={(e) => setIsSimultaneous(e.target.checked)}
                       className="w-4 h-4 rounded border-purple-400 text-purple-600 focus:ring-purple-500 mt-0.5 cursor-pointer disabled:opacity-60"
                     />
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-1.5">
-                        <Zap className={`w-3.5 h-3.5 ${isSimultaneous ? 'text-purple-600 dark:text-purple-400' : 'text-theme-muted'}`} />
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <Zap className={`w-3.5 h-3.5 ${isSimultaneous ? 'text-purple-600 dark:text-purple-400 fill-current' : 'text-theme-muted'}`} />
                         <span className="text-xs font-black text-theme-text font-display">
                           Run Simultaneously
                         </span>
-                        {hasNoTime && (
+                        {hasNoTime ? (
                           <span className="text-[9px] px-1.5 py-0.2 rounded bg-purple-500/20 text-purple-600 dark:text-purple-400 font-mono font-bold">
                             Default (Free Time)
                           </span>
-                        )}
+                        ) : isSimultaneous ? (
+                          <span className="text-[9px] px-1.5 py-0.2 rounded-full bg-purple-500/20 text-purple-700 dark:text-purple-300 font-mono font-bold border border-purple-500/30">
+                            🔀 Free on Gap Finder
+                          </span>
+                        ) : null}
                       </div>
                       <p className="text-[10px] text-theme-muted mt-0.5 leading-snug">
                         {hasNoTime 
                           ? 'Free time tasks always run in parallel without blocking calendar capacity.' 
-                          : 'Allows parallel co-working alongside overlapping events.'}
+                          : 'Allows other tasks to run concurrently in this time zone. On Gap Finder, this slot will show as FREE, circled with Simultaneous color.'}
                       </p>
                     </div>
                   </label>

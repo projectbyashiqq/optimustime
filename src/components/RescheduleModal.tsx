@@ -748,7 +748,9 @@ export const RescheduleModal: React.FC<RescheduleModalProps> = ({
                                 className={`w-full p-2.5 rounded-xl border text-left transition-all flex items-center justify-between gap-2 cursor-pointer ${
                                   isSelected
                                     ? 'bg-blue-600 text-white border-blue-600 shadow-md ring-2 ring-blue-500/30'
-                                    : 'bg-blue-500/[0.04] dark:bg-blue-400/[0.08] border-blue-500/20 dark:border-blue-400/25 hover:border-blue-500/40 hover:bg-blue-500/[0.08] shadow-2xs'
+                                    : slot.isSimultaneousSlot
+                                      ? 'bg-purple-500/[0.08] dark:bg-purple-950/25 border-purple-400/70 dark:border-purple-500/70 ring-2 ring-purple-500/30 hover:border-purple-500 shadow-[0_0_12px_rgba(168,85,247,0.18)]'
+                                      : 'bg-blue-500/[0.04] dark:bg-blue-400/[0.08] border-blue-500/20 dark:border-blue-400/25 hover:border-blue-500/40 hover:bg-blue-500/[0.08] shadow-2xs'
                                 }`}
                               >
                                 <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
@@ -893,7 +895,9 @@ export const RescheduleModal: React.FC<RescheduleModalProps> = ({
                                 className={`w-full p-2.5 rounded-xl border text-left transition-all flex items-center justify-between gap-2 cursor-pointer ${
                                   isSelected
                                     ? 'bg-emerald-600 text-white border-emerald-600 shadow-md ring-2 ring-emerald-500/30'
-                                    : 'bg-emerald-500/[0.04] dark:bg-emerald-400/[0.08] border-emerald-500/20 dark:border-emerald-400/25 hover:border-emerald-500/40 hover:bg-emerald-500/[0.08] shadow-2xs'
+                                    : slot.isSimultaneousSlot
+                                      ? 'bg-purple-500/[0.08] dark:bg-purple-950/25 border-purple-400/70 dark:border-purple-500/70 ring-2 ring-purple-500/30 hover:border-purple-500 shadow-[0_0_12px_rgba(168,85,247,0.18)]'
+                                      : 'bg-emerald-500/[0.04] dark:bg-emerald-400/[0.08] border-emerald-500/20 dark:border-emerald-400/25 hover:border-emerald-500/40 hover:bg-emerald-500/[0.08] shadow-2xs'
                                 }`}
                               >
                                 <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
@@ -1018,9 +1022,11 @@ export const RescheduleModal: React.FC<RescheduleModalProps> = ({
                                 className={`p-3 rounded-xl border text-left transition-all relative flex flex-col justify-between gap-2 cursor-pointer ${
                                   isSelected
                                     ? 'bg-blue-600/10 dark:bg-blue-400/15 border-blue-500 shadow-sm ring-2 ring-blue-500/30'
-                                    : isSuggested
-                                      ? 'bg-emerald-500/[0.06] dark:bg-emerald-400/[0.08] border-emerald-500/30 hover:border-emerald-500/50'
-                                      : 'bg-theme-card hover:bg-theme-card-hover border-theme-border hover:border-blue-400 dark:hover:border-blue-600'
+                                    : slot.isSimultaneousSlot
+                                      ? 'bg-purple-500/[0.08] dark:bg-purple-950/25 border-purple-400/70 dark:border-purple-500/70 ring-2 ring-purple-500/30 hover:border-purple-500 shadow-[0_0_12px_rgba(168,85,247,0.18)]'
+                                      : isSuggested
+                                        ? 'bg-emerald-500/[0.06] dark:bg-emerald-400/[0.08] border-emerald-500/30 hover:border-emerald-500/50'
+                                        : 'bg-theme-card hover:bg-theme-card-hover border-theme-border hover:border-blue-400 dark:hover:border-blue-600'
                                 }`}
                               >
                                 {/* Top Row: Time Period on Left, Clean Badges on Right */}
@@ -1111,6 +1117,7 @@ export const RescheduleModal: React.FC<RescheduleModalProps> = ({
               <div className="space-y-2">
                 {scannedSlots.map((slot, idx) => {
                   const isSelected = selectedSlot?.date === slot.date && selectedSlot?.startTime === slot.startTime;
+                  const isSimul = Boolean(slot.isSimultaneousSlot);
 
                   return (
                     <div
@@ -1119,7 +1126,9 @@ export const RescheduleModal: React.FC<RescheduleModalProps> = ({
                       className={`p-3 rounded-2xl border transition-all cursor-pointer flex items-center justify-between gap-3 ${
                         isSelected
                           ? 'bg-purple-500/10 dark:bg-purple-400/15 border-purple-500 shadow-sm ring-2 ring-purple-500/30'
-                          : 'bg-theme-card border-theme-border hover:border-purple-300 dark:hover:border-purple-700 hover:shadow-xs'
+                          : isSimul
+                            ? 'bg-purple-500/[0.08] dark:bg-purple-950/25 border-purple-400/70 dark:border-purple-500/70 ring-2 ring-purple-500/30 hover:border-purple-500 shadow-[0_0_12px_rgba(168,85,247,0.18)]'
+                            : 'bg-theme-card border-theme-border hover:border-purple-300 dark:hover:border-purple-700 hover:shadow-xs'
                       }`}
                     >
                       <div className="flex items-center gap-3">
@@ -1130,6 +1139,11 @@ export const RescheduleModal: React.FC<RescheduleModalProps> = ({
                           <div className="text-xs font-bold text-theme-text font-display flex items-center gap-1.5">
                             <span>{slot.date}</span>
                             <span className="text-theme-muted font-normal">({slot.dayOfWeek})</span>
+                            {isSimul && (
+                              <span className="text-[10px] font-semibold tracking-wider px-1.5 py-0.5 rounded-full bg-purple-500/15 text-purple-700 dark:text-purple-300 border border-purple-500/25 flex items-center gap-0.5">
+                                <Zap className="w-2.5 h-2.5 fill-current" /> SIMULTANEOUS
+                              </span>
+                            )}
                           </div>
                           <div className="text-xs font-mono font-semibold text-purple-600 dark:text-purple-400 flex items-center gap-1.5 flex-wrap">
                             <span>{slot.startTime} – {slot.endTime} ({task.appointedMinutes}m)</span>

@@ -103,7 +103,8 @@ export function isNoTimeTask(task?: {
     task.hasNoTime ||
     task.startTime === 'Anytime' ||
     task.startTime === 'Free Time' ||
-    task.startTime === 'No Time'
+    task.startTime === 'No Time' ||
+    (task.priority === 'P5' && task.hasNoTime !== false && (!task.startTime || task.startTime === 'Anytime' || task.startTime === 'Free Time' || task.startTime === 'No Time'))
   );
 }
 
@@ -120,6 +121,16 @@ export type CircadianPeriodName = 'Night' | 'Morning' | 'Afternoon' | 'Evening';
  * - 08:00 PM (1200 min) up to 11:59 PM (1439 min): 'Night' (Evening to Midnight)
  */
 export function getStandardCircadianPeriod(minutesOrTimeStr: number | string): CircadianPeriodName {
+  if (typeof minutesOrTimeStr === 'string' && (
+    !minutesOrTimeStr ||
+    minutesOrTimeStr === 'All Day' ||
+    minutesOrTimeStr === 'Anytime' ||
+    minutesOrTimeStr === 'Free Time' ||
+    minutesOrTimeStr === 'No Time'
+  )) {
+    return 'Afternoon';
+  }
+
   const mins = typeof minutesOrTimeStr === 'string'
     ? parse12HourToMinutes(minutesOrTimeStr)
     : ((minutesOrTimeStr % 1440) + 1440) % 1440;
@@ -207,6 +218,15 @@ export function getCurrentRoundedTime12Hour(stepMinutes = 15): string {
 
 // Calculate difference in minutes between two 12-hour strings
 export function diffTimeInMinutes(startTimeStr: string, endTimeStr: string): number {
+  if (
+    !startTimeStr || !endTimeStr ||
+    startTimeStr === 'All Day' || endTimeStr === 'All Day' ||
+    startTimeStr === 'Anytime' || endTimeStr === 'Anytime' ||
+    startTimeStr === 'Free Time' || endTimeStr === 'Free Time' ||
+    startTimeStr === 'No Time' || endTimeStr === 'No Time'
+  ) {
+    return 0;
+  }
   const start = parse12HourToMinutes(startTimeStr);
   let end = parse12HourToMinutes(endTimeStr);
   if (end < start) {
@@ -298,6 +318,16 @@ export function checkOverlap(
   start2: string,
   end2: string
 ): boolean {
+  if (
+    !start1 || !end1 || !start2 || !end2 ||
+    start1 === 'All Day' || end1 === 'All Day' || start2 === 'All Day' || end2 === 'All Day' ||
+    start1 === 'Anytime' || end1 === 'Anytime' || start2 === 'Anytime' || end2 === 'Anytime' ||
+    start1 === 'Free Time' || end1 === 'Free Time' || start2 === 'Free Time' || end2 === 'Free Time' ||
+    start1 === 'No Time' || end1 === 'No Time' || start2 === 'No Time' || end2 === 'No Time'
+  ) {
+    return false;
+  }
+
   const s1 = parse12HourToMinutes(start1);
   let e1 = parse12HourToMinutes(end1);
   const s2 = parse12HourToMinutes(start2);
@@ -312,11 +342,15 @@ export function checkOverlap(
 /**
  * Detects all active tasks that overlap in time or are explicitly linked simultaneously with the given task on the same date.
  */
-export function findSimultaneousTasks<T extends { id: string; taskDate: string; startTime: string; endTime: string; status: string; simultaneousWithIds?: string[]; recurrence?: string; selectedDays?: string[] }>(
+export function findSimultaneousTasks<T extends { id: string; taskDate: string; startTime: string; endTime: string; status: string; isSimultaneous?: boolean; simultaneousWithIds?: string[]; recurrence?: string; selectedDays?: string[] }>(
   targetTask: T,
   allTasks: T[]
 ): T[] {
   if (!targetTask.startTime || !targetTask.endTime || targetTask.startTime === 'All Day' || isNoTimeTask(targetTask as any)) return [];
+  // A task cannot be simultaneous or have simultaneous twins if it is not marked simultaneous or already Done
+  if (!targetTask.isSimultaneous) return [];
+  if (targetTask.status === 'Terminated' || targetTask.status === 'Done') return [];
+
   return allTasks.filter(other => {
     if (other.id === targetTask.id) return false;
     if (other.status === 'Terminated' || other.status === 'Done') return false;
@@ -327,11 +361,13 @@ export function findSimultaneousTasks<T extends { id: string; taskDate: string; 
     if (!onSameDate) return false;
 
     // Check explicit simultaneous link
-    const isExplicitlyLinked = !!((targetTask.simultaneousWithIds && targetTask.simultaneousWithIds.includes(other.id)) ||
-      (other.simultaneousWithIds && other.simultaneousWithIds.includes(targetTask.id)));
+    const isExplicitlyLinked = Boolean(
+      (targetTask.simultaneousWithIds && targetTask.simultaneousWithIds.includes(other.id)) ||
+      (other.simultaneousWithIds && other.simultaneousWithIds.includes(targetTask.id))
+    );
     if (isExplicitlyLinked) return true;
 
-    // Check time window overlap
+    // Check time window overlap (only when target is simultaneous)
     return checkOverlap(targetTask.startTime, targetTask.endTime, other.startTime, other.endTime);
   });
 }
@@ -347,15 +383,14 @@ export interface TimeGap {
 
 /**
  * Automatically cleans up and synchronizes simultaneous task relationships.
- * Ensures that tasks only retain `isSimultaneous: true` and `simultaneousWithIds`
- * if they ACTUALLY overlap in time on the same date!
- * If a task is moved, rescheduled, or edited to a non-overlapping slot,
- * its simultaneous status is automatically cleared, and it is removed from other tasks' simultaneousWithIds.
+ * Ensures that tasks ONLY retain `isSimultaneous: true` if explicitly marked by the user.
+ * Normal tasks (isSimultaneous: false/undefined) are NEVER infected or converted to simultaneous!
+ * If a task is unmarked or edited, it cleanly and permanently returns to normal.
  */
 export function sanitizeSimultaneousTasks<T extends { id?: string; taskDate: string; startTime: string; endTime: string; status: string; isSimultaneous?: boolean; simultaneousWithIds?: string[] }>(tasks: T[]): T[] {
   const taskTimeMap = new Map<string, { date: string; startMin: number; endMin: number }>();
   for (const t of tasks) {
-    if (t.id && t.status !== 'Terminated' && t.startTime && t.endTime && t.startTime !== 'All Day') {
+    if (t.id && t.status !== 'Terminated' && t.startTime && t.endTime && t.startTime !== 'All Day' && t.startTime !== 'Anytime' && t.startTime !== 'Free Time' && t.startTime !== 'No Time' && !isNoTimeTask(t as any)) {
       const s = parse12HourToMinutes(t.startTime);
       let e = parse12HourToMinutes(t.endTime);
       if (e <= s) e += 1440;
@@ -363,60 +398,60 @@ export function sanitizeSimultaneousTasks<T extends { id?: string; taskDate: str
     }
   }
 
-  // 1. Build verified bidirectional adjacency map for real overlapping pairs
-  const pairMap = new Map<string, Set<string>>();
-  const getPairs = (id: string) => {
-    let set = pairMap.get(id);
-    if (!set) {
-      set = new Set<string>();
-      pairMap.set(id, set);
-    }
-    return set;
-  };
+  // 1. Build overlap map ONLY for tasks that have isSimultaneous: true
+  // CRITICAL: Normal tasks (isSimultaneous: false/undefined) MUST NEVER BE INFECTED!
+  const simulPartnerMap = new Map<string, string[]>();
 
   for (const task of tasks) {
-    if (!task.id) continue;
+    if (!task.id || !task.isSimultaneous) continue;
     const selfTime = taskTimeMap.get(task.id);
-    if (!selfTime) continue;
+    if (!selfTime) {
+      simulPartnerMap.set(task.id, []);
+      continue;
+    }
 
-    const partnerIds = task.simultaneousWithIds || [];
-    for (const partnerId of partnerIds) {
-      if (!partnerId || partnerId === task.id) continue;
-      const partnerTime = taskTimeMap.get(partnerId);
-      if (!partnerTime) continue;
-      if (partnerTime.date !== selfTime.date) continue;
-      // Real overlap check: self.start < partner.end && self.end > partner.start
-      if (selfTime.startMin < partnerTime.endMin && selfTime.endMin > partnerTime.startMin) {
-        getPairs(task.id).add(partnerId);
-        getPairs(partnerId).add(task.id);
+    const partners: string[] = [];
+    for (const other of tasks) {
+      if (!other.id || other.id === task.id) continue;
+      if (other.status === 'Terminated' || other.status === 'Done') continue;
+      const otherTime = taskTimeMap.get(other.id);
+      if (!otherTime || otherTime.date !== selfTime.date) continue;
+
+      if (selfTime.startMin < otherTime.endMin && selfTime.endMin > otherTime.startMin) {
+        partners.push(other.id);
       }
     }
+    simulPartnerMap.set(task.id, partners);
   }
 
-  // 2. Map tasks ensuring exact synchronization and cleanup
+  // 2. Map tasks ensuring strict non-contagion:
+  // - If task.isSimultaneous is false/undefined, it is strictly false with empty simultaneousWithIds []
+  // - If task.isSimultaneous is true, it keeps isSimultaneous: true and gets its valid overlapping partners
   return tasks.map(task => {
     if (!task.id) return task;
-    const selfTime = taskTimeMap.get(task.id);
-    const existingIds = task.simultaneousWithIds || [];
 
-    if (!selfTime) {
-      if (task.isSimultaneous || existingIds.length > 0) {
-        return { ...task, isSimultaneous: false, simultaneousWithIds: [] };
+    if (!task.isSimultaneous) {
+      const hadIds = Boolean(task.simultaneousWithIds && task.simultaneousWithIds.length > 0);
+      if (hadIds || task.isSimultaneous !== false) {
+        return {
+          ...task,
+          isSimultaneous: false,
+          simultaneousWithIds: []
+        };
       }
       return task;
     }
 
-    const verifiedPartnerIds = Array.from(pairMap.get(task.id) || []);
-    const isSimul = verifiedPartnerIds.length > 0;
+    const currentPartners = simulPartnerMap.get(task.id) || [];
+    const existingIds = task.simultaneousWithIds || [];
+    const idsChanged = currentPartners.length !== existingIds.length ||
+      currentPartners.some(id => !existingIds.includes(id));
 
-    const idsChanged = verifiedPartnerIds.length !== existingIds.length || 
-      verifiedPartnerIds.some(id => !existingIds.includes(id));
-
-    if (isSimul !== Boolean(task.isSimultaneous) || idsChanged) {
+    if (idsChanged) {
       return {
         ...task,
-        isSimultaneous: isSimul,
-        simultaneousWithIds: verifiedPartnerIds
+        isSimultaneous: true,
+        simultaneousWithIds: currentPartners
       };
     }
 
@@ -448,7 +483,13 @@ export function findScheduleGaps(
   
   // Combine task intervals (including task + bufferMinutes) and logged bufferNotes intervals
   const taskIntervals: { start: number; end: number }[] = [];
-  const simultaneousGaps: TimeGap[] = [];
+  interface SimulItem {
+    id?: string;
+    title?: string;
+    start: number;
+    end: number;
+  }
+  const simultaneousItems: SimulItem[] = [];
 
   for (const t of activeTasks as Array<{ startTime: string; endTime: string; status: string; bufferMinutes?: number; actualEndTime?: string; completedBeforeTimeOccurred?: boolean; totalActualMinutes?: number; simultaneousWithIds?: string[]; title?: string; id?: string }>) {
     // If task was completed before its scheduled window even occurred:
@@ -460,22 +501,22 @@ export function findScheduleGaps(
     let s = parse12HourToMinutes(t.startTime);
     let e = parse12HourToMinutes(t.endTime);
 
-    // Simultaneous tasks allow parallel concurrent work!
-    // They DO NOT block the calendar, and are considered as available free slots with a marked sign.
-    const isSimul = Boolean((t as any).isSimultaneous || (t.simultaneousWithIds && t.simultaneousWithIds.length > 0));
+    const isSimul = Boolean((t as any).isSimultaneous);
     if (isSimul) {
+      // Completed (Done) simultaneous tasks should NOT generate simultaneous/co-schedule slot badges
+      if (t.status === 'Done') {
+        continue;
+      }
       if (e < s) e += 1440;
       if (dayEndMin > 1440 && s < dayStartMin) {
         s += 1440;
         e += 1440;
       }
-      simultaneousGaps.push({
-        startTime: t.startTime,
-        endTime: t.endTime,
-        durationMinutes: Math.max(0, e - s),
-        isSimultaneousSlot: true,
-        simultaneousTaskTitle: t.title,
-        simultaneousTaskId: t.id
+      simultaneousItems.push({
+        id: t.id,
+        title: t.title,
+        start: s,
+        end: e
       });
       continue;
     }
@@ -538,72 +579,104 @@ export function findScheduleGaps(
 
   const intervals = [...taskIntervals, ...bufferIntervals, ...sleepIntervals].sort((a, b) => a.start - b.start);
 
+  const rawFreeWindows: { start: number; end: number }[] = [];
+
   if (intervals.length === 0) {
     if (dayEndMin > dayStartMin) {
-      return [{
-        startTime: dayStartTime,
-        endTime: dayEndTime,
-        durationMinutes: dayEndMin - dayStartMin
-      }];
+      rawFreeWindows.push({ start: dayStartMin, end: dayEndMin });
     }
-    return [];
-  }
-
-  // Merge overlapping intervals
-  const merged: { start: number; end: number }[] = [];
-  for (const interval of intervals) {
-    if (merged.length === 0) {
-      merged.push({ ...interval });
-    } else {
-      const last = merged[merged.length - 1];
-      if (interval.start <= last.end) {
-        last.end = Math.max(last.end, interval.end);
-      } else {
+  } else {
+    // Merge overlapping blocking intervals
+    const merged: { start: number; end: number }[] = [];
+    for (const interval of intervals) {
+      if (merged.length === 0) {
         merged.push({ ...interval });
+      } else {
+        const last = merged[merged.length - 1];
+        if (interval.start <= last.end) {
+          last.end = Math.max(last.end, interval.end);
+        } else {
+          merged.push({ ...interval });
+        }
+      }
+    }
+
+    let cursor = dayStartMin;
+    for (const block of merged) {
+      if (block.start > cursor) {
+        const gapStart = Math.max(cursor, dayStartMin);
+        const gapEnd = Math.min(block.start, dayEndMin);
+        if (gapEnd - gapStart >= 5) {
+          rawFreeWindows.push({ start: gapStart, end: gapEnd });
+        }
+      }
+      cursor = Math.max(cursor, block.end);
+    }
+
+    if (cursor < dayEndMin) {
+      const gapStart = Math.max(cursor, dayStartMin);
+      if (dayEndMin - gapStart >= 5) {
+        rawFreeWindows.push({ start: gapStart, end: dayEndMin });
       }
     }
   }
 
+  // Partition raw free windows around simultaneous task boundaries so that
+  // any time window with a simultaneous task shows as FREE with isSimultaneousSlot: true
   const gaps: TimeGap[] = [];
-  let cursor = dayStartMin;
 
-  for (const block of merged) {
-    if (block.start > cursor) {
-      const gapStart = Math.max(cursor, dayStartMin);
-      const gapEnd = Math.min(block.start, dayEndMin);
-      const gapDuration = gapEnd - gapStart;
-      if (gapDuration >= 5) { // Highlight gaps >= 5 mins
+  for (const win of rawFreeWindows) {
+    if (simultaneousItems.length === 0) {
+      gaps.push({
+        startTime: formatMinutesTo12Hour(win.start),
+        endTime: formatMinutesTo12Hour(win.end),
+        durationMinutes: win.end - win.start,
+        isSimultaneousSlot: false
+      });
+      continue;
+    }
+
+    const boundaries = new Set<number>([win.start, win.end]);
+    for (const sim of simultaneousItems) {
+      if (sim.start > win.start && sim.start < win.end) boundaries.add(sim.start);
+      if (sim.end > win.start && sim.end < win.end) boundaries.add(sim.end);
+    }
+
+    const sortedPoints = Array.from(boundaries).sort((a, b) => a - b);
+    for (let i = 0; i < sortedPoints.length - 1; i++) {
+      const segStart = sortedPoints[i];
+      const segEnd = sortedPoints[i + 1];
+      const segDur = segEnd - segStart;
+      if (segDur < 5) continue;
+
+      const matchSim = simultaneousItems.find(sim => Math.max(segStart, sim.start) < Math.min(segEnd, sim.end));
+      if (matchSim) {
         gaps.push({
-          startTime: formatMinutesTo12Hour(gapStart),
-          endTime: formatMinutesTo12Hour(gapEnd),
-          durationMinutes: gapDuration
+          startTime: formatMinutesTo12Hour(segStart),
+          endTime: formatMinutesTo12Hour(segEnd),
+          durationMinutes: segDur,
+          isSimultaneousSlot: true,
+          simultaneousTaskTitle: matchSim.title,
+          simultaneousTaskId: matchSim.id
+        });
+      } else {
+        gaps.push({
+          startTime: formatMinutesTo12Hour(segStart),
+          endTime: formatMinutesTo12Hour(segEnd),
+          durationMinutes: segDur,
+          isSimultaneousSlot: false
         });
       }
     }
-    cursor = Math.max(cursor, block.end);
   }
 
-  if (cursor < dayEndMin) {
-    const gapDuration = dayEndMin - cursor;
-    if (gapDuration >= 5) {
-      gaps.push({
-        startTime: formatMinutesTo12Hour(cursor),
-        endTime: formatMinutesTo12Hour(dayEndMin),
-        durationMinutes: gapDuration
-      });
-    }
-  }
-
-  if (simultaneousGaps.length > 0) {
-    gaps.push(...simultaneousGaps);
-    gaps.sort((a, b) => {
-      let aStart = parse12HourToMinutes(a.startTime);
-      let bStart = parse12HourToMinutes(b.startTime);
-      if (dayEndMin > 1440 && aStart < dayStartMin) aStart += 1440;
-      if (dayEndMin > 1440 && bStart < dayStartMin) bStart += 1440;
-      return aStart - bStart;
-    });
-  }
+  gaps.sort((a, b) => {
+    let aStart = parse12HourToMinutes(a.startTime);
+    let bStart = parse12HourToMinutes(b.startTime);
+    if (dayEndMin > 1440 && aStart < dayStartMin) aStart += 1440;
+    if (dayEndMin > 1440 && bStart < dayStartMin) bStart += 1440;
+    return aStart - bStart;
+  });
 
   return gaps;
 }
@@ -756,7 +829,13 @@ export function calculateFirstRecurringDate(params: {
  * Checks if a task interval crosses midnight (e.g. 11:00 PM to 01:00 AM).
  */
 export function taskCrossesMidnight(startTime?: string, endTime?: string): boolean {
-  if (!startTime || !endTime || startTime === 'All Day' || endTime === 'All Day') return false;
+  if (
+    !startTime || !endTime ||
+    startTime === 'All Day' || endTime === 'All Day' ||
+    startTime === 'Anytime' || endTime === 'Anytime' ||
+    startTime === 'Free Time' || endTime === 'Free Time' ||
+    startTime === 'No Time' || endTime === 'No Time'
+  ) return false;
   const s = parse12HourToMinutes(startTime);
   const e = parse12HourToMinutes(endTime);
   return e < s;
@@ -1092,8 +1171,9 @@ export function findAllAvailableSlotsOnDate(
       return false;
     }
 
-    // Check if t is explicitly simultaneous with target task
+    // Check if t is explicitly simultaneous with target task OR marked to run simultaneously
     const isSimultaneous = Boolean(
+      (t as any).isSimultaneous ||
       (targetSimultaneousIds.length > 0 && t.id && targetSimultaneousIds.includes(t.id)) ||
       (t.simultaneousWithIds && targetTaskId && t.simultaneousWithIds.includes(targetTaskId))
     );
@@ -1198,6 +1278,7 @@ export function findAllAvailableSlotsOnDate(
       if (t.status === 'Terminated' || t.status === 'Done') return false;
       if (!t.startTime || !t.endTime || t.startTime === 'All Day') return false;
       const isSim = Boolean(
+        (t as any).isSimultaneous ||
         (targetSimultaneousIds.length > 0 && t.id && targetSimultaneousIds.includes(t.id)) ||
         (t.simultaneousWithIds && targetTaskId && t.simultaneousWithIds.includes(targetTaskId))
       );
@@ -1341,7 +1422,13 @@ export function findAvailableSlotOnDate(
  * seamlessly handling cross-midnight time spans (e.g. 11:00 PM on Sept 1 -> 01:00 AM on Sept 2).
  */
 export function getTaskDateTimeRange(taskDateStr: string, startTimeStr: string, endTimeStr: string): { start: Date; end: Date } | null {
-  if (!taskDateStr || !startTimeStr || !endTimeStr || startTimeStr === 'All Day' || endTimeStr === 'All Day') {
+  if (
+    !taskDateStr || !startTimeStr || !endTimeStr ||
+    startTimeStr === 'All Day' || endTimeStr === 'All Day' ||
+    startTimeStr === 'Anytime' || endTimeStr === 'Anytime' ||
+    startTimeStr === 'Free Time' || endTimeStr === 'Free Time' ||
+    startTimeStr === 'No Time' || endTimeStr === 'No Time'
+  ) {
     return null;
   }
   const parts = taskDateStr.split('-').map(Number);
@@ -1525,11 +1612,13 @@ export function formatMonthYear(year: number, monthIndex: number): string {
 export function getTaskTitleClasses(title: string, isDone = false, isInSleep = false, isWorking = false): string {
   const len = (title || '').trim().length;
   const colorClass = isDone 
-    ? 'line-through text-theme-muted opacity-75' 
+    ? isInSleep ? 'line-through text-slate-400 opacity-60' : 'line-through text-theme-muted opacity-75' 
     : isWorking
-    ? 'text-blue-600 dark:text-blue-400 font-black'
+    ? isInSleep
+      ? 'text-cyan-200 drop-shadow-[0_2px_8px_rgba(6,182,212,0.4)] font-black'
+      : 'text-blue-600 dark:text-blue-400 font-black'
     : isInSleep 
-    ? 'text-indigo-600 dark:text-indigo-300 drop-shadow-sm font-black' 
+    ? 'text-white font-black drop-shadow-[0_1px_3px_rgba(0,0,0,0.8)]' 
     : 'text-theme-text font-black';
   
   if (len <= 25) {
@@ -2653,8 +2742,9 @@ export function findNextAvailableSlot(
         return false;
       }
 
-      // If simultaneous with target task, it does not block (simultaneous tasks zone)
+      // If simultaneous with target task or marked to run simultaneously, it does not block (simultaneous tasks zone)
       const isSimultaneous = Boolean(
+        (t as any).isSimultaneous ||
         (targetSimultaneousIds.length > 0 && t.id && targetSimultaneousIds.includes(t.id)) ||
         (t.simultaneousWithIds && targetTaskId && t.simultaneousWithIds.includes(targetTaskId))
       );
@@ -2870,7 +2960,7 @@ export function computeNextFreeRawTimes(
   for (const t of tasks) {
     if (t.id === ignoreTaskId) continue;
     if (t.status === 'Terminated' || t.status === 'Reschedule') continue;
-    if (!t.startTime || !t.endTime || t.startTime === 'All Day' || isNoTimeTask(t as any)) continue;
+    if (!t.startTime || !t.endTime || t.startTime === 'All Day' || isNoTimeTask(t as any) || (t as any).isSimultaneous) continue;
     if (!isTaskScheduledForDate(t, dateStr)) continue;
 
     const s = parse12HourToMinutes(t.startTime);
@@ -3260,7 +3350,13 @@ export function isTimeInSleepWindow(
   sleepStartTimeStr = '11:00 PM',
   sleepEndTimeStr = '06:00 AM'
 ): boolean {
-  if (!startTimeStr || !endTimeStr || startTimeStr === 'All Day') return false;
+  if (
+    !startTimeStr || !endTimeStr ||
+    startTimeStr === 'All Day' || endTimeStr === 'All Day' ||
+    startTimeStr === 'Anytime' || endTimeStr === 'Anytime' ||
+    startTimeStr === 'Free Time' || endTimeStr === 'Free Time' ||
+    startTimeStr === 'No Time' || endTimeStr === 'No Time'
+  ) return false;
 
   const tStart = parse12HourToMinutes(startTimeStr);
   let tEnd = parse12HourToMinutes(endTimeStr);
@@ -3287,10 +3383,16 @@ export function isTimeInSleepWindow(
  * Checks whether a task falls inside or overlaps with the configured sleep window.
  */
 export function isTaskInSleepWindow(
-  task: { startTime?: string; endTime?: string; isAllDay?: boolean },
+  task: { startTime?: string; endTime?: string; isAllDay?: boolean; hasNoTime?: boolean; priority?: string },
   capacitySettings?: { dayStartTime?: string; dayEndTime?: string; sleepStartTime?: string; sleepEndTime?: string }
 ): boolean {
-  if (!task.startTime || !task.endTime || task.startTime === 'All Day' || task.isAllDay) return false;
+  if (!task) return false;
+  if (isNoTimeTask(task as any) || task.hasNoTime || task.isAllDay) return false;
+  if (
+    !task.startTime || !task.endTime ||
+    task.startTime === 'All Day' || task.startTime === 'Anytime' || task.startTime === 'Free Time' || task.startTime === 'No Time' ||
+    task.endTime === 'All Day' || task.endTime === 'Anytime' || task.endTime === 'Free Time' || task.endTime === 'No Time'
+  ) return false;
   const sleepStart = capacitySettings?.sleepStartTime || capacitySettings?.dayEndTime || '11:00 PM';
   const sleepEnd = capacitySettings?.sleepEndTime || capacitySettings?.dayStartTime || '06:00 AM';
   return isTimeInSleepWindow(task.startTime, task.endTime, sleepStart, sleepEnd);
@@ -3320,7 +3422,13 @@ export function getTimePeriodForTime(
   timeStr: string,
   periodsOrSettings?: NamedTimePeriod[] | TimePeriodSettings
 ): NamedTimePeriod | null {
-  if (!timeStr || timeStr === 'All Day') return null;
+  if (
+    !timeStr ||
+    timeStr === 'All Day' ||
+    timeStr === 'Anytime' ||
+    timeStr === 'Free Time' ||
+    timeStr === 'No Time'
+  ) return null;
   const targetMin = parse12HourToMinutes(timeStr);
   if (isNaN(targetMin)) return null;
 
@@ -3504,16 +3612,11 @@ export function getScientificDynamicGapSlots(params: {
   const getGapsForDate = (dateStr: string): TimeGap[] => {
     const dTasks = params.tasks.filter(t => isTaskScheduledForDate(t, dateStr));
     const dTasksForGaps = dTasks.map(t => {
-      const simList = findSimultaneousTasks(t, dTasks);
-      const isSimul = Boolean(
-        t.isSimultaneous ||
-        (t.simultaneousWithIds && t.simultaneousWithIds.length > 0) ||
-        simList.length > 0
-      );
+      const isSimul = Boolean(t.isSimultaneous);
       return {
         ...t,
         isSimultaneous: isSimul,
-        simultaneousWithIds: isSimul ? (t.simultaneousWithIds?.length ? t.simultaneousWithIds : ['simultaneous-active']) : []
+        simultaneousWithIds: isSimul ? (t.simultaneousWithIds || []) : []
       };
     });
     const dBuffers = params.bufferNotes.filter(n => n.date === dateStr);

@@ -19,6 +19,7 @@ import { NotesView } from './views/NotesView';
 import { AdminSettingsView } from './views/AdminSettingsView';
 import { LoginGate } from './components/LoginGate';
 import { Task, RecurrenceType } from './types';
+import { Plus } from 'lucide-react';
 
 export const AppContent: React.FC = () => {
   const { activeTab, isAuthenticated, isRecurringHubOpen, closeRecurringHub } = useApp();
@@ -140,6 +141,18 @@ export const AppContent: React.FC = () => {
           <AdminSettingsView />
         )}
       </main>
+
+      {/* Mobile Floating Action Button (FAB): Instant Task / Schedule Access on all Mobile Devices */}
+      <div className="fixed bottom-6 right-5 z-40 sm:hidden">
+        <button
+          onClick={() => handleOpenTaskModal()}
+          className="flex items-center gap-2 px-4 py-3 bg-gradient-to-r from-blue-600 via-blue-500 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-full shadow-2xl shadow-blue-600/50 border border-white/20 active:scale-90 transition-all transform cursor-pointer backdrop-blur-md"
+          title="Create New Task / Schedule"
+        >
+          <Plus className="w-5 h-5 stroke-[3]" />
+          <span className="text-xs font-black tracking-wide pr-1">Add Task</span>
+        </button>
+      </div>
 
       {/* Task Creation & Edit Modal */}
       {isTaskModalOpen && (

@@ -204,14 +204,14 @@ export const Header: React.FC<HeaderProps> = ({ onOpenNewTaskModal, onOpenBatchT
           <div className="flex items-center gap-2 shrink-0">
             
             {/* Search Input (Apple Spotlight Pill) */}
-            <div className="relative w-24 sm:w-36 md:w-44 focus-within:w-36 sm:focus-within:w-48 transition-all duration-200">
-              <Search className="w-3.5 h-3.5 text-theme-muted absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+            <div className="relative w-20 xs:w-28 sm:w-36 md:w-44 focus-within:w-32 xs:focus-within:w-36 sm:focus-within:w-48 transition-all duration-200">
+              <Search className="w-3.5 h-3.5 text-theme-muted absolute left-2.5 sm:left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
               <input
                 type="text"
                 placeholder="Search..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full text-xs pl-8 pr-3 py-1.5 rounded-full bg-theme-card-hover/80 border border-theme-border/80 text-theme-text placeholder-theme-muted focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 transition-all shadow-2xs"
+                className="w-full text-xs pl-7 sm:pl-8 pr-2 sm:pr-3 py-1.5 rounded-full bg-theme-card-hover/80 border border-theme-border/80 text-theme-text placeholder-theme-muted focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 transition-all shadow-2xs"
               />
             </div>
 
@@ -224,7 +224,7 @@ export const Header: React.FC<HeaderProps> = ({ onOpenNewTaskModal, onOpenBatchT
                   syncNow();
                 }
               }}
-              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-full border text-xs font-semibold transition-all cursor-pointer shrink-0 active:scale-95 shadow-2xs ${
+              className={`flex items-center gap-1.5 px-2 sm:px-2.5 py-1.5 rounded-full border text-xs font-semibold transition-all cursor-pointer shrink-0 active:scale-95 shadow-2xs ${
                 cloudSyncStatus === 'synced'
                   ? 'bg-emerald-500/10 border-emerald-500/25 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/20'
                   : cloudSyncStatus === 'syncing'
@@ -326,14 +326,14 @@ export const Header: React.FC<HeaderProps> = ({ onOpenNewTaskModal, onOpenBatchT
             </div>
 
             {/* Apple Cupertino Action Pill: New Task + Options Menu */}
-            <div className="relative z-50">
+            <div className="relative z-50 shrink-0">
               <div className="flex items-center rounded-full bg-blue-600 hover:bg-blue-500 text-white shadow-sm shadow-blue-600/30 hover:shadow-md hover:shadow-blue-600/40 transition-all p-0.5">
                 <button
                   onClick={onOpenNewTaskModal}
-                  className="flex items-center gap-1.5 pl-3 pr-2 py-1 text-xs font-bold transition-transform active:scale-95 cursor-pointer whitespace-nowrap"
+                  className="flex items-center gap-1 pl-2.5 sm:pl-3 pr-2 py-1 text-xs font-bold transition-transform active:scale-95 cursor-pointer whitespace-nowrap"
                   title="Create Single Task"
                 >
-                  <Plus className="w-4 h-4 stroke-[2.5]" />
+                  <Plus className="w-4 h-4 stroke-[2.5] shrink-0" />
                   <span className="hidden sm:inline">New Task</span>
                 </button>
 
@@ -341,7 +341,7 @@ export const Header: React.FC<HeaderProps> = ({ onOpenNewTaskModal, onOpenBatchT
 
                 <button
                   onClick={() => setShowActionMenu(!showActionMenu)}
-                  className="p-1.5 hover:bg-white/15 rounded-full transition-colors cursor-pointer"
+                  className="p-1 sm:p-1.5 hover:bg-white/15 rounded-full transition-colors cursor-pointer shrink-0"
                   title="Task Creation Options: Batch Add, Recurring Hub"
                 >
                   <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-200 ${showActionMenu ? 'rotate-180' : ''}`} />

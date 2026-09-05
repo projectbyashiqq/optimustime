@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
+import { isTaskInSleepWindow } from '../utils/timeUtils';
 import { 
   Play, 
   Pause, 
@@ -10,11 +11,12 @@ import {
   Sparkles,
   ShieldAlert,
   ChevronRight,
-  Lock
+  Lock,
+  Moon
 } from 'lucide-react';
 
 export const ActiveTaskBanner: React.FC = () => {
-  const { tasks, completeTask, pauseTask, holdTask, prioritySettings, extendTaskDuration } = useApp();
+  const { tasks, completeTask, pauseTask, holdTask, prioritySettings, capacitySettings, extendTaskDuration } = useApp();
   
   const activeTask = tasks.find(t => t.status === 'Working');
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
@@ -50,23 +52,37 @@ export const ActiveTaskBanner: React.FC = () => {
   };
 
   const priorityMeta = prioritySettings[activeTask.priority];
+  const isNightTask = isTaskInSleepWindow(activeTask, capacitySettings);
 
   return (
-    <div className="bg-gradient-to-r from-blue-600 via-indigo-600 to-sky-600 text-white shadow-xl border-b border-blue-400/30 sticky top-[108px] z-20 animate-slide-up">
+    <div className={`text-white shadow-2xl border-b sticky top-[108px] z-20 animate-slide-up transition-all duration-300 ${
+      isNightTask
+        ? 'bg-gradient-to-r from-[#060e22] via-[#091838] to-[#161238] border-cyan-500/50 shadow-[0_4px_30px_rgba(6,182,212,0.25)]'
+        : 'bg-gradient-to-r from-blue-600 via-indigo-600 to-sky-600 border-blue-400/30'
+    }`}>
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3">
         <div className="flex flex-col md:flex-row items-center justify-between gap-3">
           
           {/* Active Task Meta */}
           <div className="flex items-center gap-3 w-full md:w-auto">
-            <div className="w-9 h-9 rounded-xl bg-white/20 backdrop-blur-md flex items-center justify-center animate-pulse">
-              <Play className="w-5 h-5 text-white fill-white" />
+            <div className={`w-9 h-9 rounded-xl flex items-center justify-center animate-pulse ${
+              isNightTask 
+                ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-400/40 shadow-[0_0_12px_rgba(6,182,212,0.5)]'
+                : 'bg-white/20 backdrop-blur-md text-white'
+            }`}>
+              <Play className={`w-5 h-5 fill-current ${isNightTask ? 'text-cyan-300' : 'text-white'}`} />
             </div>
             <div>
               <div className="flex items-center gap-2 flex-wrap">
-                <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-white/20 tracking-wider">
-                  WORKING NOW
+                <span className={`text-[10px] font-black px-2 py-0.5 rounded tracking-wider flex items-center gap-1 ${
+                  isNightTask
+                    ? 'bg-gradient-to-r from-cyan-500 to-blue-600 text-white shadow-sm ring-1 ring-cyan-300/40'
+                    : 'bg-white/20 text-white'
+                }`}>
+                  {isNightTask && <Moon className="w-2.5 h-2.5 text-cyan-200" />}
+                  <span>{isNightTask ? 'NIGHT WORKING' : 'WORKING NOW'}</span>
                 </span>
-                <span className="text-xs font-mono font-bold text-blue-100">
+                <span className={`text-xs font-mono font-bold ${isNightTask ? 'text-cyan-300' : 'text-blue-100'}`}>
                   [{activeTask.projectCode}]
                 </span>
                 <span 
