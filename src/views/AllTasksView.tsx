@@ -53,10 +53,11 @@ import { TimelineView } from '../components/views/TimelineView';
 import { Day24HourView } from '../components/views/Day24HourView';
 import { WeeklyCalendarView } from '../components/views/WeeklyCalendarView';
 import { MonthlyCalendarView } from '../components/views/MonthlyCalendarView';
-import { ListTodo, Table as TableIcon, CalendarDays, Grid3X3, Repeat } from 'lucide-react';
+import { ListTodo, Table as TableIcon, CalendarDays, Grid3X3, Repeat, Bell, StickyNote } from 'lucide-react';
+import { NotesView } from './NotesView';
 
 type TimeRangeFilter = 'ALL' | 'TODAY' | 'TOMORROW' | 'THIS_WEEK' | 'NEXT_WEEK' | 'NEXT_MONTH' | 'NEXT_YEAR';
-export type AllTasksViewMode = 'list' | 'table' | 'timeline' | '24hours' | 'weekly' | 'monthly';
+export type AllTasksViewMode = 'list' | 'table' | 'timeline' | '24hours' | 'weekly' | 'monthly' | 'notes_reminders';
 
 interface AllTasksViewProps {
   onOpenTaskModal: (task?: Task, date?: string, startTime?: string) => void;
@@ -1001,6 +1002,22 @@ export const AllTasksView: React.FC<AllTasksViewProps> = ({ onOpenTaskModal, onO
               <Grid3X3 className="w-3.5 h-3.5" />
               <span>Month</span>
             </button>
+
+            <button
+              onClick={() => setViewMode('notes_reminders')}
+              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all shrink-0 ${
+                viewMode === 'notes_reminders'
+                  ? 'bg-gradient-to-r from-amber-500 to-rose-500 text-white shadow-sm'
+                  : 'text-theme-muted hover:text-theme-text hover:bg-theme-card'
+              }`}
+              title="Split View: Note | Reminder Dual Matrix"
+            >
+              <div className="flex items-center -space-x-1">
+                <StickyNote className="w-3.5 h-3.5" />
+                <Bell className="w-3.5 h-3.5" />
+              </div>
+              <span>Note | Reminder</span>
+            </button>
           </div>
 
           {/* Density Mode Switcher (Compact View vs Comfortable View) */}
@@ -1176,6 +1193,12 @@ export const AllTasksView: React.FC<AllTasksViewProps> = ({ onOpenTaskModal, onO
           onSelectDate={setSelectedCalendarDate} 
           onOpenTaskModal={onOpenTaskModal} 
         />
+      )}
+
+      {viewMode === 'notes_reminders' && (
+        <div className="pt-2">
+          <NotesView onOpenTaskModal={onOpenTaskModal} />
+        </div>
       )}
 
       {viewMode === 'list' && (
