@@ -108,6 +108,24 @@ export function isNoTimeTask(task?: {
   );
 }
 
+/**
+ * Checks if a category name represents a Note (accepts 'Note', 'Notes', case-insensitive).
+ */
+export function isNoteCategory(cat?: string | null): boolean {
+  if (!cat) return false;
+  const c = cat.trim().toLowerCase();
+  return c === 'note' || c === 'notes';
+}
+
+/**
+ * Checks if a category name represents a Reminder (accepts 'Reminder', 'Reminders', case-insensitive).
+ */
+export function isReminderCategory(cat?: string | null): boolean {
+  if (!cat) return false;
+  const c = cat.trim().toLowerCase();
+  return c === 'reminder' || c === 'reminders';
+}
+
 export const BANGLADESH_TIMEZONE = 'Asia/Dhaka';
 
 export type CircadianPeriodName = 'Night' | 'Morning' | 'Afternoon' | 'Evening';
@@ -489,7 +507,12 @@ export function findScheduleGaps(
     t.status !== 'Reschedule' && 
     t.startTime && 
     t.endTime && 
-    t.startTime !== 'All Day'
+    t.startTime !== 'All Day' &&
+    t.startTime !== 'Anytime' &&
+    t.startTime !== 'Free Time' &&
+    !isNoteCategory((t as any).category) &&
+    !isReminderCategory((t as any).category) &&
+    ((t as any).appointedMinutes === undefined || (t as any).appointedMinutes > 0)
   );
   
   // Combine task intervals (including task + bufferMinutes) and logged bufferNotes intervals

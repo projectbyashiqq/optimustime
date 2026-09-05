@@ -24,7 +24,9 @@ import {
   getScientificDynamicGapSlots,
   ScientificGapSlot,
   isNoTimeTask,
-  formatDurationHuman
+  formatDurationHuman,
+  isNoteCategory,
+  isReminderCategory
 } from '../utils/timeUtils';
 import { 
   Play, 
@@ -172,9 +174,18 @@ export const CategoryView: React.FC<CategoryViewProps> = ({ onOpenTaskModal }) =
   const isSelectedToday = selectedDate === toISODateString(nowTime);
   const currentMinutesFromMidnight = nowTime.getHours() * 60 + nowTime.getMinutes();
 
+  // Robust category matcher supporting both singular/plural (Note/Notes, Reminder/Reminders)
+  const isMatchCategory = (taskCat?: string, targetCatName?: string) => {
+    if (!taskCat || !targetCatName) return false;
+    if (taskCat.toLowerCase() === targetCatName.toLowerCase()) return true;
+    if (isNoteCategory(targetCatName) && isNoteCategory(taskCat)) return true;
+    if (isReminderCategory(targetCatName) && isReminderCategory(taskCat)) return true;
+    return false;
+  };
+
   // All tasks in this category
   const allCategoryTasks = useMemo(() => {
-    return tasks.filter(t => t.category === currentCategory.name);
+    return tasks.filter(t => isMatchCategory(t.category, currentCategory.name));
   }, [tasks, currentCategory.name]);
 
   const totalTasksCount = allCategoryTasks.length;
@@ -186,7 +197,7 @@ export const CategoryView: React.FC<CategoryViewProps> = ({ onOpenTaskModal }) =
   // Filter tasks for selected date under this category (and sub-category if filtered)
   const categoryDateTasks = useMemo(() => {
     return tasks.filter(t => {
-      if (t.category !== currentCategory.name) return false;
+      if (!isMatchCategory(t.category, currentCategory.name)) return false;
       if (!isTaskScheduledForDate(t, selectedDate)) return false;
       if (selectedSubCat !== 'ALL' && t.subCategory !== selectedSubCat) return false;
       return true;
@@ -355,8 +366,8 @@ export const CategoryView: React.FC<CategoryViewProps> = ({ onOpenTaskModal }) =
         {categories.map((cat) => {
           const isSelected = cat.id === currentCategory.id;
           const CatIcon = getCategoryIcon(cat.iconName);
-          const taskCount = tasks.filter(t => t.category === cat.name).length;
-          const hasWorking = tasks.some(t => t.category === cat.name && t.status === 'Working');
+          const taskCount = tasks.filter(t => isMatchCategory(t.category, cat.name)).length;
+          const hasWorking = tasks.some(t => isMatchCategory(t.category, cat.name) && t.status === 'Working');
 
           return (
             <button

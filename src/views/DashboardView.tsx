@@ -29,7 +29,9 @@ import {
   BANGLADESH_TIMEZONE,
   getScientificDynamicGapSlots,
   ScientificGapSlot,
-  isNoTimeTask
+  isNoTimeTask,
+  isNoteCategory,
+  isReminderCategory
 } from '../utils/timeUtils';
 import { 
   Play, 
@@ -852,12 +854,12 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
         <div className="lg:col-span-2 space-y-4">
           
           {/* 1. URGENT REMINDERS & P1 ALERTS (Distinct Urgent Red-Amber Card) */}
-          {dateTasks.filter(t => t.category === 'Reminder' || (t.category === 'Notes' && t.priority === 'P1')).length > 0 && (
+          {dateTasks.filter(t => isReminderCategory(t.category) || (isNoteCategory(t.category) && t.priority === 'P1')).length > 0 && (
             <div className="p-4 rounded-2xl border-2 border-red-400/70 dark:border-red-800/80 bg-red-50/40 dark:bg-red-950/20 space-y-2.5 shadow-sm">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-black text-red-800 dark:text-red-300 uppercase tracking-wider flex items-center gap-1.5 font-display">
                   <Bell className="w-4 h-4 text-red-500 animate-pulse" />
-                  <span>🔔 Reminders & Urgent P1 Alerts ({dateTasks.filter(t => t.category === 'Reminder' || (t.category === 'Notes' && t.priority === 'P1')).length})</span>
+                  <span>🔔 Reminders & Urgent P1 Alerts ({dateTasks.filter(t => isReminderCategory(t.category) || (isNoteCategory(t.category) && t.priority === 'P1')).length})</span>
                 </span>
                 <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-red-100 dark:bg-red-950 text-red-700 dark:text-red-300 border border-red-300 dark:border-red-800 flex items-center gap-1">
                   <Flame className="w-2.5 h-2.5 fill-red-500" />
@@ -866,7 +868,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
               </div>
 
               <div className="space-y-2">
-                {dateTasks.filter(t => t.category === 'Reminder' || (t.category === 'Notes' && t.priority === 'P1')).map((rem) => {
+                {dateTasks.filter(t => isReminderCategory(t.category) || (isNoteCategory(t.category) && t.priority === 'P1')).map((rem) => {
                   const isDone = rem.status === 'Done';
                   return (
                     <div
@@ -923,12 +925,12 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
           )}
 
           {/* 2. QUICK NOTES & THOUGHTS (Distinct Amber Sticky-Note Card) */}
-          {dateTasks.filter(t => t.category === 'Notes' && t.priority !== 'P1').length > 0 && (
+          {dateTasks.filter(t => isNoteCategory(t.category) && t.priority !== 'P1').length > 0 && (
             <div className="p-4 rounded-2xl border-2 border-amber-300/80 dark:border-amber-800/80 bg-amber-50/40 dark:bg-amber-950/20 space-y-2.5 shadow-sm">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-black text-amber-900 dark:text-amber-200 uppercase tracking-wider flex items-center gap-1.5 font-display">
                   <StickyNote className="w-4 h-4 text-amber-500" />
-                  <span>📝 Daily Notes & Context ({dateTasks.filter(t => t.category === 'Notes' && t.priority !== 'P1').length})</span>
+                  <span>📝 Daily Notes & Context ({dateTasks.filter(t => isNoteCategory(t.category) && t.priority !== 'P1').length})</span>
                 </span>
                 <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-900/60 text-amber-800 dark:text-amber-200 font-mono">
                   Auto P5 Background
@@ -936,7 +938,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
               </div>
 
               <div className="space-y-2">
-                {dateTasks.filter(t => t.category === 'Notes' && t.priority !== 'P1').map((note) => {
+                {dateTasks.filter(t => isNoteCategory(t.category) && t.priority !== 'P1').map((note) => {
                   const isDone = note.status === 'Done';
                   return (
                     <div
@@ -1004,13 +1006,13 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
             <h3 className="text-sm font-bold text-theme-text uppercase tracking-wider flex items-center gap-2">
               <span>Day Schedule Timeline</span>
               <span className="text-xs font-normal text-theme-muted">
-                ({dateTasks.filter(t => t.category !== 'Reminder' && t.category !== 'Notes' && t.status !== 'Done' && t.status !== 'Terminated').length} active • {dateTasks.filter(t => t.category !== 'Reminder' && t.category !== 'Notes' && (t.status === 'Done' || t.status === 'Terminated')).length} completed)
+                ({dateTasks.filter(t => !isReminderCategory(t.category) && !isNoteCategory(t.category) && t.status !== 'Done' && t.status !== 'Terminated').length} active • {dateTasks.filter(t => !isReminderCategory(t.category) && !isNoteCategory(t.category) && (t.status === 'Done' || t.status === 'Terminated')).length} completed)
               </span>
             </h3>
           </div>
 
           {/* Active Tasks Section */}
-          {dateTasks.filter(t => t.category !== 'Reminder' && t.category !== 'Notes').length === 0 ? (
+          {dateTasks.filter(t => !isReminderCategory(t.category) && !isNoteCategory(t.category)).length === 0 ? (
             <div className="glass-panel rounded-2xl p-8 text-center space-y-3">
               <div className="w-12 h-12 rounded-2xl bg-blue-50 dark:bg-blue-950/40 text-blue-500 mx-auto flex items-center justify-center">
                 <Clock className="w-6 h-6" />

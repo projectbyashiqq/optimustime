@@ -1,6 +1,7 @@
 import React, { useRef, useEffect, useState, useCallback } from 'react';
 import { useApp } from '../context/AppContext';
 import { ActiveTab } from '../types';
+import { isNoteCategory, isReminderCategory } from '../utils/timeUtils';
 import { 
   LayoutDashboard, 
   Clock, 
@@ -24,7 +25,7 @@ export const Navbar: React.FC = () => {
 
   const workingCount = tasks.filter(t => t.status === 'Working').length;
   const incompleteCount = tasks.filter(t => t.status === 'Incomplete').length;
-  const activeNotesCount = tasks.filter(t => (t.category === 'Notes' || t.category === 'Reminder' || t.appointedMinutes === 0 || t.isAllDay) && t.status !== 'Done' && t.status !== 'Terminated').length;
+  const activeNotesCount = tasks.filter(t => (isNoteCategory(t.category) || isReminderCategory(t.category) || t.appointedMinutes === 0 || t.isAllDay) && t.status !== 'Done' && t.status !== 'Terminated').length;
 
   const navItems: { 
     id: ActiveTab; 

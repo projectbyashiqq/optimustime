@@ -8,7 +8,9 @@ import {
   generateProjectCode,
   isDateTimeBeforeNow,
   shouldRolloverToNextDay,
-  formatDisplayDate
+  formatDisplayDate,
+  isNoteCategory,
+  isReminderCategory
 } from '../utils/timeUtils';
 import { 
   StickyNote, 
@@ -80,21 +82,21 @@ export const NotesView: React.FC<NotesViewProps> = ({ onOpenTaskModal }) => {
   const handleCategorySelect = (newCat: string) => {
     setCategory(newCat);
     setFormError(null);
-    if (newCat === 'Reminder') {
+    if (isReminderCategory(newCat)) {
       // Reminders default to P1 and mandatorily recurring with Yearly by default
       setPriority('P1');
       if (recurrence === 'None') {
         setRecurrence('Yearly');
       }
-    } else if (newCat === 'Notes') {
+    } else if (isNoteCategory(newCat)) {
       // Notes are by default P5 and no other mandatory
       setPriority('P5');
     }
   };
 
-  // Notes & Reminders are Tasks with category === 'Notes' or category === 'Reminder' or appointedMinutes === 0 or isAllDay
+  // Notes & Reminders are Tasks with category Note/Notes or Reminder/Reminders or appointedMinutes === 0 or isAllDay
   const noteTasks = tasks.filter(t => {
-    const isNote = t.category === 'Notes' || t.category === 'Reminder' || t.appointedMinutes === 0 || t.isAllDay;
+    const isNote = isNoteCategory(t.category) || isReminderCategory(t.category) || t.appointedMinutes === 0 || t.isAllDay;
     if (!isNote) return false;
 
     if (searchQuery) {
