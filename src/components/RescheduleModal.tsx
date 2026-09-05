@@ -12,7 +12,8 @@ import {
   getDayOfWeekFromDate,
   isTaskScheduledForDate,
   getTimePeriodForTime,
-  formatDisplayDate
+  formatDisplayDate,
+  formatDurationHuman
 } from '../utils/timeUtils';
 import { useApp } from '../context/AppContext';
 import { 
@@ -307,39 +308,30 @@ export const RescheduleModal: React.FC<RescheduleModalProps> = ({
     return dayData ? dayData.slots : [];
   }, [weekDaysData, anchorDate]);
 
-  const wakingStartMin = useMemo(() => {
-    return parse12HourToMinutes(capacitySettings?.sleepEndTime || capacitySettings?.dayStartTime || '06:00 AM');
-  }, [capacitySettings]);
-
-  // Helper to compute circadian minutes relative to day start (so 12:00 AM midnight is 1440, not 0)
-  const getCircadianMinutes = (timeStr: string) => {
-    const raw = parse12HourToMinutes(timeStr);
-    return raw < wakingStartMin ? raw + 1440 : raw;
-  };
-
-  const taskCircadianStartMin = useMemo(() => {
-    return task.startTime && task.startTime !== 'All Day' ? getCircadianMinutes(task.startTime) : null;
-  }, [task.startTime, wakingStartMin]);
+  // Task's core reference start minutes on the 24-hour day (e.g., 09:00 AM = 540)
+  const taskCoreMin = useMemo(() => {
+    return task.startTime && task.startTime !== 'All Day' ? parse12HourToMinutes(task.startTime) : null;
+  }, [task.startTime]);
 
   // Detect if the exact same core time is free on the target anchorDate
   const sameTimeSlot = useMemo(() => {
-    if (taskCircadianStartMin === null || activeDateSlots.length === 0) return null;
-    return activeDateSlots.find(s => getCircadianMinutes(s.startTime) === taskCircadianStartMin) || null;
-  }, [activeDateSlots, taskCircadianStartMin]);
+    if (taskCoreMin === null || activeDateSlots.length === 0) return null;
+    return activeDateSlots.find(s => parse12HourToMinutes(s.startTime) === taskCoreMin) || null;
+  }, [activeDateSlots, taskCoreMin]);
 
-  // Partition available slots into 3-5 Before (Blue) and 3-5 After (Green) relative to Current Task Time
+  // Partition available slots into Before Core Time (Shift Earlier / Pre-pone) and After Core Time (Shift Later / Post-pone)
   const { beforeSlots, afterSlots } = useMemo(() => {
-    if (taskCircadianStartMin === null || activeDateSlots.length === 0) {
-      return { beforeSlots: [], afterSlots: activeDateSlots.slice(0, 5) };
+    if (taskCoreMin === null || activeDateSlots.length === 0) {
+      return { beforeSlots: [], afterSlots: activeDateSlots };
     }
+    // All slots occurring earlier in the day than the task's core start time
     const before = activeDateSlots
-      .filter(s => getCircadianMinutes(s.startTime) < taskCircadianStartMin)
-      .slice(-5); // Take the 3 to 5 slots closest before current time
+      .filter(s => parse12HourToMinutes(s.startTime) < taskCoreMin);
+    // All slots occurring later in the day than the task's core start time
     const after = activeDateSlots
-      .filter(s => getCircadianMinutes(s.startTime) > taskCircadianStartMin)
-      .slice(0, 5); // Take the 3 to 5 slots closest after current time
+      .filter(s => parse12HourToMinutes(s.startTime) > taskCoreMin);
     return { beforeSlots: before, afterSlots: after };
-  }, [activeDateSlots, taskCircadianStartMin, wakingStartMin]);
+  }, [activeDateSlots, taskCoreMin]);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5 bg-black/40 backdrop-blur-md animate-fade-in">
@@ -687,7 +679,7 @@ export const RescheduleModal: React.FC<RescheduleModalProps> = ({
               </div>
 
               {/* RELATIVE SHIFT TIMELINE MATRIX */}
-              {taskCircadianStartMin !== null && (
+              {taskCoreMin !== null && (
                 <div className="p-3.5 sm:p-4 rounded-2xl bg-theme-card-hover/70 border border-theme-border shadow-xs space-y-3 shrink-0">
                   <div className="flex items-center justify-between gap-2 flex-wrap pb-1 border-b border-theme-border/60">
                     <div className="flex items-center gap-2">
@@ -703,7 +695,7 @@ export const RescheduleModal: React.FC<RescheduleModalProps> = ({
                       </span>
                       <span className="flex items-center gap-1.5">
                         <span className="w-2 h-2 rounded-full bg-amber-500"></span>
-                        <span>Current Anchor</span>
+                        <span>Core Anchor</span>
                       </span>
                       <span className="flex items-center gap-1.5">
                         <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
@@ -733,7 +725,8 @@ export const RescheduleModal: React.FC<RescheduleModalProps> = ({
                           beforeSlots.map((slot, bIdx) => {
                             const isSelected = selectedSlot?.date === slot.date && selectedSlot?.startTime === slot.startTime;
                             const period = getTimePeriodForTime(slot.startTime, timePeriodSettings);
-                            const diffMin = (taskCircadianStartMin ?? 0) - getCircadianMinutes(slot.startTime);
+                            const slotMin = parse12HourToMinutes(slot.startTime);
+                            const diffMin = (taskCoreMin ?? 0) - slotMin;
                             const diffHours = Math.floor(diffMin / 60);
                             const diffMins = diffMin % 60;
                             const diffLabel = diffHours > 0 
@@ -747,10 +740,10 @@ export const RescheduleModal: React.FC<RescheduleModalProps> = ({
                                 onClick={() => setSelectedSlot(slot)}
                                 className={`w-full p-2.5 rounded-xl border text-left transition-all flex items-center justify-between gap-2 cursor-pointer ${
                                   isSelected
-                                    ? 'bg-blue-600 text-white border-blue-600 shadow-md ring-2 ring-blue-500/30'
+                                    ? 'bg-blue-600 text-white border-blue-600 shadow-md ring-2 ring-blue-500/40'
                                     : slot.isSimultaneousSlot
                                       ? 'bg-purple-500/[0.08] dark:bg-purple-950/25 border-purple-400/70 dark:border-purple-500/70 ring-2 ring-purple-500/30 hover:border-purple-500 shadow-[0_0_12px_rgba(168,85,247,0.18)]'
-                                      : 'bg-blue-500/[0.04] dark:bg-blue-400/[0.08] border-blue-500/20 dark:border-blue-400/25 hover:border-blue-500/40 hover:bg-blue-500/[0.08] shadow-2xs'
+                                      : 'bg-gradient-to-r from-blue-500/[0.06] to-indigo-500/[0.04] dark:from-blue-500/[0.1] dark:to-indigo-500/[0.06] border-blue-400/30 dark:border-blue-400/25 hover:border-blue-500 hover:bg-blue-500/[0.1] shadow-2xs'
                                 }`}
                               >
                                 <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
@@ -765,6 +758,13 @@ export const RescheduleModal: React.FC<RescheduleModalProps> = ({
                                     <span>{period?.emoji || '⏰'}</span>
                                     <span>{period?.name || slot.period}</span>
                                   </span>
+                                  {slot.gapDurationMinutes && (
+                                    <span className={`text-[10px] font-mono px-1.5 py-0.2 rounded-full shrink-0 ${
+                                      isSelected ? 'bg-white/20 text-white' : 'bg-blue-500/10 text-blue-700 dark:text-blue-300 border border-blue-500/20'
+                                    }`}>
+                                      {formatDurationHuman(slot.gapDurationMinutes)} gap
+                                    </span>
+                                  )}
                                   {(slot.isAfterMidnight || slot.date !== anchorDate) && (
                                     <span className="text-[10px] font-bold px-1.5 py-0.2 rounded-full bg-purple-100 dark:bg-purple-950 text-purple-700 dark:text-purple-300 border border-purple-300 dark:border-purple-800 flex items-center gap-0.5">
                                       <Moon className="w-2.5 h-2.5" /> Next Day ({formatDisplayDate(slot.date)})
@@ -880,7 +880,8 @@ export const RescheduleModal: React.FC<RescheduleModalProps> = ({
                           afterSlots.map((slot, aIdx) => {
                             const isSelected = selectedSlot?.date === slot.date && selectedSlot?.startTime === slot.startTime;
                             const period = getTimePeriodForTime(slot.startTime, timePeriodSettings);
-                            const diffMin = getCircadianMinutes(slot.startTime) - (taskCircadianStartMin ?? 0);
+                            const slotMin = parse12HourToMinutes(slot.startTime);
+                            const diffMin = slotMin - (taskCoreMin ?? 0);
                             const diffHours = Math.floor(diffMin / 60);
                             const diffMins = diffMin % 60;
                             const diffLabel = diffHours > 0 
@@ -894,10 +895,10 @@ export const RescheduleModal: React.FC<RescheduleModalProps> = ({
                                 onClick={() => setSelectedSlot(slot)}
                                 className={`w-full p-2.5 rounded-xl border text-left transition-all flex items-center justify-between gap-2 cursor-pointer ${
                                   isSelected
-                                    ? 'bg-emerald-600 text-white border-emerald-600 shadow-md ring-2 ring-emerald-500/30'
+                                    ? 'bg-emerald-600 text-white border-emerald-600 shadow-md ring-2 ring-emerald-500/40'
                                     : slot.isSimultaneousSlot
                                       ? 'bg-purple-500/[0.08] dark:bg-purple-950/25 border-purple-400/70 dark:border-purple-500/70 ring-2 ring-purple-500/30 hover:border-purple-500 shadow-[0_0_12px_rgba(168,85,247,0.18)]'
-                                      : 'bg-emerald-500/[0.04] dark:bg-emerald-400/[0.08] border-emerald-500/20 dark:border-emerald-400/25 hover:border-emerald-500/40 hover:bg-emerald-500/[0.08] shadow-2xs'
+                                      : 'bg-gradient-to-r from-emerald-500/[0.06] to-teal-500/[0.04] dark:from-emerald-500/[0.1] dark:to-teal-500/[0.06] border-emerald-400/30 dark:border-emerald-400/25 hover:border-emerald-500 hover:bg-emerald-500/[0.1] shadow-2xs'
                                 }`}
                               >
                                 <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
@@ -912,6 +913,13 @@ export const RescheduleModal: React.FC<RescheduleModalProps> = ({
                                     <span>{period?.emoji || '⏰'}</span>
                                     <span>{period?.name || slot.period}</span>
                                   </span>
+                                  {slot.gapDurationMinutes && (
+                                    <span className={`text-[10px] font-mono px-1.5 py-0.2 rounded-full shrink-0 ${
+                                      isSelected ? 'bg-white/20 text-white' : 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border border-emerald-500/20'
+                                    }`}>
+                                      {formatDurationHuman(slot.gapDurationMinutes)} gap
+                                    </span>
+                                  )}
                                   {(slot.isAfterMidnight || slot.date !== anchorDate) && (
                                     <span className="text-[10px] font-bold px-1.5 py-0.2 rounded-full bg-purple-100 dark:bg-purple-950 text-purple-700 dark:text-purple-300 border border-purple-300 dark:border-purple-800 flex items-center gap-0.5">
                                       <Moon className="w-2.5 h-2.5" /> Next Day ({formatDisplayDate(slot.date)})
@@ -1004,30 +1012,48 @@ export const RescheduleModal: React.FC<RescheduleModalProps> = ({
                         </span>
                       </div>
 
-                      {/* Multiple Time Slots Grid */}
+                      {/* Multiple Time Slots Grid - Dynamic GAP Finders RAW Modes */}
                       {hasSlots ? (
                         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5">
                           {dayGroup.slots.map((slot, sIdx) => {
                             const isSelected = selectedSlot?.date === slot.date && selectedSlot?.startTime === slot.startTime;
                             const isSuggested = suggestedNextSlot?.date === slot.date && suggestedNextSlot?.startTime === slot.startTime;
                             const period = getTimePeriodForTime(slot.startTime, timePeriodSettings);
-                            const isBeforeCurrent = taskCircadianStartMin !== null && getCircadianMinutes(slot.startTime) < taskCircadianStartMin;
-                            const isAfterCurrent = taskCircadianStartMin !== null && getCircadianMinutes(slot.startTime) > taskCircadianStartMin;
+                            const slotMin = parse12HourToMinutes(slot.startTime);
+                            const isBeforeCurrent = taskCoreMin !== null && slotMin < taskCoreMin;
+                            const isAfterCurrent = taskCoreMin !== null && slotMin > taskCoreMin;
+                            const isSameAsCurrent = taskCoreMin !== null && slotMin === taskCoreMin;
+
+                            // Compute offset relative to task Core Time
+                            let diffLabel = '';
+                            if (taskCoreMin !== null) {
+                              const diff = Math.abs(slotMin - taskCoreMin);
+                              const dh = Math.floor(diff / 60);
+                              const dm = diff % 60;
+                              const diffFormatted = dh > 0 ? (dm > 0 ? `${dh}h ${dm}m` : `${dh}h`) : `${dm}m`;
+                              diffLabel = isBeforeCurrent ? `-${diffFormatted}` : isAfterCurrent ? `+${diffFormatted}` : '0m';
+                            }
+
+                            // Distinct Color Coding:
+                            // Earlier (Pre-pone): Cool Blue / Indigo theme
+                            // Later (Post-pone): Fresh Emerald / Green theme
+                            // Core Time Anchor: Warm Amber / Gold theme
+                            const cardThemeClasses = isSelected
+                              ? 'bg-blue-600/10 dark:bg-blue-400/15 border-blue-500 shadow-sm ring-2 ring-blue-500/30'
+                              : slot.isSimultaneousSlot
+                                ? 'bg-purple-500/[0.08] dark:bg-purple-950/25 border-purple-400/70 dark:border-purple-500/70 ring-2 ring-purple-500/30 hover:border-purple-500 shadow-[0_0_12px_rgba(168,85,247,0.18)]'
+                                : isSameAsCurrent
+                                  ? 'bg-amber-500/[0.08] dark:bg-amber-400/[0.1] border-amber-400/70 dark:border-amber-400/50 hover:border-amber-500 shadow-2xs'
+                                  : isBeforeCurrent
+                                    ? 'bg-gradient-to-br from-blue-500/[0.07] via-blue-500/[0.04] to-indigo-500/[0.03] dark:from-blue-500/[0.12] dark:via-blue-500/[0.07] dark:to-indigo-500/[0.05] border-blue-400/40 dark:border-blue-400/30 hover:border-blue-500 hover:shadow-2xs'
+                                    : 'bg-gradient-to-br from-emerald-500/[0.07] via-emerald-500/[0.04] to-teal-500/[0.03] dark:from-emerald-500/[0.12] dark:via-emerald-500/[0.07] dark:to-teal-500/[0.05] border-emerald-400/40 dark:border-emerald-400/30 hover:border-emerald-500 hover:shadow-2xs';
 
                             return (
                               <button
                                 key={sIdx}
                                 type="button"
                                 onClick={() => setSelectedSlot(slot)}
-                                className={`p-3 rounded-xl border text-left transition-all relative flex flex-col justify-between gap-2 cursor-pointer ${
-                                  isSelected
-                                    ? 'bg-blue-600/10 dark:bg-blue-400/15 border-blue-500 shadow-sm ring-2 ring-blue-500/30'
-                                    : slot.isSimultaneousSlot
-                                      ? 'bg-purple-500/[0.08] dark:bg-purple-950/25 border-purple-400/70 dark:border-purple-500/70 ring-2 ring-purple-500/30 hover:border-purple-500 shadow-[0_0_12px_rgba(168,85,247,0.18)]'
-                                      : isSuggested
-                                        ? 'bg-emerald-500/[0.06] dark:bg-emerald-400/[0.08] border-emerald-500/30 hover:border-emerald-500/50'
-                                        : 'bg-theme-card hover:bg-theme-card-hover border-theme-border hover:border-blue-400 dark:hover:border-blue-600'
-                                }`}
+                                className={`p-3 rounded-xl border text-left transition-all relative flex flex-col justify-between gap-2 cursor-pointer ${cardThemeClasses}`}
                               >
                                 {/* Top Row: Time Period on Left, Clean Badges on Right */}
                                 <div className="flex items-center justify-between gap-2 w-full">
@@ -1058,14 +1084,14 @@ export const RescheduleModal: React.FC<RescheduleModalProps> = ({
                                         <Check className="w-2.5 h-2.5 stroke-[2.5]" />
                                       </div>
                                     ) : (
-                                      <span className="text-[11px] font-mono text-theme-muted">
+                                      <span className="text-[11px] font-mono font-semibold text-theme-muted">
                                         #{sIdx + 1}
                                       </span>
                                     )}
                                   </div>
                                 </div>
 
-                                {/* Middle Row: Time + Offset Pill */}
+                                {/* Middle Row: Time + Distinct Color Offset Pill */}
                                 <div className="flex items-center justify-between gap-2 my-0.5 flex-wrap">
                                   <div className="text-xs sm:text-sm font-bold font-mono text-theme-text flex items-center gap-1.5">
                                     <span>{slot.startTime}</span>
@@ -1074,19 +1100,27 @@ export const RescheduleModal: React.FC<RescheduleModalProps> = ({
                                   </div>
 
                                   {isBeforeCurrent ? (
-                                    <span className="text-[10px] font-semibold font-mono px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-700 dark:text-blue-300 border border-blue-500/20 shrink-0 flex items-center gap-0.5">
-                                      <ArrowLeft className="w-2.5 h-2.5" /> Earlier
+                                    <span className="text-[10px] font-semibold font-mono px-2 py-0.5 rounded-full bg-blue-500/15 text-blue-700 dark:text-blue-300 border border-blue-500/30 shrink-0 flex items-center gap-1">
+                                      <ArrowLeft className="w-2.5 h-2.5 stroke-[2.5]" /> Earlier ({diffLabel})
                                     </span>
                                   ) : isAfterCurrent ? (
-                                    <span className="text-[10px] font-semibold font-mono px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border border-emerald-500/20 shrink-0 flex items-center gap-0.5">
-                                      Later <ArrowRight className="w-2.5 h-2.5" />
+                                    <span className="text-[10px] font-semibold font-mono px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30 shrink-0 flex items-center gap-1">
+                                      Later ({diffLabel}) <ArrowRight className="w-2.5 h-2.5 stroke-[2.5]" />
+                                    </span>
+                                  ) : isSameAsCurrent ? (
+                                    <span className="text-[10px] font-semibold font-mono px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-700 dark:text-amber-300 border border-amber-500/30 shrink-0 flex items-center gap-1">
+                                      ★ Core Time Anchor
                                     </span>
                                   ) : null}
                                 </div>
 
-                                {/* Bottom Row: Duration + Sleep Protection */}
+                                {/* Bottom Row: Dynamic GAP Finder Raw Gap Duration + Sleep Protection */}
                                 <div className="flex items-center justify-between text-[10px] text-theme-muted font-medium pt-1.5 border-t border-theme-border/40">
-                                  <span>{task.appointedMinutes}m block</span>
+                                  <span className="font-mono font-semibold text-theme-text/80 flex items-center gap-1">
+                                    <Clock className="w-2.5 h-2.5 text-blue-500" />
+                                    <span>{formatDurationHuman(slot.gapDurationMinutes || task.appointedMinutes)} free gap</span>
+                                    <span className="text-theme-muted/50 font-normal">({task.appointedMinutes}m task)</span>
+                                  </span>
                                   <span className="text-emerald-600 dark:text-emerald-400 font-medium">No Sleep Overlap ✓</span>
                                 </div>
                               </button>

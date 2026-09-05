@@ -216,6 +216,17 @@ export function getCurrentRoundedTime12Hour(stepMinutes = 15): string {
   return formatMinutesTo12Hour(rounded % 1440);
 }
 
+/**
+ * Get current Bangladesh time + specified minutes, rounded to nearest step (default: 5 min).
+ * Strictly guarantees the resulting time is strictly in the future for forward planning.
+ */
+export function getCurrentTimePlusMinutes(minutesToAdd = 5, stepMinutes = 5): string {
+  const now = getBangladeshNow();
+  const totalMinutes = now.getHours() * 60 + now.getMinutes() + minutesToAdd;
+  const rounded = Math.ceil(totalMinutes / stepMinutes) * stepMinutes;
+  return formatMinutesTo12Hour(rounded % 1440);
+}
+
 // Calculate difference in minutes between two 12-hour strings
 export function diffTimeInMinutes(startTimeStr: string, endTimeStr: string): number {
   if (
@@ -1078,6 +1089,7 @@ export interface AvailableSlotResult {
   crossesMidnight?: boolean;
   endDate?: string;
   isAfterMidnight?: boolean;
+  gapDurationMinutes?: number;
 }
 
 export interface CurrentTaskSlotInfo {
@@ -1307,6 +1319,9 @@ export function findAllAvailableSlotsOnDate(
       calculatedEndDate = toISODateString(new Date(sy, sm - 1, sd + 1));
     }
 
+    const parentGap = gaps.find(g => startMin >= g.start && endMin <= g.end);
+    const gapDuration = parentGap ? (parentGap.end - parentGap.start) : durationMinutes;
+
     results.push({
       date: effectiveDateStr,
       dayOfWeek: effectiveDayOfWeek,
@@ -1320,50 +1335,33 @@ export function findAllAvailableSlotsOnDate(
       simultaneousTaskTitle: simTask ? (simTask as any).title : undefined,
       crossesMidnight: crosses,
       endDate: calculatedEndDate,
-      isAfterMidnight: daysToAdd > 0
+      isAfterMidnight: daysToAdd > 0,
+      gapDurationMinutes: gapDuration
     });
     return true;
   };
 
-  // Collect candidate slot starting minutes across all gaps
+  // Pure Dynamic GAP Finder RAW mode:
+  // ONLY generate slots for the discrete raw gaps of the day!
+  // Each genuine raw gap contributes its start opening.
+  // In addition, if the preferred core time falls cleanly inside a gap, include that core time slot as well.
   const candidateStarts = new Set<number>();
-  const step = Math.max(15, Math.min(30, durationMinutes >= 90 ? 45 : 30));
 
   for (const gap of gaps) {
     candidateStarts.add(gap.start);
-    let nextStart = gap.start + step;
-    while (nextStart + durationMinutes <= gap.end) {
-      candidateStarts.add(nextStart);
-      nextStart += step;
-    }
   }
 
-  // If a preferred core time was provided, explicitly anchor around it inside the gaps
   if (preferredTimeStr) {
     let prefMin = parse12HourToMinutes(preferredTimeStr);
     if (dayEndMin > 1440 && prefMin < dayStartMin) prefMin += 1440;
-
-    const proximityOffsets = [0, -15, 15, -30, 30, -45, 45, -60, 60, -90, 90, -120, 120, -150, 150, -180, 180, -240, 240];
-    for (const off of proximityOffsets) {
-      const targetMin = prefMin + off;
-      for (const gap of gaps) {
-        if (targetMin >= gap.start && targetMin + durationMinutes <= gap.end) {
-          candidateStarts.add(targetMin);
-        }
+    for (const gap of gaps) {
+      if (prefMin >= gap.start && prefMin + durationMinutes <= gap.end) {
+        candidateStarts.add(prefMin);
       }
     }
   }
 
-  // Sort candidate starts:
-  // If preferredTimeStr is provided: sort by proximity to the task's CORE TIME so that core time and adjacent slots are chosen first!
-  let sortedCandidates = Array.from(candidateStarts);
-  if (preferredTimeStr) {
-    let prefMin = parse12HourToMinutes(preferredTimeStr);
-    if (dayEndMin > 1440 && prefMin < dayStartMin) prefMin += 1440;
-    sortedCandidates.sort((a, b) => Math.abs(a - prefMin) - Math.abs(b - prefMin));
-  } else {
-    sortedCandidates.sort((a, b) => a - b);
-  }
+  const sortedCandidates = Array.from(candidateStarts).sort((a, b) => a - b);
 
   for (const cand of sortedCandidates) {
     if (results.length >= maxSlotsPerDay) break;
@@ -3039,6 +3037,222 @@ export function computeNextFreeRawTimes(
   }
 
   return freeTimes.slice(0, 5);
+}
+
+export interface SmartAmPmRecommendations {
+  recommendedPeriod: 'AM' | 'PM';
+  suggestedAmTime: string;
+  suggestedPmTime: string;
+  amIsSleep: boolean;
+  pmIsSleep: boolean;
+  amIsPast: boolean;
+  pmIsPast: boolean;
+  bestSuggestionTime: string;
+  bestSuggestionLabel: string;
+  isSimultaneousAllowed: boolean;
+}
+
+/**
+ * Intelligent AM / PM Suggestion Engine.
+ * Evaluates (+30min) of current time:
+ * - Avoids sleep time (e.g. 11:00 PM – 06:00 AM)
+ * - Avoids occupied scheduled task time
+ * - Explicitly ALLOWS simultaneous task time when isSimultaneous is active
+ * - Determines the closest valid period and suggested clock times for AM and PM.
+ */
+export function getSmartAmPmRecommendations(params: {
+  taskDate: string;
+  tasks: Array<{
+    id?: string;
+    taskDate: string;
+    startTime: string;
+    endTime: string;
+    status: string;
+    bufferMinutes?: number;
+    isSimultaneous?: boolean;
+    recurrence?: string;
+    selectedDays?: string[];
+    excludedDates?: string[];
+  }>;
+  bufferNotes?: Array<{ date?: string; startTime: string; endTime: string }>;
+  capacitySettings?: {
+    dayStartTime?: string;
+    dayEndTime?: string;
+    sleepStartTime?: string;
+    sleepEndTime?: string;
+    defaultBufferMinutes?: number;
+  };
+  isSimultaneousCandidate?: boolean;
+  ignoreTaskId?: string;
+  referenceDate?: Date;
+}): SmartAmPmRecommendations {
+  const bstNow = params.referenceDate || getBangladeshNow();
+  const todayStr = toISODateString(bstNow);
+  const isDateToday = params.taskDate === todayStr;
+  const isDateFuture = params.taskDate > todayStr;
+  const curMins = bstNow.getHours() * 60 + bstNow.getMinutes();
+
+  const sleepStartStr = params.capacitySettings?.sleepStartTime || params.capacitySettings?.dayEndTime || '11:00 PM';
+  const sleepEndStr = params.capacitySettings?.sleepEndTime || params.capacitySettings?.dayStartTime || '06:00 AM';
+  const sleepStartMin = parse12HourToMinutes(sleepStartStr);
+  const sleepEndMin = parse12HourToMinutes(sleepEndStr);
+
+  const isMinuteInSleep = (min: number): boolean => {
+    const m = ((min % 1440) + 1440) % 1440;
+    if (sleepStartMin > sleepEndMin) {
+      return m >= sleepStartMin || m < sleepEndMin;
+    } else {
+      return m >= sleepStartMin && m < sleepEndMin;
+    }
+  };
+
+  const isWindowOccupied = (startMin: number, dur = 30): boolean => {
+    const endMin = startMin + dur;
+    const dateTasks = params.tasks.filter(t => 
+      t.id !== params.ignoreTaskId &&
+      t.status !== 'Terminated' &&
+      t.status !== 'Reschedule' &&
+      t.startTime && t.endTime &&
+      t.startTime !== 'All Day' &&
+      !isNoTimeTask(t as any) &&
+      isTaskScheduledForDate(t, params.taskDate)
+    );
+
+    for (const t of dateTasks) {
+      if (t.isSimultaneous || params.isSimultaneousCandidate) {
+        continue;
+      }
+      const tStart = parse12HourToMinutes(t.startTime);
+      let tEnd = parse12HourToMinutes(t.endTime);
+      if (tEnd <= tStart) tEnd += 1440;
+      const tBuf = t.bufferMinutes ?? params.capacitySettings?.defaultBufferMinutes ?? 0;
+      const tEndWithBuf = tEnd + tBuf;
+
+      if (Math.max(startMin, tStart) < Math.min(endMin, tEndWithBuf)) {
+        return true;
+      }
+    }
+    return false;
+  };
+
+  let amTargetMin = 0;
+  let amIsPast = false;
+  let amIsSleep = false;
+
+  if (isDateToday) {
+    if (curMins >= 720) {
+      amIsPast = true;
+      amTargetMin = Math.max(sleepEndMin, parse12HourToMinutes(params.capacitySettings?.dayStartTime || '06:00 AM'));
+    } else {
+      let cand = Math.ceil((curMins + 30) / 5) * 5;
+      if (cand >= 720) cand = 715;
+      if (isMinuteInSleep(cand)) {
+        amIsSleep = true;
+        cand = sleepEndMin;
+      }
+      while (cand < 720 && isWindowOccupied(cand, 30)) {
+        cand += 15;
+      }
+      amTargetMin = cand < 720 ? cand : 540;
+    }
+  } else if (isDateFuture) {
+    let cand = Math.max(sleepEndMin, parse12HourToMinutes(params.capacitySettings?.dayStartTime || '06:00 AM'));
+    while (cand < 720 && isWindowOccupied(cand, 30)) {
+      cand += 15;
+    }
+    amTargetMin = cand < 720 ? cand : 540;
+  } else {
+    amIsPast = true;
+    amTargetMin = 540;
+  }
+
+  let pmTargetMin = 720;
+  let pmIsPast = false;
+  let pmIsSleep = false;
+
+  if (isDateToday) {
+    if (curMins >= 1435) {
+      pmIsPast = true;
+      pmTargetMin = 720;
+    } else if (curMins >= 720) {
+      let cand = Math.ceil((curMins + 30) / 5) * 5;
+      if (cand >= 1440) cand = 1435;
+      if (isMinuteInSleep(cand)) {
+        pmIsSleep = true;
+      }
+      while (cand < 1440 && isWindowOccupied(cand, 30)) {
+        cand += 15;
+      }
+      pmTargetMin = cand < 1440 ? cand : 840;
+    } else {
+      let cand = Math.max(720, Math.ceil((curMins + 720 + 30) / 5) * 5 % 1440);
+      if (cand < 720) cand = 720;
+      if (isMinuteInSleep(cand)) {
+        pmIsSleep = true;
+      }
+      while (cand < 1440 && isWindowOccupied(cand, 30)) {
+        cand += 15;
+      }
+      pmTargetMin = cand < 1440 ? cand : 840;
+    }
+  } else if (isDateFuture) {
+    let cand = 840;
+    while (cand < 1440 && isWindowOccupied(cand, 30)) {
+      cand += 15;
+    }
+    pmTargetMin = cand < 1440 ? cand : 840;
+  } else {
+    pmIsPast = true;
+    pmTargetMin = 840;
+  }
+
+  const suggestedAmTime = formatMinutesTo12Hour(amTargetMin);
+  const suggestedPmTime = formatMinutesTo12Hour(pmTargetMin);
+
+  let recommendedPeriod: 'AM' | 'PM' = 'AM';
+
+  if (isDateToday) {
+    if (amIsPast && !pmIsPast) {
+      recommendedPeriod = 'PM';
+    } else if (!amIsPast && pmIsPast) {
+      recommendedPeriod = 'AM';
+    } else {
+      const amSleep = isMinuteInSleep(amTargetMin);
+      const pmSleep = isMinuteInSleep(pmTargetMin);
+      if (amSleep && !pmSleep) {
+        recommendedPeriod = 'PM';
+      } else if (!amSleep && pmSleep) {
+        recommendedPeriod = 'AM';
+      } else {
+        const amDiff = Math.abs(amTargetMin - curMins);
+        const pmDiff = Math.abs(pmTargetMin - curMins);
+        recommendedPeriod = amDiff <= pmDiff ? 'AM' : 'PM';
+      }
+    }
+  } else {
+    recommendedPeriod = 'AM';
+  }
+
+  const bestSuggestionTime = recommendedPeriod === 'AM' ? suggestedAmTime : suggestedPmTime;
+  let bestSuggestionLabel = '';
+  if (recommendedPeriod === 'AM') {
+    bestSuggestionLabel = amIsSleep ? 'Wakeup Slot (Sleep avoided)' : 'Closest AM (+30m)';
+  } else {
+    bestSuggestionLabel = pmIsSleep ? 'Evening Slot (Sleep avoided)' : 'Closest PM (+30m)';
+  }
+
+  return {
+    recommendedPeriod,
+    suggestedAmTime,
+    suggestedPmTime,
+    amIsSleep: isMinuteInSleep(amTargetMin),
+    pmIsSleep: isMinuteInSleep(pmTargetMin),
+    amIsPast,
+    pmIsPast,
+    bestSuggestionTime,
+    bestSuggestionLabel,
+    isSimultaneousAllowed: Boolean(params.isSimultaneousCandidate)
+  };
 }
 
 export function getSmartNextFreeSlot(

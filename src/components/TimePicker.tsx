@@ -118,6 +118,22 @@ export const TimePicker: React.FC<TimePickerProps> = ({
     emitTimeChange(h, m, p);
   };
 
+  const handleSetNowPlusMinutes = (mins = 5) => {
+    const bdNow = getBangladeshNow();
+    const totalMinutes = bdNow.getHours() * 60 + bdNow.getMinutes() + mins;
+    const rounded = Math.ceil(totalMinutes / 5) * 5 % 1440;
+    let h = Math.floor(rounded / 60);
+    const m = rounded % 60;
+    const p: 'AM' | 'PM' = h >= 12 ? 'PM' : 'AM';
+    if (h === 0) h = 12;
+    else if (h > 12) h -= 12;
+
+    setSelectedHours(h);
+    setSelectedMinutes(m);
+    setSelectedPeriod(p);
+    emitTimeChange(h, m, p);
+  };
+
   const handleAdjustMinutes = (delta: number) => {
     const currentMin = parse12HourToMinutes(value);
     const newTotal = ((currentMin + delta) % 1440 + 1440) % 1440;
@@ -291,26 +307,34 @@ export const TimePicker: React.FC<TimePickerProps> = ({
           </div>
 
           {/* Quick Presets & Done */}
-          <div className="flex items-center justify-between pt-2 border-t border-theme-border text-xs">
-            <div className="flex items-center gap-1">
+          <div className="flex items-center justify-between pt-2 border-t border-theme-border text-xs gap-1 flex-wrap">
+            <div className="flex items-center gap-1 flex-wrap">
               <button
                 type="button"
-                onClick={handleSetCurrentTime}
-                className="px-2 py-1 rounded-lg bg-theme-card-hover hover:bg-theme-border text-theme-muted text-[11px] font-semibold"
+                onClick={() => handleSetNowPlusMinutes(5)}
+                className="px-2 py-1 rounded-lg bg-blue-500/10 hover:bg-blue-500/20 text-blue-600 dark:text-blue-400 text-[11px] font-bold cursor-pointer"
+                title="Set to Current Time + 5 minutes"
               >
-                Now
+                Now +5m
+              </button>
+              <button
+                type="button"
+                onClick={() => handleAdjustMinutes(5)}
+                className="px-1.5 py-1 rounded-lg bg-theme-card-hover hover:bg-theme-border text-theme-muted text-[11px] font-semibold cursor-pointer"
+              >
+                +5m
               </button>
               <button
                 type="button"
                 onClick={() => handleAdjustMinutes(15)}
-                className="px-2 py-1 rounded-lg bg-theme-card-hover hover:bg-theme-border text-theme-muted text-[11px] font-semibold"
+                className="px-1.5 py-1 rounded-lg bg-theme-card-hover hover:bg-theme-border text-theme-muted text-[11px] font-semibold cursor-pointer"
               >
                 +15m
               </button>
               <button
                 type="button"
                 onClick={() => handleAdjustMinutes(30)}
-                className="px-2 py-1 rounded-lg bg-theme-card-hover hover:bg-theme-border text-theme-muted text-[11px] font-semibold"
+                className="px-1.5 py-1 rounded-lg bg-theme-card-hover hover:bg-theme-border text-theme-muted text-[11px] font-semibold cursor-pointer"
               >
                 +30m
               </button>
@@ -319,7 +343,7 @@ export const TimePicker: React.FC<TimePickerProps> = ({
             <button
               type="button"
               onClick={() => setIsOpen(false)}
-              className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-bold text-xs flex items-center gap-1 shadow-sm"
+              className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-bold text-xs flex items-center gap-1 shadow-sm cursor-pointer ml-auto"
             >
               <Check className="w-3.5 h-3.5" />
               <span>Done</span>

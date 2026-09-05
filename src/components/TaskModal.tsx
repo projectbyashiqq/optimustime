@@ -15,13 +15,13 @@ import {
   toISODateString, 
   getDayOfWeekFromDate,
   getCurrentRoundedTime12Hour,
+  getCurrentTimePlusMinutes,
   SHORT_DAYS,
   getSmartNextFreeSlot,
   getRecommendedDayFreeSlots,
   RecommendedSlot,
   isTimeInSleepWindow,
   isDateTimeBeforeNow,
-  shouldRolloverToNextDay,
   formatMinutesTo12Hour,
   calculateFirstRecurringDate,
   getTimePeriodForTime,
@@ -31,6 +31,11 @@ import {
   getBangladeshNow,
   parse12HourToMinutes,
   computeNextFreeRawTimes,
+  getScientificDynamicGapSlots,
+  ScientificGapSlot,
+  formatDurationHuman,
+  getSmartAmPmRecommendations,
+  SmartAmPmRecommendations,
   isNoTimeTask
 } from '../utils/timeUtils';
 import { ConflictModal } from './ConflictModal';
@@ -185,8 +190,10 @@ export const TaskModal: React.FC<TaskModalProps> = ({
       : effectiveDefaultBuffer
   );
   
-  // Smart Next Free Slot Computation on Creation
-  // Priority: (1) taskToEdit (2) initialStartTime (3) computeNextFreeRawTimes (now + 5 min, conflict-free)
+  // Smart Clock Box Initialization:
+  // - Existing task: use taskToEdit.startTime
+  // - Preset initialStartTime: use initialStartTime
+  // - New task: Clock box defaults strictly to Current Time + 5 min (rounded to 5m)
   const initialSmartSlot = useMemo(() => {
     if (taskToEdit) {
       return { startTime: taskToEdit.startTime, endTime: taskToEdit.endTime, dateStr: taskToEdit.taskDate, crossesMidnight: false };
@@ -198,40 +205,47 @@ export const TaskModal: React.FC<TaskModalProps> = ({
 
     const todayStr = toISODateString(getBangladeshNow());
     const targetDate = initialDate || todayStr;
-    const freeRawSlots = computeNextFreeRawTimes(
-      targetDate,
-      Math.min(30, defaultMin),
-      tasks,
-      bufferNotes,
-      undefined,
-      effectiveDefaultBuffer,
-      capacitySettings
-    );
+    const defaultStart = getCurrentTimePlusMinutes(5, 5);
 
-    if (freeRawSlots.length > 0) {
-      const best = freeRawSlots[0];
-      return { startTime: best, endTime: addMinutesToTime(best, defaultMin), dateStr: targetDate, crossesMidnight: false };
-    }
-
-    const roundedNow = getCurrentRoundedTime12Hour(5);
-    return { startTime: roundedNow, endTime: addMinutesToTime(roundedNow, defaultMin), dateStr: targetDate, crossesMidnight: false };
-  }, [taskToEdit, initialStartTime, initialDate, defaultMin, tasks, bufferNotes, capacitySettings, effectiveDefaultBuffer]);
+    return {
+      startTime: defaultStart,
+      endTime: addMinutesToTime(defaultStart, defaultMin),
+      dateStr: targetDate,
+      crossesMidnight: false
+    };
+  }, [taskToEdit, initialStartTime, initialDate, defaultMin]);
 
   const [startTime, setStartTime] = useState<string>(initialSmartSlot.startTime);
   const [endTime, setEndTime] = useState<string>(initialSmartSlot.endTime);
 
-  // Next 3-5 Free Raw Time Suggestions for taskDate (Current Time + 5m, or after current tasks)
-  const freeRawTimeSuggestions = useMemo(() => {
-    return computeNextFreeRawTimes(
-      taskDate,
-      Math.min(30, appointedMinutes),
+  // Dynamic GAP Finder (RAW Mode) Free Slots for next 24 hours starting from taskDate
+  const dynamicGapRawSlots = useMemo(() => {
+    const bstNow = getBangladeshNow();
+    const curMins = bstNow.getHours() * 60 + bstNow.getMinutes();
+    return getScientificDynamicGapSlots({
+      selectedDate: taskDate,
       tasks,
       bufferNotes,
-      taskToEdit?.id,
-      effectiveDefaultBuffer,
-      capacitySettings
-    );
-  }, [taskDate, appointedMinutes, tasks, bufferNotes, taskToEdit?.id, effectiveDefaultBuffer, capacitySettings]);
+      capacitySettings,
+      timePeriodSettings,
+      minSlots: 10,
+      currentMinutes: curMins,
+      referenceDate: bstNow,
+      decomposeUltradian: false // RAW discrete schedule openings
+    });
+  }, [taskDate, tasks, bufferNotes, capacitySettings, timePeriodSettings]);
+
+  // Intelligent AM / PM Suggestion Engine (+30min from current time, avoids sleep & busy slots, allows simultaneous)
+  const smartAmPm = useMemo(() => {
+    return getSmartAmPmRecommendations({
+      taskDate,
+      tasks,
+      bufferNotes,
+      capacitySettings,
+      isSimultaneousCandidate: isSimultaneous,
+      ignoreTaskId: taskToEdit?.id
+    });
+  }, [taskDate, tasks, bufferNotes, capacitySettings, isSimultaneous, taskToEdit?.id]);
   
   const [status, setStatus] = useState<TaskStatus>(taskToEdit?.status || 'Pending');
   const [recurrence, setRecurrence] = useState<RecurrenceType>(
@@ -260,9 +274,10 @@ export const TaskModal: React.FC<TaskModalProps> = ({
   // Validation state
   const [validationError, setValidationError] = useState<string | null>(null);
 
-  // Rollover & Past Time Warning state
+  // Past Time Warning & 2-Step Confirmation state
   const [rolloverNotice, setRolloverNotice] = useState<{ message: string; originalDate: string; nextDate: string } | null>(null);
   const [showPastTimeModal, setShowPastTimeModal] = useState(false);
+  const [pastTimeConfirmStep, setPastTimeConfirmStep] = useState<1 | 2>(1);
   const [hasConfirmedPastTime, setHasConfirmedPastTime] = useState(false);
 
   // Conflict state
@@ -281,13 +296,6 @@ export const TaskModal: React.FC<TaskModalProps> = ({
       ? 'recurrence'
       : 'subtasks'
   );
-
-  // Auto-roll date to tomorrow if initial smart slot landed past midnight
-  useEffect(() => {
-    if (!taskToEdit && !initialDate && initialSmartSlot.crossesMidnight && initialSmartSlot.dateStr) {
-      setTaskDate(initialSmartSlot.dateStr);
-    }
-  }, [taskToEdit, initialDate, initialSmartSlot]);
 
   // Compute exact first scheduled date for recurring tasks
   const firstOccurrencePreview = useMemo(() => {
@@ -398,31 +406,18 @@ export const TaskModal: React.FC<TaskModalProps> = ({
     setValidationError(null);
   };
 
-  // When start time changes, recompute end time and evaluate midnight rollover
+  // When start time changes, recompute end time without silently altering taskDate
   const handleStartTimeChange = (newStart: string) => {
-    const oldStart = startTime;
     setStartTime(newStart);
     setValidationError(null);
     setHasConfirmedPastTime(false);
     setEndTime(addMinutesToTime(newStart, appointedMinutes));
-
-    // Check if newStart crosses midnight relative to existing tasks or late evening hours
-    const existingOnDate = tasks.filter(t => t.taskDate === taskDate && t.id !== taskToEdit?.id);
-    const rollover = shouldRolloverToNextDay(taskDate, newStart, oldStart, existingOnDate);
-    if (rollover.shouldRollover && taskDate !== rollover.nextDateStr) {
-      const prevDate = taskDate;
-      setTaskDate(rollover.nextDateStr);
-      setRolloverNotice({
-        message: `🌙 Rolled over to Next Day (${rollover.nextDateStr}): ${newStart} follows late night work (12:30 AM is after midnight).`,
-        originalDate: prevDate,
-        nextDate: rollover.nextDateStr
-      });
-    }
+    // NOTE: Stick strictly to the selected date. Never auto-change date behind user's back.
   };
 
   // 1-Click AM / PM Period Toggle (accurately supports 12:pm, 12:00 Am, etc.)
   const handleTogglePeriod = (targetPeriod: 'AM' | 'PM') => {
-    if (!startTime || startTime === 'All Day') return;
+    if (!startTime || startTime === 'All Day' || startTime === 'Anytime') return;
     const totalMin = parse12HourToMinutes(startTime);
     let h = Math.floor(totalMin / 60);
     const m = totalMin % 60;
@@ -435,38 +430,36 @@ export const TaskModal: React.FC<TaskModalProps> = ({
     setStartTime(newStartTime);
     setEndTime(addMinutesToTime(newStartTime, appointedMinutes));
     setValidationError(null);
+    setHasConfirmedPastTime(false);
   };
 
   // Resolution handlers for past time warning dialog
   const handleAdjustToNextFreeSlot = () => {
-    const now = new Date();
-    const isAfternoonOrEvening = now.getHours() >= 12;
-    const smart = getSmartNextFreeSlot(
-      toISODateString(new Date()),
-      appointedMinutes,
-      tasks,
-      bufferNotes,
-      taskToEdit?.id,
-      effectiveDefaultBuffer,
-      capacitySettings,
-      isAfternoonOrEvening
-    );
-    setTaskDate(smart.dateStr || toISODateString(new Date()));
-    setStartTime(smart.startTime);
-    setEndTime(smart.endTime);
+    const nextPlus5 = getCurrentTimePlusMinutes(5, 5);
+    setStartTime(nextPlus5);
+    setEndTime(addMinutesToTime(nextPlus5, appointedMinutes));
     setShowPastTimeModal(false);
-    setHasConfirmedPastTime(true);
+    setPastTimeConfirmStep(1);
+    setHasConfirmedPastTime(false);
+    setValidationError(null);
   };
 
   const handleShiftToTomorrow = () => {
     setTaskDate(tomorrowStr);
     setShowPastTimeModal(false);
+    setPastTimeConfirmStep(1);
     setHasConfirmedPastTime(true);
+    setValidationError(null);
+  };
+
+  const handleProceedToPastConfirmStep2 = () => {
+    setPastTimeConfirmStep(2);
   };
 
   const handleConfirmPastEntry = () => {
     setHasConfirmedPastTime(true);
     setShowPastTimeModal(false);
+    setPastTimeConfirmStep(1);
     handleSave(false, true);
   };
 
@@ -1406,18 +1399,9 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4 items-start">
                       
                       {/* Left: Scheduled Date */}
-                      <div 
-                        onClick={() => {
-                          try {
-                            taskDateInputRef.current?.showPicker();
-                          } catch {
-                            taskDateInputRef.current?.focus();
-                          }
-                        }}
-                        className="space-y-1.5 cursor-pointer"
-                      >
+                      <div className="space-y-1.5">
                         <div className="flex items-center justify-between">
-                          <label className="text-[11px] font-bold text-theme-text flex items-center gap-1.5 cursor-pointer">
+                          <label className="text-[11px] font-bold text-theme-text flex items-center gap-1.5">
                             <Calendar className="w-3.5 h-3.5 text-blue-500" />
                             <span>Scheduled Date</span>
                           </label>
@@ -1430,13 +1414,6 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                                 setTaskDate(targetDate);
                                 setRolloverNotice(null);
                                 if (validationError) setValidationError(null);
-                                if (!taskToEdit && !hasNoTime) {
-                                  const free = computeNextFreeRawTimes(targetDate, Math.min(30, appointedMinutes), tasks, bufferNotes, undefined, effectiveDefaultBuffer, capacitySettings);
-                                  if (free.length > 0) {
-                                    setStartTime(free[0]);
-                                    setEndTime(addMinutesToTime(free[0], appointedMinutes));
-                                  }
-                                }
                               }}
                               className={`px-2.5 py-0.5 rounded-full font-bold border transition-all cursor-pointer shadow-2xs ${
                                 taskDate === toISODateString(getBangladeshNow())
@@ -1456,13 +1433,6 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                                 setTaskDate(targetDate);
                                 setRolloverNotice(null);
                                 if (validationError) setValidationError(null);
-                                if (!taskToEdit && !hasNoTime) {
-                                  const free = computeNextFreeRawTimes(targetDate, Math.min(30, appointedMinutes), tasks, bufferNotes, undefined, effectiveDefaultBuffer, capacitySettings);
-                                  if (free.length > 0) {
-                                    setStartTime(free[0]);
-                                    setEndTime(addMinutesToTime(free[0], appointedMinutes));
-                                  }
-                                }
                               }}
                               className={`px-2.5 py-0.5 rounded-full font-bold border transition-all cursor-pointer shadow-2xs ${
                                 taskDate !== toISODateString(getBangladeshNow())
@@ -1475,29 +1445,57 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                           </div>
                         </div>
 
-                        <input
-                          ref={taskDateInputRef}
-                          type="date"
-                          value={taskDate}
-                          onChange={(e) => {
-                            const newD = e.target.value;
-                            setTaskDate(newD);
-                            if (validationError) setValidationError(null);
-                            if (!taskToEdit && newD && !hasNoTime) {
-                              const free = computeNextFreeRawTimes(newD, Math.min(30, appointedMinutes), tasks, bufferNotes, undefined, effectiveDefaultBuffer, capacitySettings);
-                              if (free.length > 0) {
-                                setStartTime(free[0]);
-                                setEndTime(addMinutesToTime(free[0], appointedMinutes));
-                              }
+                        {/* Clearly show Date (Stick to the date guarantee) */}
+                        <div
+                          onClick={() => {
+                            try {
+                              taskDateInputRef.current?.showPicker();
+                            } catch {
+                              taskDateInputRef.current?.focus();
                             }
                           }}
-                          onClick={(e) => {
-                            try {
-                              (e.target as HTMLInputElement).showPicker?.();
-                            } catch {}
-                          }}
-                          className="w-full text-xs px-3 py-2 rounded-xl bg-theme-card border border-theme-border text-theme-text focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 font-mono font-bold cursor-pointer transition-all shadow-2xs"
-                        />
+                          className="w-full px-3 py-2 rounded-xl bg-theme-card hover:bg-theme-card-hover border border-theme-border hover:border-blue-500/50 transition-all cursor-pointer shadow-2xs flex items-center justify-between group"
+                          title="Click to change date"
+                        >
+                          <div className="flex items-center gap-2.5 min-w-0">
+                            <div className="w-8 h-8 rounded-lg bg-blue-500/10 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0 font-black text-xs group-hover:scale-105 transition-transform">
+                              <Calendar className="w-4 h-4" />
+                            </div>
+                            <div className="min-w-0">
+                              <div className="text-[10px] font-black uppercase tracking-wider text-blue-600 dark:text-blue-400 flex items-center gap-1.5">
+                                <span>{dayOfWeek}</span>
+                                <span className="text-[9px] px-1.5 py-0.2 rounded-full font-mono bg-theme-border/60 text-theme-muted">
+                                  {taskDate === toISODateString(getBangladeshNow()) ? 'Today' : taskDate === tomorrowStr ? 'Tomorrow' : 'Scheduled'}
+                                </span>
+                              </div>
+                              <div className="text-xs sm:text-sm font-black font-mono text-theme-text truncate mt-0.5">
+                                {formatDisplayDate(taskDate, false)}
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-1.5 shrink-0 ml-2">
+                            <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 font-mono hidden sm:inline">
+                              📌 Pinned
+                            </span>
+                            <CalendarDays className="w-4 h-4 text-theme-muted group-hover:text-blue-500 transition-colors" />
+                          </div>
+
+                          {/* Hidden input overlay for native calendar picker */}
+                          <input
+                            ref={taskDateInputRef}
+                            type="date"
+                            value={taskDate}
+                            onChange={(e) => {
+                              const newD = e.target.value;
+                              if (newD) {
+                                setTaskDate(newD);
+                                if (validationError) setValidationError(null);
+                              }
+                            }}
+                            className="sr-only"
+                          />
+                        </div>
                       </div>
 
                       {/* Right: Start Time OR Free Time Slot Badge */}
@@ -1542,11 +1540,12 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                               <span>Start Time</span>
                             </label>
 
-                            {/* 1-Click AM / PM Quick Switcher */}
+                            {/* Intelligent AM / PM Switcher with Smart Sleep & Schedule Awareness */}
                             {(() => {
                               const isStart12 = startTime.trim().startsWith('12:') || startTime.trim().toUpperCase().startsWith('12PM') || startTime.trim().toUpperCase().startsWith('12AM');
                               const isAmActive = startTime.toUpperCase().includes('AM');
                               const isPmActive = startTime.toUpperCase().includes('PM');
+
                               return (
                                 <div className="flex items-center p-0.5 bg-theme-card rounded-full border border-theme-border text-[10px] font-black shadow-inner">
                                   <button
@@ -1557,10 +1556,25 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                                         ? isStart12 ? 'bg-indigo-600 text-white shadow-xs' : 'bg-amber-500 text-white shadow-xs'
                                         : 'text-theme-muted hover:text-theme-text'
                                     }`}
-                                    title={isStart12 ? '12:00 AM • Night & New Date (Midnight)' : 'Switch to Morning (AM)'}
+                                    title={
+                                      smartAmPm.amIsSleep 
+                                        ? 'AM (Night / Sleep window active)' 
+                                        : smartAmPm.amIsPast 
+                                          ? 'AM (Already passed today)' 
+                                          : 'Switch to Morning (AM)'
+                                    }
                                   >
                                     {isStart12 ? <Moon className="w-2.5 h-2.5" /> : <Sun className="w-2.5 h-2.5" />}
                                     <span>AM</span>
+                                    {smartAmPm.recommendedPeriod === 'AM' && (
+                                      <span className="w-1.5 h-1.5 rounded-full bg-blue-300 animate-pulse" title="Recommended Period" />
+                                    )}
+                                    {smartAmPm.amIsSleep && !isAmActive && (
+                                      <span className="text-[8px] opacity-70">🌙</span>
+                                    )}
+                                    {smartAmPm.amIsPast && !isAmActive && (
+                                      <span className="text-[8px] text-red-500 opacity-80 font-bold">past</span>
+                                    )}
                                   </button>
                                   <button
                                     type="button"
@@ -1570,10 +1584,25 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                                         ? isStart12 ? 'bg-amber-500 text-white shadow-xs' : 'bg-indigo-600 text-white shadow-xs'
                                         : 'text-theme-muted hover:text-theme-text'
                                     }`}
-                                    title={isStart12 ? '12:00 PM • Day Time (Midday / Lunch)' : 'Switch to Afternoon / Evening (PM)'}
+                                    title={
+                                      smartAmPm.pmIsSleep 
+                                        ? 'PM (Night / Sleep window active)' 
+                                        : smartAmPm.pmIsPast 
+                                          ? 'PM (Already passed today)' 
+                                          : 'Switch to Afternoon / Evening (PM)'
+                                    }
                                   >
                                     {isStart12 ? <Sun className="w-2.5 h-2.5" /> : <Moon className="w-2.5 h-2.5" />}
                                     <span>PM</span>
+                                    {smartAmPm.recommendedPeriod === 'PM' && (
+                                      <span className="w-1.5 h-1.5 rounded-full bg-blue-300 animate-pulse" title="Recommended Period" />
+                                    )}
+                                    {smartAmPm.pmIsSleep && !isPmActive && (
+                                      <span className="text-[8px] opacity-70">🌙</span>
+                                    )}
+                                    {smartAmPm.pmIsPast && !isPmActive && (
+                                      <span className="text-[8px] text-red-500 opacity-80 font-bold">past</span>
+                                    )}
                                   </button>
                                 </div>
                               );
@@ -1584,12 +1613,52 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                             value={startTime}
                             onChange={handleStartTimeChange}
                           />
+
+                          {/* 💡 Smart Suggestion Chip (+30m, avoids sleep/busy, allows simultaneous) */}
+                          {smartAmPm.bestSuggestionTime && startTime !== smartAmPm.bestSuggestionTime && (
+                            <div className="flex items-center justify-between text-[10px] pt-1 text-theme-muted">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setStartTime(smartAmPm.bestSuggestionTime);
+                                  setEndTime(addMinutesToTime(smartAmPm.bestSuggestionTime, appointedMinutes));
+                                  if (validationError) setValidationError(null);
+                                  setHasConfirmedPastTime(false);
+                                }}
+                                className="inline-flex items-center gap-1.5 text-blue-600 dark:text-blue-400 hover:underline font-bold cursor-pointer py-0.5"
+                                title={`Click to set Start Time to ${smartAmPm.bestSuggestionTime}`}
+                              >
+                                <Sparkles className="w-2.5 h-2.5 text-amber-500 shrink-0" />
+                                <span>Suggested: <strong>{smartAmPm.bestSuggestionTime}</strong> ({smartAmPm.bestSuggestionLabel})</span>
+                              </button>
+                            </div>
+                          )}
                         </div>
                       )}
 
                     </div>
 
-                    {/* Bottom Strip: Free Time Info OR Next Free Time Slots */}
+                    {/* Contextual Alert: Past Time Warning Banner */}
+                    {!hasNoTime && pastTimeCheck.isPast && (
+                      <div className="p-2.5 rounded-xl bg-red-500/15 border border-red-500/40 text-red-700 dark:text-red-300 flex items-center justify-between gap-2 text-xs font-semibold shadow-2xs">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <AlertOctagon className="w-4 h-4 text-red-600 dark:text-red-400 shrink-0 animate-pulse" />
+                          <span className="truncate text-[11px]">
+                            ⚠️ Past Time: <strong>{startTime}</strong> on {formatDisplayDate(taskDate)} has passed ({pastTimeCheck.diffMinutes}m ago).
+                          </span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={handleAdjustToNextFreeSlot}
+                          className="px-2 py-1 bg-red-600 hover:bg-red-700 text-white rounded-lg text-[10px] font-black shrink-0 shadow-xs flex items-center gap-1 transition-colors cursor-pointer"
+                        >
+                          <Sparkles className="w-3 h-3" />
+                          <span>Fix to Now +5m</span>
+                        </button>
+                      </div>
+                    )}
+
+                    {/* Bottom Strip: Free Time Info OR Dynamic GAP Finder (RAW Mode) Slots */}
                     {hasNoTime ? (
                       <div className="pt-2.5 border-t border-theme-border/60">
                         <div className="p-3 rounded-xl bg-amber-500/10 dark:bg-amber-950/20 border border-amber-500/25 flex items-center justify-between gap-3 text-xs">
@@ -1615,7 +1684,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                         </div>
                       </div>
                     ) : (
-                      freeRawTimeSuggestions.length > 0 && (
+                      dynamicGapRawSlots.length > 0 && (
                         <div className="pt-2.5 border-t border-theme-border/60 space-y-2">
                           <div className="flex items-center justify-between text-[11px]">
                             <div className="flex items-center gap-1.5 font-bold text-theme-text font-display">
@@ -1624,7 +1693,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                               </div>
                               <span>Next Free Slots</span>
                               <span className="text-[10px] font-normal text-theme-muted">
-                                • {taskDate === toISODateString(getBangladeshNow()) ? 'Today' : formatDisplayDate(taskDate)}
+                                • Dynamic GAP Finder (RAW)
                               </span>
                             </div>
 
@@ -1632,10 +1701,13 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                               <button
                                 type="button"
                                 onClick={() => {
-                                  const best = freeRawTimeSuggestions[0];
+                                  const best = dynamicGapRawSlots[0];
                                   if (best) {
-                                    setStartTime(best);
-                                    setEndTime(addMinutesToTime(best, appointedMinutes));
+                                    setStartTime(best.startTime);
+                                    setEndTime(addMinutesToTime(best.startTime, appointedMinutes));
+                                    if (best.date !== taskDate) {
+                                      setTaskDate(best.date);
+                                    }
                                     if (validationError) setValidationError(null);
                                   }
                                 }}
@@ -1649,44 +1721,58 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                             </div>
                           </div>
 
-                          {/* 3 to 5 Clickable Free Slots Pills */}
-                          <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
-                            {freeRawTimeSuggestions.map((slotTime, idx) => {
-                              const isSlotSelected = startTime === slotTime;
-                              const slotMin = parse12HourToMinutes(slotTime);
-                              const isNight = slotMin < 300 || slotMin >= 1200;
+                          {/* Next 24h RAW Free Slots Grid */}
+                          <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-5 gap-2">
+                            {dynamicGapRawSlots.slice(0, 5).map((slot, idx) => {
+                              const isSlotSelected = startTime === slot.startTime && (slot.date === taskDate);
+                              const slotMin = parse12HourToMinutes(slot.startTime);
+                              const isNight = slotMin < 360 || slotMin >= 1200;
 
                               return (
                                 <button
-                                  key={idx}
+                                  key={slot.slotId || idx}
                                   type="button"
                                   onClick={() => {
-                                    setStartTime(slotTime);
-                                    setEndTime(addMinutesToTime(slotTime, appointedMinutes));
+                                    setStartTime(slot.startTime);
+                                    setEndTime(addMinutesToTime(slot.startTime, appointedMinutes));
+                                    if (slot.date !== taskDate) {
+                                      setTaskDate(slot.date);
+                                    }
                                     if (validationError) setValidationError(null);
+                                    setHasConfirmedPastTime(false);
                                   }}
-                                  className={`py-2 px-2 rounded-xl text-center border transition-all flex flex-col items-center justify-center gap-0.5 cursor-pointer shadow-2xs group ${
+                                  className={`py-2 px-2.5 rounded-xl text-center border transition-all flex flex-col items-center justify-center gap-1 cursor-pointer shadow-2xs group relative overflow-hidden ${
                                     isSlotSelected
                                       ? 'bg-blue-600 text-white border-blue-600 font-black shadow-md ring-2 ring-blue-400/40 scale-[1.02]'
                                       : 'bg-theme-card hover:bg-theme-card-hover text-theme-text border-theme-border hover:border-blue-400'
                                   }`}
-                                  title={`Click to set Start Time to ${slotTime}`}
+                                  title={`Click to set Start Time to ${slot.startTime} on ${slot.dateLabel} (${formatDurationHuman(slot.durationMinutes)} free)`}
                                 >
-                                  <div className="flex items-center gap-1">
+                                  {slot.isTomorrow && (
+                                    <span className="absolute top-1 right-1 text-[8px] font-black uppercase px-1 py-0.2 rounded bg-indigo-500/20 text-indigo-600 dark:text-indigo-300">
+                                      Tmrw
+                                    </span>
+                                  )}
+                                  {slot.isSimultaneous && (
+                                    <span className="absolute top-1 left-1 text-[8px] font-black uppercase px-1 py-0.2 rounded bg-purple-500/20 text-purple-600 dark:text-purple-300">
+                                      ⚡ Co
+                                    </span>
+                                  )}
+                                  <div className="flex items-center gap-1 mt-0.5">
                                     {isNight ? (
                                       <Moon className={`w-3 h-3 ${isSlotSelected ? 'text-blue-200' : 'text-indigo-400'}`} />
                                     ) : (
                                       <Sun className={`w-3 h-3 ${isSlotSelected ? 'text-amber-200' : 'text-amber-500'}`} />
                                     )}
-                                    <span className="font-mono text-[11px] font-black tracking-tight">
-                                      {slotTime}
+                                    <span className="font-mono text-xs font-black tracking-tight">
+                                      {slot.startTime}
                                     </span>
                                   </div>
-                                  <span className={`text-[9px] font-mono ${
-                                    isSlotSelected ? 'text-blue-100' : 'text-theme-muted group-hover:text-blue-500'
-                                  }`}>
-                                    ~{appointedMinutes}m
-                                  </span>
+                                  <div className="flex items-center gap-1 text-[9px] font-mono">
+                                    <span className={`${isSlotSelected ? 'text-blue-100' : 'text-theme-muted group-hover:text-blue-500'}`}>
+                                      {formatDurationHuman(slot.durationMinutes)} free
+                                    </span>
+                                  </div>
                                 </button>
                               );
                             })}
@@ -2401,7 +2487,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
         />
       )}
 
-      {/* Huge Warning Interceptor Modal: Scheduling Before Current Time */}
+      {/* Huge Warning Interceptor Modal: Scheduling Before Current Time (Strict 2-Step Double Confirmation) */}
       {showPastTimeModal && (
         <div className="fixed inset-0 z-[80] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fade-in">
           <div className="bg-theme-card border-2 border-red-500/80 rounded-3xl max-w-lg w-full p-6 shadow-2xl space-y-5 animate-scale-up">
@@ -2414,14 +2500,18 @@ export const TaskModal: React.FC<TaskModalProps> = ({
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2">
                   <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-red-100 dark:bg-red-950 text-red-700 dark:text-red-300 tracking-wider">
-                    CRITICAL INTERCEPTOR
+                    CRITICAL INTERCEPTOR • CONFIRMATION {pastTimeConfirmStep} OF 2
                   </span>
                 </div>
                 <h3 className="text-base font-black text-theme-text tracking-tight mt-0.5">
-                  🚨 Warning: Scheduling Before Current Time!
+                  {pastTimeConfirmStep === 1 
+                    ? '🚨 Warning: Scheduling Before Current Time!' 
+                    : '⚠️ Final Confirmation: Log Retroactive Past Task?'}
                 </h3>
                 <p className="text-xs text-theme-muted font-medium">
-                  OptimusTime is a live forward-planning system. This entry starts before right now.
+                  {pastTimeConfirmStep === 1
+                    ? 'OptimusTime is a live forward-planning system. This entry starts in the past.'
+                    : 'Step 2 of 2: This task will be recorded in the past and marked as overdue/expired immediately.'}
                 </p>
               </div>
             </div>
@@ -2449,57 +2539,96 @@ export const TaskModal: React.FC<TaskModalProps> = ({
               </div>
 
               <div className="text-[11px] text-theme-muted bg-theme-card/60 p-2.5 rounded-xl border border-theme-border">
-                ⚠️ This entry is <strong className="text-red-600 dark:text-red-400">{pastTimeCheck.diffMinutes >= 1440 ? `${Math.round(pastTimeCheck.diffMinutes / 1440)} day(s)` : `${pastTimeCheck.diffMinutes} minutes`}</strong> in the past. If scheduled, it will immediately be marked as expired / overdue.
+                ⚠️ This entry is <strong className="text-red-600 dark:text-red-400">{pastTimeCheck.diffMinutes >= 1440 ? `${Math.round(pastTimeCheck.diffMinutes / 1440)} day(s)` : `${pastTimeCheck.diffMinutes} minutes`}</strong> in the past.
               </div>
             </div>
 
-            {/* Action Buttons */}
-            <div className="space-y-2">
-              <button
-                type="button"
-                onClick={handleAdjustToNextFreeSlot}
-                className="w-full flex items-center justify-between p-3.5 rounded-2xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs shadow-md transition-all group"
-              >
-                <div className="flex items-center gap-2">
-                  <Sparkles className="w-4 h-4 text-amber-300" />
-                  <div className="text-left">
-                    <div>⚡ Auto-Adjust to Next Free Slot / Now</div>
-                    <div className="text-[10px] font-normal text-blue-100">Recommended: Automatically moves start time to next open gap today</div>
+            {/* Action Buttons: Step 1 vs Step 2 */}
+            {pastTimeConfirmStep === 1 ? (
+              <div className="space-y-2">
+                <button
+                  type="button"
+                  onClick={handleAdjustToNextFreeSlot}
+                  className="w-full flex items-center justify-between p-3.5 rounded-2xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs shadow-md transition-all group cursor-pointer"
+                >
+                  <div className="flex items-center gap-2">
+                    <Sparkles className="w-4 h-4 text-amber-300" />
+                    <div className="text-left">
+                      <div>⚡ Auto-Adjust to Now + 5m ({getCurrentTimePlusMinutes(5, 5)})</div>
+                      <div className="text-[10px] font-normal text-blue-100">Recommended: Moves start time to strictly forward future</div>
+                    </div>
                   </div>
-                </div>
-                <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
-              </button>
+                  <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+                </button>
 
-              <button
-                type="button"
-                onClick={handleShiftToTomorrow}
-                className="w-full flex items-center justify-between p-3 rounded-2xl bg-amber-50 dark:bg-amber-950/40 hover:bg-amber-100/70 dark:hover:bg-amber-900/30 text-amber-900 dark:text-amber-200 border border-amber-300 dark:border-amber-800 font-bold text-xs transition-all"
-              >
-                <div className="flex items-center gap-2">
-                  <CalendarDays className="w-4 h-4 text-amber-600" />
-                  <div className="text-left">
-                    <div>📅 Shift to Tomorrow ({tomorrowStr} @ {startTime})</div>
-                    <div className="text-[10px] font-normal text-amber-700 dark:text-amber-400">Keep same hour ({startTime}) but schedule on tomorrow</div>
+                <button
+                  type="button"
+                  onClick={handleShiftToTomorrow}
+                  className="w-full flex items-center justify-between p-3 rounded-2xl bg-amber-50 dark:bg-amber-950/40 hover:bg-amber-100/70 dark:hover:bg-amber-900/30 text-amber-900 dark:text-amber-200 border border-amber-300 dark:border-amber-800 font-bold text-xs transition-all cursor-pointer"
+                >
+                  <div className="flex items-center gap-2">
+                    <CalendarDays className="w-4 h-4 text-amber-600" />
+                    <div className="text-left">
+                      <div>📅 Shift to Tomorrow ({tomorrowStr} @ {startTime})</div>
+                      <div className="text-[10px] font-normal text-amber-700 dark:text-amber-400">Keep same clock time ({startTime}) but scheduled for tomorrow</div>
+                    </div>
                   </div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleProceedToPastConfirmStep2}
+                  className="w-full p-2.5 rounded-xl border border-red-300 dark:border-red-900/60 hover:bg-red-50 dark:hover:bg-red-950/30 text-red-600 dark:text-red-400 font-bold text-xs transition-colors cursor-pointer flex items-center justify-center gap-1.5"
+                >
+                  <span>⚠️ I understand, proceed to confirmation (Step 1 of 2) →</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowPastTimeModal(false);
+                    setPastTimeConfirmStep(1);
+                  }}
+                  className="w-full py-2 text-xs font-semibold text-theme-muted hover:text-theme-text transition-colors text-center cursor-pointer"
+                >
+                  Cancel & Adjust Manually
+                </button>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                <div className="p-3 rounded-xl bg-red-600/10 border border-red-600/30 text-red-700 dark:text-red-300 text-xs">
+                  <strong>⚠️ Final Step (2 of 2):</strong> Are you 100% sure you want to add this task retroactively? It will instantly appear as overdue on your dashboard.
                 </div>
-              </button>
 
-              <button
-                type="button"
-                onClick={handleConfirmPastEntry}
-                className="w-full p-2.5 rounded-xl border border-red-300 dark:border-red-900/60 hover:bg-red-50 dark:hover:bg-red-950/30 text-red-600 dark:text-red-400 font-bold text-xs transition-colors"
-              >
-                ⚠️ Yes, Log Past Entry Anyway (Retroactive Record)
-              </button>
+                <button
+                  type="button"
+                  onClick={handleConfirmPastEntry}
+                  className="w-full p-3.5 rounded-2xl bg-red-600 hover:bg-red-700 text-white font-black text-xs shadow-md transition-all cursor-pointer flex items-center justify-center gap-2"
+                >
+                  <AlertOctagon className="w-4 h-4" />
+                  <span>⚠️ Yes, Confirm & Log Past Task Anyway (Final Step)</span>
+                </button>
 
-              <button
-                type="button"
-                onClick={() => setShowPastTimeModal(false)}
-                className="w-full py-2 text-xs font-semibold text-theme-muted hover:text-theme-text transition-colors text-center"
-              >
-                Cancel & Adjust Manually
-              </button>
-            </div>
+                <button
+                  type="button"
+                  onClick={() => setPastTimeConfirmStep(1)}
+                  className="w-full p-2.5 rounded-xl bg-theme-card-hover hover:bg-theme-border text-theme-text font-bold text-xs transition-colors cursor-pointer text-center"
+                >
+                  ← Go Back to Step 1
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowPastTimeModal(false);
+                    setPastTimeConfirmStep(1);
+                  }}
+                  className="w-full py-2 text-xs font-semibold text-theme-muted hover:text-theme-text transition-colors text-center cursor-pointer"
+                >
+                  Cancel & Pick Future Time
+                </button>
+              </div>
+            )}
 
           </div>
         </div>
