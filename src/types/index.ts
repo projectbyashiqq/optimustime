@@ -323,6 +323,7 @@ export interface CloudSyncConfig {
   lastSyncedAt?: string;
   lastModifiedAt?: string;
   autoRealtimeSync: boolean;
+  autoSmartMerge?: boolean; // When true (default), automatically merges concurrent changes without modal banner
 }
 
 export type BufferActivityTag = string;

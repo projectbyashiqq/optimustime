@@ -89,7 +89,8 @@ export const DEFAULT_CLOUD_SYNC: CloudSyncConfig = {
   supabaseUrl: envSupabaseUrl,
   supabaseAnonKey: envSupabaseAnonKey,
   tableName: 'optimustime_sync',
-  autoRealtimeSync: true
+  autoRealtimeSync: true,
+  autoSmartMerge: true
 };
 
 export const DEFAULT_SECURITY: SecuritySettings = {

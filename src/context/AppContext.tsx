@@ -679,6 +679,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   });
 
+  // Stable client/session identifier per browser tab to eliminate self-echo conflicts
+  const SESSION_CLIENT_ID = React.useMemo(() => {
+    try {
+      const existing = sessionStorage.getItem(`${STORAGE_KEY}_client_session_id`);
+      if (existing) return existing;
+      const fresh = 'cli_' + Math.random().toString(36).substring(2, 11) + '_' + Date.now();
+      sessionStorage.setItem(`${STORAGE_KEY}_client_session_id`, fresh);
+      return fresh;
+    } catch {
+      return 'cli_' + Math.random().toString(36).substring(2, 11) + '_' + Date.now();
+    }
+  }, []);
+
   // Cloud Sync Config & Status
   const [cloudSyncConfig, setCloudSyncConfig] = useState<CloudSyncConfig>(() => {
     try {
@@ -705,6 +718,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const lastModifiedAtRef = useRef<string>(cloudSyncConfig.lastModifiedAt || new Date().toISOString());
   const hasPendingPushRef = useRef(false);
   const [syncConflict, setSyncConflict] = useState<SyncConflictInfo | null>(null);
+  const resolveConflictWithMergeRef = useRef<() => Promise<void>>(() => Promise.resolve());
+  const isAutoMergingRef = useRef(false);
 
   const [activeTab, setActiveTab] = useState<ActiveTab>('dashboard');
   const [searchQuery, setSearchQuery] = useState('');
@@ -800,6 +815,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const s = stateRef.current;
     return {
       version: '1.0.0',
+      originClientId: SESSION_CLIENT_ID,
       syncedAt: new Date().toISOString(),
       tasks: s.tasks,
       categories: s.categories,
@@ -855,6 +871,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     });
 
     if (result.conflict) {
+      const cfgLatest = cloudSyncConfigRef.current;
+      if (cfgLatest.autoSmartMerge !== false) {
+        console.log('[Auto Smart Merge] Concurrent update detected on cloud push. Merging both automatically in background...');
+        resolveConflictWithMergeRef.current();
+        return false;
+      }
+
       setCloudSyncStatus('conflict');
       setSyncConflict({
         remoteUpdatedAt: result.remoteUpdatedAt || '',
@@ -945,107 +968,116 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const resolveConflictWithMerge = useCallback(async () => {
     const cfg = cloudSyncConfigRef.current;
     if (!cfg.isEnabled || !cfg.supabaseUrl || !cfg.supabaseAnonKey) return;
+    if (isAutoMergingRef.current) return;
+    isAutoMergingRef.current = true;
     
-    setCloudSyncStatus('syncing');
-    const cloudRes = await pullStateFromCloud(cfg);
-    if (!cloudRes.success || !cloudRes.payload) {
-      await pushToCloud(true);
-      return;
-    }
+    try {
+      setCloudSyncStatus('syncing');
+      const cloudRes = await pullStateFromCloud(cfg);
+      if (!cloudRes.success || !cloudRes.payload) {
+        await pushToCloud(true);
+        return;
+      }
 
-    const remote = cloudRes.payload;
-    const local = stateRef.current;
+      const remote = cloudRes.payload;
+      const local = stateRef.current;
 
-    // Smart merge tasks: combine both, deduplicate by ID, keep latest or active/completed
-    const remoteTasks: Task[] = Array.isArray(remote.tasks) ? (remote.tasks as Task[]) : [];
-    const taskMap = new Map<string, Task>();
-    
-    // Add remote tasks first
-    for (const rt of remoteTasks) {
-      taskMap.set(rt.id, rt);
-    }
-    // Overlay local tasks with smart status retention
-    for (const lt of local.tasks) {
-      if (!taskMap.has(lt.id)) {
-        taskMap.set(lt.id, lt);
-      } else {
-        const rt = taskMap.get(lt.id)!;
-        if (lt.status === 'Done' || lt.status === 'Working' || (lt.rescheduleCount || 0) > (rt.rescheduleCount || 0)) {
+      // Smart merge tasks: combine both, deduplicate by ID, keep latest or active/completed
+      const remoteTasks: Task[] = Array.isArray(remote.tasks) ? (remote.tasks as Task[]) : [];
+      const taskMap = new Map<string, Task>();
+      
+      // Add remote tasks first
+      for (const rt of remoteTasks) {
+        taskMap.set(rt.id, rt);
+      }
+      // Overlay local tasks with smart status retention
+      for (const lt of local.tasks) {
+        if (!taskMap.has(lt.id)) {
           taskMap.set(lt.id, lt);
+        } else {
+          const rt = taskMap.get(lt.id)!;
+          if (lt.status === 'Done' || lt.status === 'Working' || (lt.rescheduleCount || 0) > (rt.rescheduleCount || 0)) {
+            taskMap.set(lt.id, lt);
+          }
         }
       }
+      const mergedTasks = Array.from(taskMap.values());
+
+      // Merge categories
+      const remoteCats: Category[] = Array.isArray(remote.categories) ? (remote.categories as Category[]) : [];
+      const catMap = new Map<string, Category>();
+      for (const c of remoteCats) catMap.set(c.id, c);
+      for (const c of local.categories) catMap.set(c.id, c);
+      const mergedCategories = Array.from(catMap.values());
+
+      // Merge buffer notes
+      const remoteNotes: BufferStatusNote[] = Array.isArray(remote.bufferNotes) ? (remote.bufferNotes as BufferStatusNote[]) : [];
+      const noteMap = new Map<string, BufferStatusNote>();
+      for (const n of remoteNotes) noteMap.set(n.id, n);
+      for (const n of local.bufferNotes) noteMap.set(n.id, n);
+      const mergedBufferNotes = Array.from(noteMap.values());
+
+      // Merge plan projects
+      const remoteProjects: PlanProjectFolder[] = Array.isArray(remote.planProjects) ? (remote.planProjects as PlanProjectFolder[]) : [];
+      const projectMap = new Map<string, PlanProjectFolder>();
+      for (const p of remoteProjects) projectMap.set(p.id, p);
+      for (const p of local.planProjects) projectMap.set(p.id, p);
+      const mergedPlanProjects = Array.from(projectMap.values());
+
+      // Merge reminders
+      const remoteReminders: Reminder[] = Array.isArray(remote.reminders) ? (remote.reminders as Reminder[]) : [];
+      const remMap = new Map<string, Reminder>();
+      for (const r of remoteReminders) remMap.set(r.id, r);
+      for (const r of local.reminders) remMap.set(r.id, r);
+      const mergedReminders = Array.from(remMap.values());
+
+      // Merge knowledge
+      const remoteKnowledge: KnowledgeItem[] = Array.isArray(remote.knowledge) ? (remote.knowledge as KnowledgeItem[]) : [];
+      const knowMap = new Map<string, KnowledgeItem>();
+      for (const k of remoteKnowledge) knowMap.set(k.id, k);
+      for (const k of local.knowledge) knowMap.set(k.id, k);
+      const mergedKnowledge = Array.from(knowMap.values());
+
+      // Apply merged state locally
+      isRemoteUpdateRef.current = true;
+      setTasks(mergedTasks);
+      setCategories(mergedCategories);
+      setBufferNotes(mergedBufferNotes);
+      setPlanProjects(mergedPlanProjects);
+      setReminders(mergedReminders);
+      setKnowledge(mergedKnowledge);
+      setTimeout(() => { isRemoteUpdateRef.current = false; }, 1000);
+
+      // Build merged bundle and force push
+      const mergedBundle = {
+        ...getFullBundle(),
+        originClientId: SESSION_CLIENT_ID,
+        tasks: mergedTasks,
+        categories: mergedCategories,
+        bufferNotes: mergedBufferNotes,
+        planProjects: mergedPlanProjects,
+        reminders: mergedReminders,
+        knowledge: mergedKnowledge,
+        syncedAt: new Date().toISOString()
+      };
+
+      const pushRes = await pushStateToCloud(cfg, mergedBundle, { force: true });
+      if (pushRes.success) {
+        const serverTime = pushRes.serverUpdatedAt || new Date().toISOString();
+        lastSyncedAtRef.current = serverTime;
+        hasPendingPushRef.current = false;
+        setCloudSyncStatus('synced');
+        setSyncConflict(null);
+        playNotificationChime('success');
+      } else {
+        setCloudSyncStatus('error');
+      }
+    } finally {
+      isAutoMergingRef.current = false;
     }
-    const mergedTasks = Array.from(taskMap.values());
+  }, [getFullBundle, pushToCloud, SESSION_CLIENT_ID]);
 
-    // Merge categories
-    const remoteCats: Category[] = Array.isArray(remote.categories) ? (remote.categories as Category[]) : [];
-    const catMap = new Map<string, Category>();
-    for (const c of remoteCats) catMap.set(c.id, c);
-    for (const c of local.categories) catMap.set(c.id, c);
-    const mergedCategories = Array.from(catMap.values());
-
-    // Merge buffer notes
-    const remoteNotes: BufferStatusNote[] = Array.isArray(remote.bufferNotes) ? (remote.bufferNotes as BufferStatusNote[]) : [];
-    const noteMap = new Map<string, BufferStatusNote>();
-    for (const n of remoteNotes) noteMap.set(n.id, n);
-    for (const n of local.bufferNotes) noteMap.set(n.id, n);
-    const mergedBufferNotes = Array.from(noteMap.values());
-
-    // Merge plan projects
-    const remoteProjects: PlanProjectFolder[] = Array.isArray(remote.planProjects) ? (remote.planProjects as PlanProjectFolder[]) : [];
-    const projectMap = new Map<string, PlanProjectFolder>();
-    for (const p of remoteProjects) projectMap.set(p.id, p);
-    for (const p of local.planProjects) projectMap.set(p.id, p);
-    const mergedPlanProjects = Array.from(projectMap.values());
-
-    // Merge reminders
-    const remoteReminders: Reminder[] = Array.isArray(remote.reminders) ? (remote.reminders as Reminder[]) : [];
-    const remMap = new Map<string, Reminder>();
-    for (const r of remoteReminders) remMap.set(r.id, r);
-    for (const r of local.reminders) remMap.set(r.id, r);
-    const mergedReminders = Array.from(remMap.values());
-
-    // Merge knowledge
-    const remoteKnowledge: KnowledgeItem[] = Array.isArray(remote.knowledge) ? (remote.knowledge as KnowledgeItem[]) : [];
-    const knowMap = new Map<string, KnowledgeItem>();
-    for (const k of remoteKnowledge) knowMap.set(k.id, k);
-    for (const k of local.knowledge) knowMap.set(k.id, k);
-    const mergedKnowledge = Array.from(knowMap.values());
-
-    // Apply merged state locally
-    isRemoteUpdateRef.current = true;
-    setTasks(mergedTasks);
-    setCategories(mergedCategories);
-    setBufferNotes(mergedBufferNotes);
-    setPlanProjects(mergedPlanProjects);
-    setReminders(mergedReminders);
-    setKnowledge(mergedKnowledge);
-    setTimeout(() => { isRemoteUpdateRef.current = false; }, 1000);
-
-    // Build merged bundle and force push
-    const mergedBundle = {
-      ...getFullBundle(),
-      tasks: mergedTasks,
-      categories: mergedCategories,
-      bufferNotes: mergedBufferNotes,
-      planProjects: mergedPlanProjects,
-      reminders: mergedReminders,
-      knowledge: mergedKnowledge,
-      syncedAt: new Date().toISOString()
-    };
-
-    const pushRes = await pushStateToCloud(cfg, mergedBundle, { force: true });
-    if (pushRes.success) {
-      const serverTime = pushRes.serverUpdatedAt || new Date().toISOString();
-      lastSyncedAtRef.current = serverTime;
-      hasPendingPushRef.current = false;
-      setCloudSyncStatus('synced');
-      setSyncConflict(null);
-      playNotificationChime('success');
-    } else {
-      setCloudSyncStatus('error');
-    }
-  }, [getFullBundle, pushToCloud]);
+  resolveConflictWithMergeRef.current = resolveConflictWithMerge;
 
   const pullFromCloudRef = useRef(pullFromCloud);
   pullFromCloudRef.current = pullFromCloud;
@@ -1087,17 +1119,31 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
 
     const unsubscribe = subscribeToRealtimeCloud(activeConfig, (remotePayload) => {
-      // If this device has unsynced local mutations, alert user rather than silently overwriting
+      // 1. Self-Echo Suppression: Ignore broadcasts originating from this exact browser session/tab
+      if (remotePayload && (remotePayload as Record<string, unknown>).originClientId === SESSION_CLIENT_ID) {
+        if ((remotePayload as Record<string, unknown>).syncedAt) {
+          lastSyncedAtRef.current = String((remotePayload as Record<string, unknown>).syncedAt);
+        }
+        return;
+      }
+
+      // 2. If this device has unsynced local mutations, handle conflict or auto-merge
       if (hasPendingPushRef.current) {
         console.warn('[Realtime Conflict] Remote update received while local changes are pending');
-        setCloudSyncStatus('conflict');
-        setSyncConflict({
-          remoteUpdatedAt: new Date().toISOString(),
-          localLastSyncedAt: lastSyncedAtRef.current,
-          localLastModifiedAt: lastModifiedAtRef.current,
-          remotePayload
-        });
-        playNotificationChime('alert');
+        const cfgCurrent = cloudSyncConfigRef.current;
+        if (cfgCurrent.autoSmartMerge !== false) {
+          console.log('[Auto Smart Merge] Auto-resolving concurrent realtime update in background...');
+          resolveConflictWithMergeRef.current();
+        } else {
+          setCloudSyncStatus('conflict');
+          setSyncConflict({
+            remoteUpdatedAt: new Date().toISOString(),
+            localLastSyncedAt: lastSyncedAtRef.current,
+            localLastModifiedAt: lastModifiedAtRef.current,
+            remotePayload
+          });
+          playNotificationChime('alert');
+        }
       } else {
         applyBundleRef.current(remotePayload);
         setCloudSyncStatus('synced');

@@ -293,6 +293,7 @@ export const AdminSettingsView: React.FC = () => {
   const [supabaseUrl, setSupabaseUrl] = useState(cloudSyncConfig.supabaseUrl);
   const [supabaseAnonKey, setSupabaseAnonKey] = useState(cloudSyncConfig.supabaseAnonKey);
   const [autoRealtimeSync, setAutoRealtimeSync] = useState(cloudSyncConfig.autoRealtimeSync);
+  const [autoSmartMerge, setAutoSmartMerge] = useState(cloudSyncConfig.autoSmartMerge !== false);
   const [showAnonKey, setShowAnonKey] = useState(false);
   const [cloudStatusMsg, setCloudStatusMsg] = useState<{ text: string; isError: boolean } | null>(null);
   const [isTestingConn, setIsTestingConn] = useState(false);
@@ -330,11 +331,13 @@ export const AdminSettingsView: React.FC = () => {
     if (cloudSyncConfig.supabaseUrl) setSupabaseUrl(cloudSyncConfig.supabaseUrl);
     if (cloudSyncConfig.supabaseAnonKey) setSupabaseAnonKey(cloudSyncConfig.supabaseAnonKey);
     setAutoRealtimeSync(cloudSyncConfig.autoRealtimeSync);
+    setAutoSmartMerge(cloudSyncConfig.autoSmartMerge !== false);
   }, [
     cloudSyncConfig.isEnabled,
     cloudSyncConfig.supabaseUrl,
     cloudSyncConfig.supabaseAnonKey,
-    cloudSyncConfig.autoRealtimeSync
+    cloudSyncConfig.autoRealtimeSync,
+    cloudSyncConfig.autoSmartMerge
   ]);
 
   // Keep Capacity editing state synced when capacitySettings updates in context
@@ -376,7 +379,8 @@ export const AdminSettingsView: React.FC = () => {
       supabaseUrl: supabaseUrl.trim(),
       supabaseAnonKey: supabaseAnonKey.trim(),
       tableName: 'optimustime_sync',
-      autoRealtimeSync
+      autoRealtimeSync,
+      autoSmartMerge
     };
     updateCloudSyncConfig(newConfig);
 
@@ -423,7 +427,8 @@ export const AdminSettingsView: React.FC = () => {
       supabaseUrl: supabaseUrl.trim(),
       supabaseAnonKey: supabaseAnonKey.trim(),
       tableName: 'optimustime_sync',
-      autoRealtimeSync
+      autoRealtimeSync,
+      autoSmartMerge
     };
     updateCloudSyncConfig(config);
     const ok = await pushToCloud(true);
@@ -444,7 +449,8 @@ export const AdminSettingsView: React.FC = () => {
       supabaseUrl: supabaseUrl.trim(),
       supabaseAnonKey: supabaseAnonKey.trim(),
       tableName: 'optimustime_sync',
-      autoRealtimeSync
+      autoRealtimeSync,
+      autoSmartMerge
     };
     updateCloudSyncConfig(config);
     const ok = await pullFromCloud();
@@ -2201,6 +2207,20 @@ export const AdminSettingsView: React.FC = () => {
                   type="checkbox"
                   checked={autoRealtimeSync}
                   onChange={(e) => setAutoRealtimeSync(e.target.checked)}
+                  className="w-4 h-4 rounded text-sky-600 cursor-pointer"
+                />
+              </div>
+
+              {/* Auto-Resolve Conflicts (Auto Smart Merge) Toggle */}
+              <div className="flex items-center justify-between p-2.5 rounded-xl bg-theme-bg border border-theme-border">
+                <div>
+                  <span className="font-bold text-theme-text block text-xs">Auto-Resolve Conflicts (Auto Smart Merge)</span>
+                  <span className="text-[10px] text-theme-muted">Seamlessly blend changes across devices in background without disturbing popups</span>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={autoSmartMerge}
+                  onChange={(e) => setAutoSmartMerge(e.target.checked)}
                   className="w-4 h-4 rounded text-sky-600 cursor-pointer"
                 />
               </div>
