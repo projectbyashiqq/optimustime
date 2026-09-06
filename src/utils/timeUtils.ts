@@ -794,18 +794,23 @@ export function calculateFirstRecurringDate(params: {
   baseDate?: string;
   referenceNow?: Date;
 }): string {
-  const { recurrence, selectedDays = [], baseDate } = params;
+  const { recurrence, selectedDays = [], baseDate, startTime } = params;
   const now = params.referenceNow || new Date();
   const todayStr = toISODateString(now);
-
-  // If baseDate is provided and on/after today, anchor to baseDate; otherwise anchor to today
-  const startFromDateStr = baseDate && baseDate >= todayStr ? baseDate : todayStr;
+  const nowMinutes = now.getHours() * 60 + now.getMinutes();
 
   if (!recurrence || recurrence === 'None') {
-    return startFromDateStr;
+    return baseDate && baseDate >= todayStr ? baseDate : todayStr;
   }
 
-  const [y, m, d] = startFromDateStr.split('-').map(Number);
+  // Template Date determines the target day of week, day of month, or month & day.
+  // If baseDate is provided, use it as the blueprint template; otherwise default to today.
+  const templateDateStr = baseDate || todayStr;
+  const [tmplY, tmplM, tmplD] = templateDateStr.split('-').map(Number);
+  const templateDateObj = new Date(tmplY, tmplM - 1, tmplD);
+  const targetDayOfWeek = templateDateObj.getDay(); // 0 = Sun, 1 = Mon ...
+  const targetDayOfMonth = tmplD;                  // 1..31
+  const targetMonth = tmplM - 1;                   // 0..11
 
   // Helper to test if a Date matches the recurrence pattern
   const matchesPattern = (dateObj: Date): boolean => {
@@ -827,36 +832,50 @@ export function calculateFirstRecurringDate(params: {
     }
 
     if (recurrence === 'Weekly') {
-      const sourceDate = new Date(y, m - 1, d);
-      return dateObj.getDay() === sourceDate.getDay();
+      return dateObj.getDay() === targetDayOfWeek;
     }
 
     if (recurrence === 'Monthly') {
-      return dateObj.getDate() === d;
+      return dateObj.getDate() === targetDayOfMonth;
     }
 
     if (recurrence === 'Yearly') {
-      return dateObj.getMonth() === (m - 1) && dateObj.getDate() === d;
+      return dateObj.getMonth() === targetMonth && dateObj.getDate() === targetDayOfMonth;
     }
 
     return false;
   };
 
-  // Check if startFromDateStr itself matches the pattern (e.g. today or chosen future date)
-  const baseObj = new Date(y, m - 1, d);
-  if (matchesPattern(baseObj)) {
-    return startFromDateStr;
-  }
+  // Helper to test if candidate slot on candidateDate has ALREADY passed relative to current time
+  const isSlotInPast = (candidateDateStr: string): boolean => {
+    if (candidateDateStr < todayStr) return true;
+    if (candidateDateStr === todayStr) {
+      if (!startTime || startTime === 'Anytime' || startTime === 'Free Time' || startTime === 'No Time' || startTime === 'All Day') {
+        return false;
+      }
+      const startMin = parse12HourToMinutes(startTime);
+      // If task's start time on today is before or equal to current time, today's slot has elapsed!
+      return startMin <= nowMinutes;
+    }
+    return false;
+  };
 
-  // Otherwise scan up to 400 days into the future to find the first valid match
-  for (let offset = 1; offset <= 400; offset++) {
-    const candidate = new Date(y, m - 1, d + offset);
-    if (matchesPattern(candidate)) {
-      return toISODateString(candidate);
+  // Chronological Search Strategy:
+  // The first occurrence of any recurring task MUST be the earliest valid date on or after TODAY
+  // whose slot has not elapsed.
+  // We scan from TODAY (offset 0) forward up to 450 days.
+  const [tY, tM, tD] = todayStr.split('-').map(Number);
+
+  for (let offset = 0; offset <= 450; offset++) {
+    const candidate = new Date(tY, tM - 1, tD + offset);
+    const candidateStr = toISODateString(candidate);
+
+    if (matchesPattern(candidate) && !isSlotInPast(candidateStr)) {
+      return candidateStr;
     }
   }
 
-  return startFromDateStr;
+  return todayStr;
 }
 
 /**
@@ -1095,6 +1114,143 @@ export function getNextRecurrenceDate(task: {
 
   const fallback = new Date(year, month - 1, day + 1);
   return toISODateString(fallback);
+}
+
+/**
+ * Finds the next scheduled date for a recurring task after `fromDateStr`,
+ * strictly skipping any dates listed in `task.excludedDates`.
+ */
+export function findNextValidOccurrenceDate(task: {
+  taskDate: string;
+  recurrence?: string;
+  selectedDays?: string[];
+  excludedDates?: string[];
+}, fromDateStr: string): string {
+  const recurrence = task.recurrence || 'None';
+  if (recurrence === 'None') return fromDateStr;
+
+  const [year, month, day] = fromDateStr.split('-').map(Number);
+  for (let offset = 1; offset <= 400; offset++) {
+    const nextDate = new Date(year, month - 1, day + offset);
+    const nextDateStr = toISODateString(nextDate);
+    if (isTaskScheduledForDate(task, nextDateStr) && !(task.excludedDates || []).includes(nextDateStr)) {
+      return nextDateStr;
+    }
+  }
+  const fallback = new Date(year, month - 1, day + 1);
+  return toISODateString(fallback);
+}
+
+export interface NextOccurrenceInfo {
+  date: string;
+  dateTimeMs: number;
+  startTime: string;
+  endTime: string;
+  isToday: boolean;
+  isTomorrow: boolean;
+  isInProgress: boolean;
+  isTodayUpcoming: boolean;
+  daysUntil: number;
+  label: string;
+  urgencyStatus: 'now' | 'today' | 'tomorrow' | 'soon' | 'later' | 'paused';
+}
+
+/**
+ * Calculates the exact next chronological occurrence and countdown status for a recurring task.
+ * Respects current time of day, active tasks in progress, upcoming tasks today,
+ * tomorrow's occurrences, and multi-day lookaheads.
+ */
+export function getNextUpcomingOccurrence(
+  task: Task,
+  refDate: Date = new Date()
+): NextOccurrenceInfo {
+  const todayStr = toISODateString(refDate);
+  const currentMinutes = refDate.getHours() * 60 + refDate.getMinutes();
+
+  const startTime = task.startTime || '09:00 AM';
+  const endTime = task.endTime || (task.startTime ? addMinutesToTime(task.startTime, task.appointedMinutes || 60) : '10:00 AM');
+
+  const startMin = (task.startTime && task.startTime !== 'All Day') ? parse12HourToMinutes(task.startTime) : 0;
+  const endMin = (task.endTime && task.endTime !== 'All Day')
+    ? parse12HourToMinutes(task.endTime)
+    : (startMin + (task.appointedMinutes || 60));
+
+  const isScheduledToday = isTaskScheduledForDate(task, todayStr) && !(task.excludedDates || []).includes(todayStr);
+
+  let targetDate = todayStr;
+  let isInProgress = false;
+  let isTodayUpcoming = false;
+
+  if (isScheduledToday) {
+    if (currentMinutes >= startMin && currentMinutes < endMin) {
+      isInProgress = true;
+      targetDate = todayStr;
+    } else if (currentMinutes < startMin) {
+      isTodayUpcoming = true;
+      targetDate = todayStr;
+    } else {
+      // Today's slot has elapsed; find next valid occurrence date strictly after today
+      targetDate = findNextValidOccurrenceDate(task, todayStr);
+    }
+  } else {
+    targetDate = findNextValidOccurrenceDate(task, todayStr);
+  }
+
+  const [tY, tM, tD] = todayStr.split('-').map(Number);
+  const [nY, nM, nD] = targetDate.split('-').map(Number);
+  const diffDays = Math.round((new Date(nY, nM - 1, nD).getTime() - new Date(tY, tM - 1, tD).getTime()) / 86400000);
+
+  const isToday = diffDays === 0;
+  const isTomorrow = diffDays === 1;
+
+  // Sorting timestamp: target day midnight + start minutes
+  let targetDateMs = new Date(nY, nM - 1, nD, 0, 0, 0).getTime() + (startMin * 60000);
+  if (isInProgress) {
+    // If in progress right now, assign a negative offset relative to today so it sorts to the absolute top
+    targetDateMs = new Date(tY, tM - 1, tD, 0, 0, 0).getTime() - 3600000;
+  }
+
+  let label = '';
+  let urgencyStatus: NextOccurrenceInfo['urgencyStatus'] = 'later';
+
+  if (isInProgress) {
+    label = `Ongoing now • Ends ${endTime}`;
+    urgencyStatus = 'now';
+  } else if (isTodayUpcoming) {
+    const minsUntil = startMin - currentMinutes;
+    const timeUntilStr = minsUntil < 60 ? `in ${minsUntil}m` : `in ${Math.floor(minsUntil / 60)}h ${minsUntil % 60}m`;
+    label = `Today at ${startTime} (${timeUntilStr})`;
+    urgencyStatus = 'today';
+  } else if (isTomorrow) {
+    label = `Tomorrow at ${startTime}`;
+    urgencyStatus = 'tomorrow';
+  } else if (diffDays <= 7) {
+    const targetDateObj = new Date(nY, nM - 1, nD);
+    const dayName = SHORT_DAYS[targetDateObj.getDay()];
+    label = `${dayName}, ${formatDisplayDate(targetDate)} at ${startTime} (in ${diffDays}d)`;
+    urgencyStatus = 'soon';
+  } else {
+    label = `${formatDisplayDate(targetDate)} at ${startTime} (in ${diffDays}d)`;
+    urgencyStatus = 'later';
+  }
+
+  if (task.status === 'Hold') {
+    urgencyStatus = 'paused';
+  }
+
+  return {
+    date: targetDate,
+    dateTimeMs: targetDateMs,
+    startTime,
+    endTime,
+    isToday,
+    isTomorrow,
+    isInProgress,
+    isTodayUpcoming,
+    daysUntil: diffDays,
+    label,
+    urgencyStatus
+  };
 }
 
 export interface AvailableSlotResult {

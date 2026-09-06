@@ -13,6 +13,10 @@ import {
   addMinutesToTime, 
   diffTimeInMinutes,
   getNextRecurrenceDate,
+  findNextValidOccurrenceDate,
+  getNextUpcomingOccurrence,
+  NextOccurrenceInfo,
+  parse12HourToMinutes,
   isTaskScheduledForDate,
   SHORT_DAYS 
 } from '../utils/timeUtils';
@@ -42,7 +46,8 @@ import {
   Folder,
   Tag,
   Search,
-  Filter
+  Filter,
+  ArrowUpDown
 } from 'lucide-react';
 
 interface RecurringManagerModalProps {
@@ -85,12 +90,51 @@ export const RecurringManagerModal: React.FC<RecurringManagerModalProps> = ({
   const [filterCategory, setFilterCategory] = useState<string>('ALL');
   const [searchQuery, setSearchQuery] = useState<string>('');
 
+  // Scientific Sorting State
+  // Default: 'next-occurrence' (Earliest upcoming occurrence first - industry standard)
+  const [sortMode, setSortMode] = useState<
+    'next-occurrence' | 'time-of-day' | 'priority' | 'cadence' | 'title'
+  >('next-occurrence');
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
+  const [separatePaused, setSeparatePaused] = useState<boolean>(true);
+
   if (!isOpen) return null;
 
   // Recurring tasks list
   const recurringTasks = useMemo(() => {
     return tasks.filter(t => t.recurrence && t.recurrence !== 'None');
   }, [tasks]);
+
+  // Priority ordering mapping (Eisenhower matrix: P0 highest to P5 lowest)
+  const PRIORITY_ORDER: Record<string, number> = {
+    P0: 0,
+    P1: 1,
+    P2: 2,
+    P3: 3,
+    P4: 4,
+    P5: 5
+  };
+
+  // Cadence ordering mapping (Daily highest frequency to Yearly lowest)
+  const CADENCE_ORDER: Record<string, number> = {
+    'Daily': 0,
+    'Selected Days': 1,
+    'Weekly': 2,
+    'Monthly': 3,
+    'Yearly': 4
+  };
+
+  // Reference now timestamp updated whenever modal opens
+  const now = useMemo(() => new Date(), [isOpen]);
+
+  // Compute Next Occurrence Info for all recurring tasks (O(N) memoized)
+  const occurrenceMap = useMemo(() => {
+    const map = new Map<string, NextOccurrenceInfo>();
+    for (const t of recurringTasks) {
+      map.set(t.id, getNextUpcomingOccurrence(t, now));
+    }
+    return map;
+  }, [recurringTasks, now]);
 
   // Executive Telemetry
   const telemetry = useMemo(() => {
@@ -141,20 +185,90 @@ export const RecurringManagerModal: React.FC<RecurringManagerModalProps> = ({
     });
   }, [recurringTasks, filterRecurrence, filterCategory, searchQuery]);
 
-  // Helper to preview upcoming dates
+  // Scientifically sorted tasks list
+  const sortedTasks = useMemo(() => {
+    const list = [...filteredTasks];
+
+    return list.sort((a, b) => {
+      const aPaused = a.status === 'Hold';
+      const bPaused = b.status === 'Hold';
+
+      // If separatePaused is enabled, push paused routines cleanly to the bottom
+      if (separatePaused && aPaused !== bPaused) {
+        return aPaused ? 1 : -1;
+      }
+
+      const aOcc = occurrenceMap.get(a.id);
+      const bOcc = occurrenceMap.get(b.id);
+
+      let comparison = 0;
+
+      if (sortMode === 'next-occurrence') {
+        // 1. Next trigger timestamp (earliest first: Happening Now -> Today Upcoming -> Tomorrow -> Later)
+        const aTime = aOcc?.dateTimeMs ?? 0;
+        const bTime = bOcc?.dateTimeMs ?? 0;
+        comparison = aTime - bTime;
+
+        // Secondary: start time of day
+        if (comparison === 0) {
+          comparison = parse12HourToMinutes(a.startTime) - parse12HourToMinutes(b.startTime);
+        }
+        // Tertiary: priority
+        if (comparison === 0) {
+          comparison = (PRIORITY_ORDER[a.priority] ?? 99) - (PRIORITY_ORDER[b.priority] ?? 99);
+        }
+      } else if (sortMode === 'time-of-day') {
+        // Circadian daily order (morning to night)
+        comparison = parse12HourToMinutes(a.startTime) - parse12HourToMinutes(b.startTime);
+        if (comparison === 0) {
+          const aTime = aOcc?.dateTimeMs ?? 0;
+          const bTime = bOcc?.dateTimeMs ?? 0;
+          comparison = aTime - bTime;
+        }
+      } else if (sortMode === 'priority') {
+        // Eisenhower Priority Matrix: P0 > P1 > P2 > P3
+        comparison = (PRIORITY_ORDER[a.priority] ?? 99) - (PRIORITY_ORDER[b.priority] ?? 99);
+        if (comparison === 0) {
+          const aTime = aOcc?.dateTimeMs ?? 0;
+          const bTime = bOcc?.dateTimeMs ?? 0;
+          comparison = aTime - bTime;
+        }
+      } else if (sortMode === 'cadence') {
+        // Daily > Selected Days > Weekly > Monthly > Yearly
+        comparison = (CADENCE_ORDER[a.recurrence || ''] ?? 99) - (CADENCE_ORDER[b.recurrence || ''] ?? 99);
+        if (comparison === 0) {
+          const aTime = aOcc?.dateTimeMs ?? 0;
+          const bTime = bOcc?.dateTimeMs ?? 0;
+          comparison = aTime - bTime;
+        }
+      } else if (sortMode === 'title') {
+        comparison = a.title.localeCompare(b.title);
+      }
+
+      return sortDirection === 'asc' ? comparison : -comparison;
+    });
+  }, [filteredTasks, sortMode, sortDirection, separatePaused, occurrenceMap]);
+
+  // Helper to preview upcoming dates (up to 3 dates), skipping excluded dates
   const getUpcomingDates = (task: Task, count: number = 3): string[] => {
     const dates: string[] = [];
-    const todayStr = toISODateString(new Date());
-    // If today is scheduled and not excluded, include today as the first upcoming occurrence
+    const todayStr = toISODateString(now);
+
+    // If today is scheduled and not excluded, and either in progress or upcoming, include today
     if (isTaskScheduledForDate(task, todayStr) && !(task.excludedDates || []).includes(todayStr)) {
-      dates.push(todayStr);
+      const startMin = parse12HourToMinutes(task.startTime);
+      const endMin = parse12HourToMinutes(task.endTime) || (startMin + (task.appointedMinutes || 60));
+      const curMin = now.getHours() * 60 + now.getMinutes();
+      if (curMin < endMin) {
+        dates.push(todayStr);
+      }
     }
+
     let cursor = todayStr;
     for (let i = 0; i < 40 && dates.length < count; i++) {
-      const next = getNextRecurrenceDate(task, cursor);
+      const next = findNextValidOccurrenceDate(task, cursor);
       if (!next || next === cursor) break;
-      const isExcluded = (task.excludedDates || []).includes(next);
-      if (!isExcluded && !dates.includes(next)) {
+      if (!dates.includes(next)) {
         dates.push(next);
       }
       cursor = next;
@@ -315,10 +429,174 @@ export const RecurringManagerModal: React.FC<RecurringManagerModalProps> = ({
         </div>
 
         {/* =========================================================================
+            SCIENTIFIC SORTING & ARRANGEMENT RIBBON
+            ========================================================================= */}
+        <div className="px-6 py-2.5 bg-theme-card-hover/40 border-b border-theme-border flex flex-col md:flex-row items-start md:items-center justify-between gap-2.5 text-xs">
+          <div className="flex items-center gap-2 flex-wrap min-w-0">
+            <div className="flex items-center gap-1.5 text-theme-muted font-bold shrink-0">
+              <ArrowUpDown className="w-3.5 h-3.5 text-blue-500" />
+              <span>Sort:</span>
+            </div>
+
+            <div className="flex items-center gap-1 bg-theme-card p-1 rounded-xl border border-theme-border flex-wrap">
+              {/* 1. Next Occurrence (Earliest First - User Recommended / Standard) */}
+              <button
+                type="button"
+                onClick={() => {
+                  if (sortMode === 'next-occurrence') {
+                    setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc');
+                  } else {
+                    setSortMode('next-occurrence');
+                    setSortDirection('asc');
+                  }
+                }}
+                className={`px-2.5 py-1 rounded-lg font-bold flex items-center gap-1 transition-all cursor-pointer ${
+                  sortMode === 'next-occurrence'
+                    ? 'bg-blue-600 text-white shadow-xs'
+                    : 'text-theme-muted hover:text-theme-text'
+                }`}
+                title="Scientific Next-Up: Sort by earliest upcoming occurrence (Happening Now -> Today -> Tomorrow -> Later)"
+              >
+                <Sparkles className="w-3 h-3" />
+                <span>Next Occurrence</span>
+                {sortMode === 'next-occurrence' && (
+                  <span className="text-[10px] opacity-90 font-mono ml-0.5">
+                    {sortDirection === 'asc' ? '↑ Earliest' : '↓ Furthest'}
+                  </span>
+                )}
+              </button>
+
+              {/* 2. Circadian / Time of Day */}
+              <button
+                type="button"
+                onClick={() => {
+                  if (sortMode === 'time-of-day') {
+                    setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc');
+                  } else {
+                    setSortMode('time-of-day');
+                    setSortDirection('asc');
+                  }
+                }}
+                className={`px-2.5 py-1 rounded-lg font-bold flex items-center gap-1 transition-all cursor-pointer ${
+                  sortMode === 'time-of-day'
+                    ? 'bg-blue-600 text-white shadow-xs'
+                    : 'text-theme-muted hover:text-theme-text'
+                }`}
+                title="Circadian Schedule: Sort chronologically by daily routine slot (Morning -> Night)"
+              >
+                <Clock className="w-3 h-3" />
+                <span>Time of Day</span>
+                {sortMode === 'time-of-day' && (
+                  <span className="text-[10px] opacity-90 font-mono ml-0.5">
+                    {sortDirection === 'asc' ? '↑ Early' : '↓ Late'}
+                  </span>
+                )}
+              </button>
+
+              {/* 3. Eisenhower Priority Matrix */}
+              <button
+                type="button"
+                onClick={() => {
+                  if (sortMode === 'priority') {
+                    setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc');
+                  } else {
+                    setSortMode('priority');
+                    setSortDirection('asc');
+                  }
+                }}
+                className={`px-2.5 py-1 rounded-lg font-bold flex items-center gap-1 transition-all cursor-pointer ${
+                  sortMode === 'priority'
+                    ? 'bg-blue-600 text-white shadow-xs'
+                    : 'text-theme-muted hover:text-theme-text'
+                }`}
+                title="Eisenhower Matrix: P0 Critical to P3 Low"
+              >
+                <Zap className="w-3 h-3" />
+                <span>Priority</span>
+                {sortMode === 'priority' && (
+                  <span className="text-[10px] opacity-90 font-mono ml-0.5">
+                    {sortDirection === 'asc' ? '↑ P0 First' : '↓ P3 First'}
+                  </span>
+                )}
+              </button>
+
+              {/* 4. Cadence / Frequency */}
+              <button
+                type="button"
+                onClick={() => {
+                  if (sortMode === 'cadence') {
+                    setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc');
+                  } else {
+                    setSortMode('cadence');
+                    setSortDirection('asc');
+                  }
+                }}
+                className={`px-2.5 py-1 rounded-lg font-bold flex items-center gap-1 transition-all cursor-pointer ${
+                  sortMode === 'cadence'
+                    ? 'bg-blue-600 text-white shadow-xs'
+                    : 'text-theme-muted hover:text-theme-text'
+                }`}
+                title="Cadence: Daily -> Selected Days -> Weekly -> Monthly -> Yearly"
+              >
+                <Repeat className="w-3 h-3" />
+                <span>Cadence</span>
+                {sortMode === 'cadence' && (
+                  <span className="text-[10px] opacity-90 font-mono ml-0.5">
+                    {sortDirection === 'asc' ? '↑ Daily' : '↓ Yearly'}
+                  </span>
+                )}
+              </button>
+
+              {/* 5. Alphabetical */}
+              <button
+                type="button"
+                onClick={() => {
+                  if (sortMode === 'title') {
+                    setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc');
+                  } else {
+                    setSortMode('title');
+                    setSortDirection('asc');
+                  }
+                }}
+                className={`px-2.5 py-1 rounded-lg font-bold flex items-center gap-1 transition-all cursor-pointer ${
+                  sortMode === 'title'
+                    ? 'bg-blue-600 text-white shadow-xs'
+                    : 'text-theme-muted hover:text-theme-text'
+                }`}
+                title="Alphabetical: A to Z"
+              >
+                <span>A–Z</span>
+                {sortMode === 'title' && (
+                  <span className="text-[10px] opacity-90 font-mono ml-0.5">
+                    {sortDirection === 'asc' ? '↑ A-Z' : '↓ Z-A'}
+                  </span>
+                )}
+              </button>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-3 shrink-0 self-end md:self-auto">
+            <label className="flex items-center gap-1.5 text-[11px] text-theme-muted hover:text-theme-text cursor-pointer select-none font-semibold">
+              <input
+                type="checkbox"
+                checked={separatePaused}
+                onChange={(e) => setSeparatePaused(e.target.checked)}
+                className="rounded border-theme-border text-blue-600 focus:ring-blue-500 w-3.5 h-3.5 cursor-pointer"
+              />
+              <span>Active First (Hold to Bottom)</span>
+            </label>
+
+            <span className="text-[11px] font-mono font-bold text-theme-muted">
+              {sortedTasks.length} {sortedTasks.length === 1 ? 'Series' : 'Series'}
+            </span>
+          </div>
+        </div>
+
+        {/* =========================================================================
             SERIES LIST / MAIN STAGE
             ========================================================================= */}
         <div className="p-6 space-y-4 overflow-y-auto flex-1">
-          {filteredTasks.length === 0 ? (
+          {sortedTasks.length === 0 ? (
             <div className="p-12 text-center rounded-3xl bg-theme-card-hover/40 border border-dashed border-theme-border space-y-3">
               <Repeat className="w-9 h-9 text-theme-muted mx-auto opacity-40" />
               <h5 className="text-sm font-bold text-theme-text">No Recurring Series Found</h5>
@@ -329,11 +607,12 @@ export const RecurringManagerModal: React.FC<RecurringManagerModalProps> = ({
               </p>
             </div>
           ) : (
-            filteredTasks.map((task) => {
+            sortedTasks.map((task) => {
               const pMeta = prioritySettings[task.priority];
               const isPaused = task.status === 'Hold';
               const excludedCount = (task.excludedDates || []).length;
               const upcomingDates = getUpcomingDates(task, 3);
+              const occ = occurrenceMap.get(task.id) || getNextUpcomingOccurrence(task, now);
 
               return (
                 <div
@@ -347,7 +626,7 @@ export const RecurringManagerModal: React.FC<RecurringManagerModalProps> = ({
                   {/* Top Row: Priority, Project Code, Time, Status, God Admin Actions */}
                   <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 border-b border-theme-border/40 pb-3">
                     
-                    <div className="space-y-1 min-w-0">
+                    <div className="space-y-1.5 min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
                         {/* Priority Badge */}
                         <span 
@@ -372,6 +651,36 @@ export const RecurringManagerModal: React.FC<RecurringManagerModalProps> = ({
                           <Clock className="w-3.5 h-3.5 text-theme-muted" />
                           <span>{task.startTime} – {task.endTime} ({task.appointedMinutes}m)</span>
                         </span>
+
+                        {/* Next Imminent Trigger Badge */}
+                        {!isPaused && (
+                          occ.isInProgress ? (
+                            <span className="text-[10px] font-black px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 border border-emerald-500/40 flex items-center gap-1 shadow-[0_0_12px_rgba(16,185,129,0.3)] animate-pulse">
+                              <Zap className="w-3 h-3 fill-current text-emerald-500" />
+                              <span>IN PROGRESS • Ends {occ.endTime}</span>
+                            </span>
+                          ) : occ.isTodayUpcoming ? (
+                            <span className="text-[10px] font-black px-2.5 py-0.5 rounded-full bg-blue-500/15 text-blue-700 dark:text-blue-300 border border-blue-500/30 flex items-center gap-1">
+                              <Sparkles className="w-3 h-3 text-blue-500" />
+                              <span>NEXT: Today at {occ.startTime}</span>
+                            </span>
+                          ) : occ.isTomorrow ? (
+                            <span className="text-[10px] font-black px-2.5 py-0.5 rounded-full bg-teal-500/15 text-teal-700 dark:text-teal-300 border border-teal-500/30 flex items-center gap-1">
+                              <Clock className="w-3 h-3 text-teal-500" />
+                              <span>NEXT: Tomorrow at {occ.startTime}</span>
+                            </span>
+                          ) : occ.daysUntil <= 7 ? (
+                            <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-indigo-500/10 text-indigo-700 dark:text-indigo-300 border border-indigo-500/20 flex items-center gap-1">
+                              <Calendar className="w-3 h-3 text-indigo-500" />
+                              <span>NEXT: {occ.label}</span>
+                            </span>
+                          ) : (
+                            <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-theme-card-hover text-theme-muted border border-theme-border flex items-center gap-1">
+                              <Calendar className="w-3 h-3 text-theme-muted" />
+                              <span>Next: {occ.label}</span>
+                            </span>
+                          )
+                        )}
 
                         {/* Buffer Pill */}
                         {task.bufferMinutes !== undefined && task.bufferMinutes > 0 && (
@@ -527,16 +836,39 @@ export const RecurringManagerModal: React.FC<RecurringManagerModalProps> = ({
 
                     {/* Upcoming Dates Preview */}
                     {upcomingDates.length > 0 && (
-                      <div className="flex items-center gap-1.5 text-[11px] text-theme-muted">
-                        <span>Upcoming:</span>
-                        {upcomingDates.map((d, idx) => (
-                          <span 
-                            key={idx} 
-                            className="font-mono font-bold px-2 py-0.5 rounded-md bg-theme-card-hover border border-theme-border text-theme-text"
-                          >
-                            {formatDisplayDate(d)}
-                          </span>
-                        ))}
+                      <div className="flex items-center gap-1.5 text-[11px] text-theme-muted flex-wrap">
+                        <span className="font-semibold text-theme-text/80">Upcoming Schedule:</span>
+                        {upcomingDates.map((d, idx) => {
+                          const isNext = idx === 0;
+                          const [y, m, day] = d.split('-').map(Number);
+                          const dObj = new Date(y, m - 1, day);
+                          const dayName = SHORT_DAYS[dObj.getDay()];
+                          const isTodayDate = d === toISODateString(now);
+                          const isTomorrowDate = (() => {
+                            const t = new Date(now);
+                            t.setDate(t.getDate() + 1);
+                            return d === toISODateString(t);
+                          })();
+
+                          return (
+                            <span 
+                              key={idx} 
+                              className={`font-mono text-xs px-2.5 py-0.5 rounded-lg border flex items-center gap-1 ${
+                                isNext
+                                  ? isTodayDate 
+                                    ? 'bg-blue-600 text-white font-black border-blue-600 shadow-xs'
+                                    : isTomorrowDate
+                                      ? 'bg-teal-500/15 text-teal-700 dark:text-teal-300 border-teal-500/30 font-bold'
+                                      : 'bg-theme-card-hover text-theme-text border-theme-border font-bold'
+                                  : 'bg-theme-card text-theme-muted border-theme-border/60'
+                              }`}
+                              title={`Scheduled occurrence: ${d}`}
+                            >
+                              {isNext && <Sparkles className="w-3 h-3 text-current" />}
+                              <span>{isTodayDate ? 'Today' : isTomorrowDate ? 'Tomorrow' : dayName}, {formatDisplayDate(d)}</span>
+                            </span>
+                          );
+                        })}
                       </div>
                     )}
 

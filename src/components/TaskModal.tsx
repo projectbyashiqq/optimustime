@@ -308,27 +308,29 @@ export const TaskModal: React.FC<TaskModalProps> = ({
     });
   }, [recurrence, selectedDays, startTime, taskDate, initialDate]);
 
-  // Track previous recurrence pattern to only auto-align when recurrence pattern changes
-  const prevRecurrencePatternRef = useRef(`${recurrence}-${(selectedDays || []).sort().join(',')}`);
+  // Track previous recurrence pattern to only auto-align when recurrence pattern, startTime, or base date changes
+  const prevRecurrencePatternRef = useRef(
+    `${recurrence}-${(selectedDays || []).sort().join(',')}-${startTime}-${(recurrence === 'Weekly' || recurrence === 'Monthly' || recurrence === 'Yearly') ? taskDate : ''}`
+  );
 
-  // When setting recurrence on a new task, automatically align taskDate to the first valid occurrence
+  // When setting recurrence on a new task or converting a single task to recurring, automatically align taskDate to the first valid occurrence
   useEffect(() => {
-    const currentPattern = `${recurrence}-${(selectedDays || []).sort().join(',')}`;
+    const currentPattern = `${recurrence}-${(selectedDays || []).sort().join(',')}-${startTime}-${(recurrence === 'Weekly' || recurrence === 'Monthly' || recurrence === 'Yearly') ? taskDate : ''}`;
     if (prevRecurrencePatternRef.current !== currentPattern) {
       prevRecurrencePatternRef.current = currentPattern;
-      if (!taskToEdit && recurrence && recurrence !== 'None') {
+      if ((!taskToEdit || !taskToEdit.recurrence || taskToEdit.recurrence === 'None') && recurrence && recurrence !== 'None') {
         const nextValid = calculateFirstRecurringDate({
           recurrence,
           selectedDays,
           startTime,
-          baseDate: taskDate
+          baseDate: taskDate || initialDate || toISODateString(new Date())
         });
         if (nextValid !== taskDate) {
           setTaskDate(nextValid);
         }
       }
     }
-  }, [recurrence, selectedDays, startTime, taskDate, taskToEdit]);
+  }, [recurrence, selectedDays, startTime, taskDate, taskToEdit, initialDate]);
 
   // Live evaluation of whether scheduled start time is in the past
   const pastTimeCheck = useMemo(() => {
@@ -558,7 +560,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
         recurrence,
         selectedDays: recurrence === 'Selected Days' ? selectedDays : [],
         startTime,
-        baseDate: taskDate
+        baseDate: taskDate || initialDate || toISODateString(new Date())
       });
     }
     const crosses = hasNoTime ? false : taskCrossesMidnight(startTime, endTime);
@@ -2045,18 +2047,34 @@ export const TaskModal: React.FC<TaskModalProps> = ({
 
                       {/* 1st Occurrence Preview */}
                       {recurrence !== 'None' && firstOccurrencePreview && (
-                        <div className="p-2.5 rounded-xl bg-blue-500/10 border border-blue-500/30 flex items-center justify-between text-xs text-blue-700 dark:text-blue-300 font-medium">
-                          <span className="flex items-center gap-1.5">
+                        <div className="p-2.5 rounded-xl bg-blue-500/10 border border-blue-500/30 flex items-center justify-between text-xs text-blue-700 dark:text-blue-300 font-medium gap-2">
+                          <span className="flex items-center gap-1.5 min-w-0">
                             <CalendarDays className="w-3.5 h-3.5 text-blue-500 shrink-0" />
-                            <span>First Date: <strong>{firstOccurrencePreview} ({getDayOfWeekFromDate(firstOccurrencePreview)})</strong></span>
+                            <span className="truncate">First Occurrence: <strong>{firstOccurrencePreview} ({getDayOfWeekFromDate(firstOccurrencePreview)})</strong></span>
                           </span>
                           {firstOccurrencePreview === toISODateString(new Date()) ? (
-                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30">
-                              Starts Today
+                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30 shrink-0">
+                              Starts Today ({startTime})
+                            </span>
+                          ) : firstOccurrencePreview === tomorrowStr ? (
+                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-teal-500/15 text-teal-700 dark:text-teal-300 border border-teal-500/30 shrink-0">
+                              Starts Tomorrow ({startTime})
+                            </span>
+                          ) : recurrence === 'Weekly' ? (
+                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-purple-500/15 text-purple-600 dark:text-purple-400 border border-purple-500/30 shrink-0">
+                              Starts Next {getDayOfWeekFromDate(firstOccurrencePreview)} ({firstOccurrencePreview})
+                            </span>
+                          ) : recurrence === 'Monthly' ? (
+                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-indigo-500/15 text-indigo-600 dark:text-indigo-400 border border-indigo-500/30 shrink-0">
+                              Starts Next Month ({firstOccurrencePreview})
+                            </span>
+                          ) : recurrence === 'Yearly' ? (
+                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/30 shrink-0">
+                              Starts Next Year ({firstOccurrencePreview})
                             </span>
                           ) : (
-                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-purple-500/15 text-purple-600 dark:text-purple-400 border border-purple-500/30">
-                              Upcoming
+                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-purple-500/15 text-purple-600 dark:text-purple-400 border border-purple-500/30 shrink-0">
+                              Starts {firstOccurrencePreview}
                             </span>
                           )}
                         </div>
