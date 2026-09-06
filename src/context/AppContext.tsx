@@ -860,6 +860,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const pushToCloud = useCallback(async (force = false): Promise<boolean> => {
     const cfg = cloudSyncConfigRef.current;
     if (!cfg.isEnabled || !cfg.supabaseUrl || !cfg.supabaseAnonKey) return false;
+    // Guard against unnecessary network traffic: only push if local mutations are pending or forced
+    if (!force && !hasPendingPushRef.current) return true;
     
     setCloudSyncStatus('syncing');
     const bundle = getFullBundle();
@@ -1167,13 +1169,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (!cfg.isEnabled || !cfg.supabaseUrl || !cfg.supabaseAnonKey) {
       return;
     }
-    // Skip if update originated from cloud, before initial pull finishes, or if conflict is active
-    if (isRemoteUpdateRef.current || !isInitialPullDoneRef.current || cloudSyncStatus === 'conflict') {
+    // Skip if update originated from cloud, before initial pull finishes, if conflict is active, or if no local edits are pending
+    if (isRemoteUpdateRef.current || !isInitialPullDoneRef.current || cloudSyncStatus === 'conflict' || !hasPendingPushRef.current) {
       return;
     }
 
     const timer = setTimeout(() => {
-      pushToCloudRef.current(false);
+      if (hasPendingPushRef.current) {
+        pushToCloudRef.current(false);
+      }
     }, 1500);
 
     return () => clearTimeout(timer);
@@ -1189,8 +1193,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     bufferNotes,
     bufferCategories,
     planProjects,
-    defaultTaskSettings,
-    cloudSyncStatus
+    defaultTaskSettings
   ]);
 
   // Page Unload / Tab Close: Flush any pending debounced save to cloud with keepalive beacon
