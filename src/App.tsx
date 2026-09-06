@@ -3,6 +3,7 @@ import { useApp } from './context/AppContext';
 import { Header } from './components/Header';
 import { Navbar } from './components/Navbar';
 import { ActiveTaskBanner } from './components/ActiveTaskBanner';
+import { CloudConflictBanner } from './components/CloudConflictBanner';
 import { TaskModal } from './components/TaskModal';
 import { BufferNoteModal } from './components/BufferNoteModal';
 import { RecurringDeleteModal } from './components/RecurringDeleteModal';
@@ -107,6 +108,9 @@ export const AppContent: React.FC = () => {
 
       {/* Persistent Active Working Task Banner */}
       <ActiveTaskBanner />
+
+      {/* Cloud Sync Conflict Guard Alert */}
+      <CloudConflictBanner />
 
       {/* Main Content Area */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-3 sm:px-6 lg:px-8 pt-3 pb-6">

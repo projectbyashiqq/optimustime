@@ -83,8 +83,10 @@ import {
   pushStateToCloud, 
   pullStateFromCloud, 
   subscribeToRealtimeCloud,
-  testSupabaseConnection 
+  testSupabaseConnection,
+  flushStateToCloudBeacon
 } from '../services/supabase';
+import { SyncConflictInfo } from '../types';
 import confetti from 'canvas-confetti';
 
 export interface BufferNoteModalParams {
@@ -239,14 +241,18 @@ interface AppContextType {
   login: (password: string, rememberDevice?: boolean) => boolean;
   logout: () => void;
   
-  // Real-Time Cloud Database Sync (Supabase)
+  // Real-Time Cloud Database Sync (Supabase) & Conflict Guarding
   cloudSyncConfig: CloudSyncConfig;
   cloudSyncStatus: CloudSyncStatus;
+  syncConflict: SyncConflictInfo | null;
   updateCloudSyncConfig: (config: CloudSyncConfig) => void;
   syncNow: () => Promise<boolean>;
-  pushToCloud: () => Promise<boolean>;
+  pushToCloud: (force?: boolean) => Promise<boolean>;
   pullFromCloud: () => Promise<boolean>;
   testCloudConnection: () => Promise<{ success: boolean; message: string }>;
+  resolveConflictWithCloud: () => Promise<void>;
+  resolveConflictWithLocalForce: () => Promise<void>;
+  resolveConflictWithMerge: () => Promise<void>;
   
   // Backup / Restore & 100% System Data Hub
   exportStateJson: () => string;
@@ -692,9 +698,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return cloudSyncConfig.isEnabled ? 'connecting' : 'offline';
   });
 
-  // Tracking flags to avoid infinite ping-pong sync loops
+  // Tracking flags to avoid infinite ping-pong sync loops & timestamp conflict guarding
   const isRemoteUpdateRef = useRef(false);
   const isInitialPullDoneRef = useRef(false);
+  const lastSyncedAtRef = useRef<string>(cloudSyncConfig.lastSyncedAt || '');
+  const lastModifiedAtRef = useRef<string>(cloudSyncConfig.lastModifiedAt || new Date().toISOString());
+  const hasPendingPushRef = useRef(false);
+  const [syncConflict, setSyncConflict] = useState<SyncConflictInfo | null>(null);
 
   const [activeTab, setActiveTab] = useState<ActiveTab>('dashboard');
   const [searchQuery, setSearchQuery] = useState('');
@@ -704,8 +714,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const activeTask = tasks.find(t => t.status === 'Working');
   const activeTaskId = activeTask ? activeTask.id : null;
 
-  // Persist states to LocalStorage
+  // Persist states to LocalStorage & track local mutations
   useEffect(() => {
+    if (!isRemoteUpdateRef.current) {
+      lastModifiedAtRef.current = new Date().toISOString();
+      hasPendingPushRef.current = true;
+    }
     try {
       localStorage.setItem(`${STORAGE_KEY}_tasks`, JSON.stringify(tasks));
       localStorage.setItem(`${STORAGE_KEY}_categories`, JSON.stringify(categories));
@@ -827,42 +841,211 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return true;
   }, [setTheme]);
 
-  const pushToCloud = useCallback(async (): Promise<boolean> => {
+  const pushToCloud = useCallback(async (force = false): Promise<boolean> => {
     const cfg = cloudSyncConfigRef.current;
     if (!cfg.isEnabled || !cfg.supabaseUrl || !cfg.supabaseAnonKey) return false;
+    
     setCloudSyncStatus('syncing');
     const bundle = getFullBundle();
-    const ok = await pushStateToCloud(cfg, bundle);
-    if (ok) {
+    
+    // Pass expectedUpdatedAt to guard against overwriting newer remote updates
+    const result = await pushStateToCloud(cfg, bundle, {
+      expectedUpdatedAt: lastSyncedAtRef.current || undefined,
+      force
+    });
+
+    if (result.conflict) {
+      setCloudSyncStatus('conflict');
+      setSyncConflict({
+        remoteUpdatedAt: result.remoteUpdatedAt || '',
+        localLastSyncedAt: lastSyncedAtRef.current,
+        localLastModifiedAt: lastModifiedAtRef.current
+      });
+      playNotificationChime('alert');
+      return false;
+    }
+
+    if (result.success) {
+      const serverTime = result.serverUpdatedAt || new Date().toISOString();
+      lastSyncedAtRef.current = serverTime;
+      hasPendingPushRef.current = false;
       setCloudSyncStatus('synced');
+      setSyncConflict(null);
+      
+      // Persist lastSyncedAt to local config cache
+      setCloudSyncConfig(prev => {
+        const next = { ...prev, lastSyncedAt: serverTime, lastModifiedAt: lastModifiedAtRef.current };
+        try {
+          localStorage.setItem(`${STORAGE_KEY}_cloud_sync`, JSON.stringify(next));
+        } catch {}
+        return next;
+      });
+      return true;
     } else {
       setCloudSyncStatus('error');
+      return false;
     }
-    return ok;
   }, [getFullBundle]);
 
   const pullFromCloud = useCallback(async (): Promise<boolean> => {
     const cfg = cloudSyncConfigRef.current;
     if (!cfg.isEnabled || !cfg.supabaseUrl || !cfg.supabaseAnonKey) return false;
+    
     setCloudSyncStatus('syncing');
-    const cloudData = await pullStateFromCloud(cfg);
-    if (cloudData) {
-      applyBundle(cloudData);
+    const result = await pullStateFromCloud(cfg);
+    
+    if (result.success && result.payload) {
+      applyBundle(result.payload);
+      const serverTime = result.updatedAt || new Date().toISOString();
+      lastSyncedAtRef.current = serverTime;
+      hasPendingPushRef.current = false;
+      setCloudSyncStatus('synced');
+      setSyncConflict(null);
+      
+      setCloudSyncConfig(prev => {
+        const next = { ...prev, lastSyncedAt: serverTime };
+        try {
+          localStorage.setItem(`${STORAGE_KEY}_cloud_sync`, JSON.stringify(next));
+        } catch {}
+        return next;
+      });
+      return true;
+    } else if (result.success && result.isNotFound) {
+      // Database row does not exist yet (clean workspace)
       setCloudSyncStatus('synced');
       return true;
     } else {
-      setCloudSyncStatus('synced');
+      // Network failure, offline, or transient database error:
+      // NEVER overwrite or push local data! Keep cloud safely intact.
+      console.warn('Pull from cloud failed:', result.error);
+      setCloudSyncStatus('error');
       return false;
     }
   }, [applyBundle]);
 
   const syncNow = useCallback(async (): Promise<boolean> => {
-    return await pushToCloud();
+    return await pushToCloud(false);
   }, [pushToCloud]);
 
   const testCloudConnection = useCallback(async () => {
     return await testSupabaseConnection(cloudSyncConfigRef.current);
   }, []);
+
+  // Conflict Resolution: Accept and load remote cloud version
+  const resolveConflictWithCloud = useCallback(async () => {
+    await pullFromCloud();
+  }, [pullFromCloud]);
+
+  // Conflict Resolution: Force overwrite cloud with this device's version
+  const resolveConflictWithLocalForce = useCallback(async () => {
+    await pushToCloud(true);
+  }, [pushToCloud]);
+
+  // Conflict Resolution: Smart Merge local & remote state without data loss
+  const resolveConflictWithMerge = useCallback(async () => {
+    const cfg = cloudSyncConfigRef.current;
+    if (!cfg.isEnabled || !cfg.supabaseUrl || !cfg.supabaseAnonKey) return;
+    
+    setCloudSyncStatus('syncing');
+    const cloudRes = await pullStateFromCloud(cfg);
+    if (!cloudRes.success || !cloudRes.payload) {
+      await pushToCloud(true);
+      return;
+    }
+
+    const remote = cloudRes.payload;
+    const local = stateRef.current;
+
+    // Smart merge tasks: combine both, deduplicate by ID, keep latest or active/completed
+    const remoteTasks: Task[] = Array.isArray(remote.tasks) ? (remote.tasks as Task[]) : [];
+    const taskMap = new Map<string, Task>();
+    
+    // Add remote tasks first
+    for (const rt of remoteTasks) {
+      taskMap.set(rt.id, rt);
+    }
+    // Overlay local tasks with smart status retention
+    for (const lt of local.tasks) {
+      if (!taskMap.has(lt.id)) {
+        taskMap.set(lt.id, lt);
+      } else {
+        const rt = taskMap.get(lt.id)!;
+        if (lt.status === 'Done' || lt.status === 'Working' || (lt.rescheduleCount || 0) > (rt.rescheduleCount || 0)) {
+          taskMap.set(lt.id, lt);
+        }
+      }
+    }
+    const mergedTasks = Array.from(taskMap.values());
+
+    // Merge categories
+    const remoteCats: Category[] = Array.isArray(remote.categories) ? (remote.categories as Category[]) : [];
+    const catMap = new Map<string, Category>();
+    for (const c of remoteCats) catMap.set(c.id, c);
+    for (const c of local.categories) catMap.set(c.id, c);
+    const mergedCategories = Array.from(catMap.values());
+
+    // Merge buffer notes
+    const remoteNotes: BufferStatusNote[] = Array.isArray(remote.bufferNotes) ? (remote.bufferNotes as BufferStatusNote[]) : [];
+    const noteMap = new Map<string, BufferStatusNote>();
+    for (const n of remoteNotes) noteMap.set(n.id, n);
+    for (const n of local.bufferNotes) noteMap.set(n.id, n);
+    const mergedBufferNotes = Array.from(noteMap.values());
+
+    // Merge plan projects
+    const remoteProjects: PlanProjectFolder[] = Array.isArray(remote.planProjects) ? (remote.planProjects as PlanProjectFolder[]) : [];
+    const projectMap = new Map<string, PlanProjectFolder>();
+    for (const p of remoteProjects) projectMap.set(p.id, p);
+    for (const p of local.planProjects) projectMap.set(p.id, p);
+    const mergedPlanProjects = Array.from(projectMap.values());
+
+    // Merge reminders
+    const remoteReminders: Reminder[] = Array.isArray(remote.reminders) ? (remote.reminders as Reminder[]) : [];
+    const remMap = new Map<string, Reminder>();
+    for (const r of remoteReminders) remMap.set(r.id, r);
+    for (const r of local.reminders) remMap.set(r.id, r);
+    const mergedReminders = Array.from(remMap.values());
+
+    // Merge knowledge
+    const remoteKnowledge: KnowledgeItem[] = Array.isArray(remote.knowledge) ? (remote.knowledge as KnowledgeItem[]) : [];
+    const knowMap = new Map<string, KnowledgeItem>();
+    for (const k of remoteKnowledge) knowMap.set(k.id, k);
+    for (const k of local.knowledge) knowMap.set(k.id, k);
+    const mergedKnowledge = Array.from(knowMap.values());
+
+    // Apply merged state locally
+    isRemoteUpdateRef.current = true;
+    setTasks(mergedTasks);
+    setCategories(mergedCategories);
+    setBufferNotes(mergedBufferNotes);
+    setPlanProjects(mergedPlanProjects);
+    setReminders(mergedReminders);
+    setKnowledge(mergedKnowledge);
+    setTimeout(() => { isRemoteUpdateRef.current = false; }, 1000);
+
+    // Build merged bundle and force push
+    const mergedBundle = {
+      ...getFullBundle(),
+      tasks: mergedTasks,
+      categories: mergedCategories,
+      bufferNotes: mergedBufferNotes,
+      planProjects: mergedPlanProjects,
+      reminders: mergedReminders,
+      knowledge: mergedKnowledge,
+      syncedAt: new Date().toISOString()
+    };
+
+    const pushRes = await pushStateToCloud(cfg, mergedBundle, { force: true });
+    if (pushRes.success) {
+      const serverTime = pushRes.serverUpdatedAt || new Date().toISOString();
+      lastSyncedAtRef.current = serverTime;
+      hasPendingPushRef.current = false;
+      setCloudSyncStatus('synced');
+      setSyncConflict(null);
+      playNotificationChime('success');
+    } else {
+      setCloudSyncStatus('error');
+    }
+  }, [getFullBundle, pushToCloud]);
 
   const pullFromCloudRef = useRef(pullFromCloud);
   pullFromCloudRef.current = pullFromCloud;
@@ -871,7 +1054,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const applyBundleRef = useRef(applyBundle);
   applyBundleRef.current = applyBundle;
 
-  // Real-time Cloud Subscription & Initial Cloud Pull
+  // Real-time Cloud Subscription & Safe Initial Cloud Pull
   useEffect(() => {
     const isEnabled = cloudSyncConfig.isEnabled;
     const url = cloudSyncConfig.supabaseUrl?.trim();
@@ -885,16 +1068,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     setCloudSyncStatus('connecting');
 
-    // Initial pull on connect
+    // Safe initial pull on connect:
+    // If pull fails for ANY reason (offline, reconnect delay, network error),
+    // NEVER PUSH LOCAL STATE. Leave existing cloud data 100% untouched.
     pullFromCloudRef.current().then(success => {
       isInitialPullDoneRef.current = true;
-      if (success) {
-        setCloudSyncStatus('synced');
-      } else {
-        // Seed initial data to cloud if table row is empty
-        pushToCloudRef.current().then(() => {
-          setCloudSyncStatus('synced');
-        });
+      if (!success) {
+        console.warn('Initial cloud pull failed or was offline. Cloud state remains safely untouched.');
       }
     });
 
@@ -907,9 +1087,22 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
 
     const unsubscribe = subscribeToRealtimeCloud(activeConfig, (remotePayload) => {
-      applyBundleRef.current(remotePayload);
-      setCloudSyncStatus('synced');
-      playNotificationChime('success');
+      // If this device has unsynced local mutations, alert user rather than silently overwriting
+      if (hasPendingPushRef.current) {
+        console.warn('[Realtime Conflict] Remote update received while local changes are pending');
+        setCloudSyncStatus('conflict');
+        setSyncConflict({
+          remoteUpdatedAt: new Date().toISOString(),
+          localLastSyncedAt: lastSyncedAtRef.current,
+          localLastModifiedAt: lastModifiedAtRef.current,
+          remotePayload
+        });
+        playNotificationChime('alert');
+      } else {
+        applyBundleRef.current(remotePayload);
+        setCloudSyncStatus('synced');
+        playNotificationChime('success');
+      }
     });
 
     return () => {
@@ -922,19 +1115,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     cloudSyncConfig.autoRealtimeSync
   ]);
 
-  // Auto-sync local state changes to Supabase Cloud (Debounced auto-push)
+  // Auto-sync local state changes to Supabase Cloud (Debounced auto-push with conflict guarding)
   useEffect(() => {
     const cfg = cloudSyncConfigRef.current;
     if (!cfg.isEnabled || !cfg.supabaseUrl || !cfg.supabaseAnonKey) {
       return;
     }
-    // Skip if update originated from cloud or before initial pull finishes
-    if (isRemoteUpdateRef.current || !isInitialPullDoneRef.current) {
+    // Skip if update originated from cloud, before initial pull finishes, or if conflict is active
+    if (isRemoteUpdateRef.current || !isInitialPullDoneRef.current || cloudSyncStatus === 'conflict') {
       return;
     }
 
     const timer = setTimeout(() => {
-      pushToCloudRef.current();
+      pushToCloudRef.current(false);
     }, 1500);
 
     return () => clearTimeout(timer);
@@ -950,8 +1143,30 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     bufferNotes,
     bufferCategories,
     planProjects,
-    defaultTaskSettings
+    defaultTaskSettings,
+    cloudSyncStatus
   ]);
+
+  // Page Unload / Tab Close: Flush any pending debounced save to cloud with keepalive beacon
+  useEffect(() => {
+    const handleUnloadFlush = () => {
+      if (hasPendingPushRef.current) {
+        const cfg = cloudSyncConfigRef.current;
+        if (cfg.isEnabled && cfg.supabaseUrl && cfg.supabaseAnonKey && cloudSyncStatus !== 'conflict') {
+          const bundle = getFullBundle();
+          flushStateToCloudBeacon(cfg, bundle);
+        }
+      }
+    };
+
+    window.addEventListener('beforeunload', handleUnloadFlush);
+    window.addEventListener('pagehide', handleUnloadFlush);
+
+    return () => {
+      window.removeEventListener('beforeunload', handleUnloadFlush);
+      window.removeEventListener('pagehide', handleUnloadFlush);
+    };
+  }, [getFullBundle, cloudSyncStatus]);
 
   // Security & Authentication Methods
   const updateSecuritySettings = useCallback((settings: SecuritySettings) => {
@@ -3201,11 +3416,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         logout,
         cloudSyncConfig,
         cloudSyncStatus,
+        syncConflict,
         updateCloudSyncConfig,
         syncNow,
         pushToCloud,
         pullFromCloud,
         testCloudConnection,
+        resolveConflictWithCloud,
+        resolveConflictWithLocalForce,
+        resolveConflictWithMerge,
         exportStateJson,
         exportSettingsOnlyJson,
         importStateJson,

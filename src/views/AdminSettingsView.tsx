@@ -386,7 +386,6 @@ export const AdminSettingsView: React.FC = () => {
       setIsTestingConn(false);
       if (testRes.success) {
         setCloudStatusMsg({ text: 'Cloud sync connected and saved successfully! ☁️', isError: false });
-        await pushToCloud();
       } else {
         setCloudStatusMsg({ text: `Config saved, but connection error: ${testRes.message}`, isError: true });
       }
@@ -427,7 +426,7 @@ export const AdminSettingsView: React.FC = () => {
       autoRealtimeSync
     };
     updateCloudSyncConfig(config);
-    const ok = await pushToCloud();
+    const ok = await pushToCloud(true);
     setCloudStatusMsg({
       text: ok ? 'Local data successfully pushed to Cloud! 🚀' : 'Failed to push to Cloud. Check Supabase URL, Key & SQL table.',
       isError: !ok
@@ -2061,6 +2060,8 @@ export const AdminSettingsView: React.FC = () => {
             <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
               cloudSyncStatus === 'synced'
                 ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300'
+                : cloudSyncStatus === 'conflict'
+                ? 'bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-300 border border-amber-500/50 animate-pulse'
                 : cloudSyncStatus === 'syncing' || cloudSyncStatus === 'connecting'
                 ? 'bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-300 animate-pulse'
                 : cloudSyncStatus === 'error'

@@ -93,39 +93,92 @@ export async function testSupabaseConnection(config: CloudSyncConfig): Promise<{
   }
 }
 
+export interface PullCloudResult {
+  success: boolean;
+  isNotFound?: boolean;
+  payload?: Record<string, unknown>;
+  updatedAt?: string;
+  error?: string;
+}
+
+export interface PushCloudResult {
+  success: boolean;
+  conflict?: boolean;
+  remoteUpdatedAt?: string;
+  serverUpdatedAt?: string;
+  error?: string;
+}
+
 /**
- * Push full local state to Supabase Cloud
+ * Push full local state to Supabase Cloud with optional timestamp conflict guarding
  */
-export async function pushStateToCloud(config: CloudSyncConfig, fullStateBundle: Record<string, unknown>): Promise<boolean> {
+export async function pushStateToCloud(
+  config: CloudSyncConfig, 
+  fullStateBundle: Record<string, unknown>,
+  options?: { expectedUpdatedAt?: string; force?: boolean }
+): Promise<PushCloudResult> {
   const client = getSupabaseClient(config);
-  if (!client) return false;
+  if (!client) return { success: false, error: 'Supabase client not configured' };
 
   try {
-    const { error } = await client
+    // 1. Conflict Guarding: Check if cloud has newer data than local expectedUpdatedAt
+    if (!options?.force && options?.expectedUpdatedAt) {
+      const { data: remoteData, error: checkError } = await client
+        .from('optimustime_sync')
+        .select('updated_at')
+        .eq('id', 'main_workspace')
+        .single();
+
+      if (!checkError && remoteData?.updated_at) {
+        const remoteTime = new Date(remoteData.updated_at).getTime();
+        const expectedTime = new Date(options.expectedUpdatedAt).getTime();
+        // Allow a 2-second grace period for clock skew
+        if (remoteTime > expectedTime + 2000) {
+          console.warn(`[Sync Conflict] Remote updated_at (${remoteData.updated_at}) > expected (${options.expectedUpdatedAt})`);
+          return {
+            success: false,
+            conflict: true,
+            remoteUpdatedAt: remoteData.updated_at,
+            error: 'Cloud has newer changes from another device.'
+          };
+        }
+      }
+    }
+
+    // 2. Perform safe upsert with updated_at timestamp
+    const nowIso = new Date().toISOString();
+    const { data, error } = await client
       .from('optimustime_sync')
       .upsert({
         id: 'main_workspace',
         payload: fullStateBundle,
-        updated_at: new Date().toISOString()
-      }, { onConflict: 'id' });
+        updated_at: nowIso
+      }, { onConflict: 'id' })
+      .select('updated_at')
+      .single();
 
     if (error) {
       console.error('Error pushing state to Supabase:', error);
-      return false;
+      return { success: false, error: error.message };
     }
-    return true;
+
+    return { 
+      success: true, 
+      serverUpdatedAt: data?.updated_at || nowIso 
+    };
   } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
     console.error('Exception pushing state to Supabase:', err);
-    return false;
+    return { success: false, error: msg };
   }
 }
 
 /**
- * Pull latest state from Supabase Cloud
+ * Pull latest state from Supabase Cloud with detailed status reporting
  */
-export async function pullStateFromCloud(config: CloudSyncConfig): Promise<Record<string, unknown> | null> {
+export async function pullStateFromCloud(config: CloudSyncConfig): Promise<PullCloudResult> {
   const client = getSupabaseClient(config);
-  if (!client) return null;
+  if (!client) return { success: false, error: 'Supabase client not configured' };
 
   try {
     const { data, error } = await client
@@ -134,16 +187,71 @@ export async function pullStateFromCloud(config: CloudSyncConfig): Promise<Recor
       .eq('id', 'main_workspace')
       .single();
 
-    if (error || !data) {
-      console.warn('No cloud state found or error fetching:', error);
-      return null;
+    if (error) {
+      // PostgREST PGRST116 indicates row doesn't exist (clean empty workspace)
+      if (error.code === 'PGRST116') {
+        return { success: true, isNotFound: true };
+      }
+      console.warn('Error fetching cloud state:', error);
+      return { success: false, error: error.message };
     }
 
-    return data.payload as Record<string, unknown>;
+    if (!data || !data.payload) {
+      return { success: true, isNotFound: true };
+    }
+
+    return {
+      success: true,
+      payload: data.payload as Record<string, unknown>,
+      updatedAt: data.updated_at as string
+    };
   } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
     console.error('Exception pulling state from Supabase:', err);
-    return null;
+    return { success: false, error: msg };
   }
+}
+
+/**
+ * Synchronous / keepalive unload flush for tab close or page hide.
+ * Uses browser fetch with keepalive: true hitting Supabase REST API directly.
+ */
+export function flushStateToCloudBeacon(
+  config: CloudSyncConfig, 
+  fullStateBundle: Record<string, unknown>
+): boolean {
+  if (!config.isEnabled || !config.supabaseUrl || !config.supabaseAnonKey) {
+    return false;
+  }
+
+  const endpoint = `${config.supabaseUrl.replace(/\/+$/, '')}/rest/v1/optimustime_sync?on_conflict=id`;
+  const nowIso = new Date().toISOString();
+  const body = JSON.stringify({
+    id: 'main_workspace',
+    payload: fullStateBundle,
+    updated_at: nowIso
+  });
+
+  try {
+    if (typeof fetch !== 'undefined') {
+      fetch(endpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey': config.supabaseAnonKey.trim(),
+          'Authorization': `Bearer ${config.supabaseAnonKey.trim()}`,
+          'Prefer': 'resolution=merge-duplicates'
+        },
+        body,
+        keepalive: true
+      }).catch(err => console.warn('Unload flush fetch failed:', err));
+      return true;
+    }
+  } catch (err) {
+    console.warn('Unload flush exception:', err);
+  }
+
+  return false;
 }
 
 /**

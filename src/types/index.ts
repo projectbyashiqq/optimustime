@@ -306,14 +306,22 @@ export interface SecuritySettings {
   username: string; // e.g. "Master Admin"
 }
 
-export type CloudSyncStatus = 'offline' | 'connecting' | 'synced' | 'syncing' | 'error';
+export type CloudSyncStatus = 'offline' | 'connecting' | 'synced' | 'syncing' | 'error' | 'conflict';
+
+export interface SyncConflictInfo {
+  remoteUpdatedAt: string;
+  localLastSyncedAt?: string;
+  localLastModifiedAt?: string;
+  remotePayload?: Record<string, unknown>;
+}
 
 export interface CloudSyncConfig {
   isEnabled: boolean;
   supabaseUrl: string;
   supabaseAnonKey: string;
-  tableName: string; // Default: 'optimustime_data'
+  tableName: string; // Default: 'optimustime_sync'
   lastSyncedAt?: string;
+  lastModifiedAt?: string;
   autoRealtimeSync: boolean;
 }
 
