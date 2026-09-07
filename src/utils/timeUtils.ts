@@ -572,7 +572,14 @@ export function findScheduleGaps(
       }
     }
 
-    if (e < s) e += 1440;
+    if (e < s) {
+      if (t.status === 'Done') {
+        // Guard: If task was completed early or before scheduled start, do not treat as crossing midnight!
+        // The slot is completely free.
+        continue;
+      }
+      e += 1440;
+    }
     // If day spans cross midnight (e.g. 06:00 AM to 02:00 AM), late-night tasks starting after midnight belong to next 24h phase
     if (dayEndMin > 1440 && s < dayStartMin) {
       s += 1440;
@@ -1913,6 +1920,10 @@ export function get24HourContinuousTimeline(
     if (t.status === 'Done') {
       if (t.actualEndTime) {
         const aEnd = parse12HourToMinutes(t.actualEndTime);
+        if (aEnd <= s) {
+          // Completed before the scheduled start time! That entire scheduled window is completely free!
+          continue;
+        }
         if (aEnd > s && aEnd < e) {
           e = aEnd;
         }
@@ -1921,7 +1932,12 @@ export function get24HourContinuousTimeline(
       }
     }
 
-    if (e <= s) e += 1440;
+    if (e <= s) {
+      if (t.status === 'Done') {
+        continue;
+      }
+      e += 1440;
+    }
 
     let sliceType: DaySlice24['type'] = 'work_pending';
     if (t.status === 'Done') sliceType = 'work_completed';

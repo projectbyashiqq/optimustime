@@ -2418,9 +2418,40 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const exactCurrentTimeStr = formatMinutesTo12Hour(curMin);
       const actualEndTime = exactCurrentTimeStr;
 
-      const completionMessage = savedFreeMinutes > 0
-        ? `✓ Completed "${target.title}" [${target.priority}] early in ${actualDuration}m (Budget: ${budgetMinutes}m) • Saved +${savedFreeMinutes}m as FREE TIME! Completed at ${actualEndTime}.`
-        : `✓ Completed "${target.title}" [${target.priority}] in ${actualDuration}m (${isLate ? `Exceeded budget by +${delayMins}m` : 'On-Time Precision'}) at ${actualEndTime}.`;
+      // Detect Pre-Emptive Completion (Task completed BEFORE its scheduled window arrived)
+      const isScheduledTimedTask = Boolean(
+        target.startTime && 
+        target.endTime && 
+        target.startTime !== 'Anytime' && 
+        target.startTime !== 'All Day' && 
+        !target.hasNoTime
+      );
+      const scheduledStartMin = isScheduledTimedTask ? parse12HourToMinutes(target.startTime) : null;
+      const isPreEmptive = Boolean(
+        isScheduledTimedTask &&
+        scheduledStartMin !== null &&
+        (target.taskDate > todayStr || (target.taskDate === todayStr && curMin < scheduledStartMin))
+      );
+
+      // Industry Standard: If finished pre-emptively, actual duration spent was just the immediate action (or logged time)
+      // and 100% of the planned window is freed as FREE TIME!
+      const effectiveActualDuration = isPreEmptive 
+        ? (totalLoggedMinutes > 0 ? totalLoggedMinutes : 1)
+        : actualDuration;
+
+      const effectiveSavedFreeMinutes = isPreEmptive
+        ? budgetMinutes
+        : savedFreeMinutes;
+
+      // Critical: For pre-emptive completion, DO NOT overwrite scheduled endTime with earlier clock time!
+      // Keeping original scheduled boundaries avoids inverted clock wrap bugs (e.g. 4:00 PM -> 10:05 AM)
+      const effectiveEndTime = isPreEmptive ? target.endTime : actualEndTime;
+
+      const completionMessage = isPreEmptive
+        ? `✓ Completed "${target.title}" [${target.priority}] pre-emptively before its scheduled window! Freed 100% (+${effectiveSavedFreeMinutes}m) as FREE TIME at ${actualEndTime}.`
+        : (effectiveSavedFreeMinutes > 0
+            ? `✓ Completed "${target.title}" [${target.priority}] early in ${effectiveActualDuration}m (Budget: ${budgetMinutes}m) • Saved +${effectiveSavedFreeMinutes}m as FREE TIME! Completed at ${actualEndTime}.`
+            : `✓ Completed "${target.title}" [${target.priority}] in ${effectiveActualDuration}m (${isLate ? `Exceeded budget by +${delayMins}m` : 'On-Time Precision'}) at ${actualEndTime}.`);
 
       logLifeEvent({
         eventType: 'TASK_COMPLETED',
@@ -2431,17 +2462,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         category: target.category,
         message: completionMessage,
         details: {
-          durationMinutes: actualDuration,
+          durationMinutes: effectiveActualDuration,
           appointedMinutes: budgetMinutes,
           delayMinutes: delayMins,
-          savedFreeMinutes,
-          actualStartTime: target.actualStartTime || target.startTime,
+          savedFreeMinutes: effectiveSavedFreeMinutes,
+          actualStartTime: target.actualStartTime || (isPreEmptive ? actualEndTime : target.startTime),
           actualEndTime,
-          isLate
+          isLate,
+          completedBeforeTimeOccurred: isPreEmptive
         }
       });
 
-      if (isLate) {
+      if (isLate && !isPreEmptive) {
         logLifeEvent({
           eventType: 'TASK_DELAYED',
           taskId: target.id,
@@ -2471,10 +2503,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           recurrence: 'None',
           selectedDays: [],
           bufferMinutes,
-          endTime: actualEndTime, // Set final end time to exact completion time
+          endTime: effectiveEndTime,
           actualEndTime,
-          totalActualMinutes: actualDuration,
-          savedFreeMinutes,
+          completedBeforeTimeOccurred: isPreEmptive,
+          totalActualMinutes: effectiveActualDuration,
+          savedFreeMinutes: effectiveSavedFreeMinutes,
           executionLogs: logs,
           dateAdded: new Date().toISOString()
         };
@@ -2516,11 +2549,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           return {
             ...t,
             status: 'Done' as TaskStatus,
-            endTime: actualEndTime, // Set final end time to exact completion time
+            endTime: effectiveEndTime,
             actualEndTime,
+            completedBeforeTimeOccurred: isPreEmptive,
             bufferMinutes,
-            totalActualMinutes: actualDuration,
-            savedFreeMinutes,
+            totalActualMinutes: effectiveActualDuration,
+            savedFreeMinutes: effectiveSavedFreeMinutes,
             executionLogs: logs
           };
         }
