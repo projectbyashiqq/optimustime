@@ -712,8 +712,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   });
 
   // Tracking flags to avoid infinite ping-pong sync loops & timestamp conflict guarding
+  const sessionStartedAtRef = useRef<number>(Date.now());
   const isRemoteUpdateRef = useRef(false);
   const isInitialPullDoneRef = useRef(false);
+  const isInitialMountRef = useRef(true);
   const lastSyncedAtRef = useRef<string>(cloudSyncConfig.lastSyncedAt || '');
   const lastModifiedAtRef = useRef<string>(cloudSyncConfig.lastModifiedAt || new Date().toISOString());
   const hasPendingPushRef = useRef(false);
@@ -729,11 +731,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const activeTask = tasks.find(t => t.status === 'Working');
   const activeTaskId = activeTask ? activeTask.id : null;
 
-  // Persist states to LocalStorage & track local mutations
+  // Persist states to LocalStorage & track genuine local mutations
   useEffect(() => {
-    if (!isRemoteUpdateRef.current) {
-      lastModifiedAtRef.current = new Date().toISOString();
-      hasPendingPushRef.current = true;
+    if (isInitialMountRef.current) {
+      isInitialMountRef.current = false;
+      // Critical: Do NOT flag pending push or update lastModifiedAt on initial mount cache hydration!
+    } else if (!isRemoteUpdateRef.current) {
+      // Critical Guard: Only mark pending push if the initial boot pull has completed (or cloud sync is disabled).
+      // Stale cache hydration or early re-renders before boot pull finishes must NEVER be flagged as user edits!
+      const isCloudConfigured = cloudSyncConfig.isEnabled && cloudSyncConfig.supabaseUrl && cloudSyncConfig.supabaseAnonKey;
+      if (!isCloudConfigured || isInitialPullDoneRef.current) {
+        lastModifiedAtRef.current = new Date().toISOString();
+        hasPendingPushRef.current = true;
+      }
     }
     try {
       localStorage.setItem(`${STORAGE_KEY}_tasks`, JSON.stringify(tasks));
@@ -751,11 +761,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       localStorage.setItem(`${STORAGE_KEY}_plan_projects`, JSON.stringify(planProjects));
       localStorage.setItem(`${STORAGE_KEY}_theme`, theme);
       localStorage.setItem(`${STORAGE_KEY}_security`, JSON.stringify(securitySettings));
-      localStorage.setItem(`${STORAGE_KEY}_cloud_sync`, JSON.stringify(cloudSyncConfig));
     } catch (e) {
       console.error('Failed to sync to LocalStorage', e);
     }
-  }, [tasks, categories, capacitySettings, prioritySettings, defaultTaskSettings, timePeriodSettings, reminders, knowledge, auditLogs, bufferNotes, bufferCategories, emergencyCategories, planProjects, theme, securitySettings, cloudSyncConfig]);
+  }, [tasks, categories, capacitySettings, prioritySettings, defaultTaskSettings, timePeriodSettings, reminders, knowledge, auditLogs, bufferNotes, bufferCategories, emergencyCategories, planProjects, theme, securitySettings]);
 
   const updateCloudSyncConfig = useCallback((config: CloudSyncConfig) => {
     setCloudSyncConfig(config);
@@ -853,6 +862,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (data.timePeriodSettings) setTimePeriodSettings(data.timePeriodSettings as TimePeriodSettings);
     setTimeout(() => {
       isRemoteUpdateRef.current = false;
+      hasPendingPushRef.current = false;
     }, 1000);
     return true;
   }, [setTheme]);
@@ -860,7 +870,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const pushToCloud = useCallback(async (force = false): Promise<boolean> => {
     const cfg = cloudSyncConfigRef.current;
     if (!cfg.isEnabled || !cfg.supabaseUrl || !cfg.supabaseAnonKey) return false;
-    // Guard against unnecessary network traffic: only push if local mutations are pending or forced
+    // Guard: Never push if initial pull hasn't finished yet (unless forced by user)
+    if (!force && !isInitialPullDoneRef.current) return false;
+    // Guard against unnecessary network traffic: only push if genuine local mutations are pending or forced
     if (!force && !hasPendingPushRef.current) return true;
     
     setCloudSyncStatus('syncing');
@@ -893,13 +905,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (result.success) {
       const serverTime = result.serverUpdatedAt || new Date().toISOString();
       lastSyncedAtRef.current = serverTime;
+      lastModifiedAtRef.current = serverTime;
       hasPendingPushRef.current = false;
       setCloudSyncStatus('synced');
       setSyncConflict(null);
       
       // Persist lastSyncedAt to local config cache
       setCloudSyncConfig(prev => {
-        const next = { ...prev, lastSyncedAt: serverTime, lastModifiedAt: lastModifiedAtRef.current };
+        const next = { ...prev, lastSyncedAt: serverTime, lastModifiedAt: serverTime };
         try {
           localStorage.setItem(`${STORAGE_KEY}_cloud_sync`, JSON.stringify(next));
         } catch {}
@@ -923,12 +936,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       applyBundle(result.payload);
       const serverTime = result.updatedAt || new Date().toISOString();
       lastSyncedAtRef.current = serverTime;
+      lastModifiedAtRef.current = serverTime;
       hasPendingPushRef.current = false;
       setCloudSyncStatus('synced');
       setSyncConflict(null);
       
       setCloudSyncConfig(prev => {
-        const next = { ...prev, lastSyncedAt: serverTime };
+        const next = { ...prev, lastSyncedAt: serverTime, lastModifiedAt: serverTime };
         try {
           localStorage.setItem(`${STORAGE_KEY}_cloud_sync`, JSON.stringify(next));
         } catch {}
@@ -977,68 +991,130 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setCloudSyncStatus('syncing');
       const cloudRes = await pullStateFromCloud(cfg);
       if (!cloudRes.success || !cloudRes.payload) {
-        await pushToCloud(true);
+        // If unable to reach cloud, do NOT force-push stale local data!
+        setCloudSyncStatus('error');
         return;
       }
 
       const remote = cloudRes.payload;
       const local = stateRef.current;
+      const remoteUpdatedAt = cloudRes.updatedAt ? new Date(cloudRes.updatedAt).getTime() : 0;
+      const localLastModified = lastModifiedAtRef.current ? new Date(lastModifiedAtRef.current).getTime() : 0;
 
-      // Smart merge tasks: combine both, deduplicate by ID, keep latest or active/completed
+      // CRITICAL GUARD: If local has NO real pending edits made in this session,
+      // or if remote updated_at is newer than or equal to localLastModified:
+      // REMOTE CLOUD WINS! Adopt remote cloud state completely and DO NOT push or overwrite anything!
+      if (!hasPendingPushRef.current || localLastModified <= remoteUpdatedAt) {
+        console.log('[Safe Sync] Cloud state is newer or equal, or local has no pending edits. Adopting cloud state.');
+        applyBundle(remote);
+        const serverTime = cloudRes.updatedAt || new Date().toISOString();
+        lastSyncedAtRef.current = serverTime;
+        lastModifiedAtRef.current = serverTime;
+        hasPendingPushRef.current = false;
+        setCloudSyncStatus('synced');
+        setSyncConflict(null);
+        return;
+      }
+
+      // If local has genuine newer edits made in this session:
+      // Remote is authoritative base.
       const remoteTasks: Task[] = Array.isArray(remote.tasks) ? (remote.tasks as Task[]) : [];
+      const localTasks: Task[] = Array.isArray(local.tasks) ? local.tasks : [];
       const taskMap = new Map<string, Task>();
       
-      // Add remote tasks first
+      // 1. Add all remote tasks first
       for (const rt of remoteTasks) {
         taskMap.set(rt.id, rt);
       }
-      // Overlay local tasks with smart status retention
-      for (const lt of local.tasks) {
-        if (!taskMap.has(lt.id)) {
-          taskMap.set(lt.id, lt);
-        } else {
+      
+      // 2. Overlay local tasks with smart status retention & prevent resurrecting deleted tasks
+      const sessionStart = sessionStartedAtRef.current;
+      for (const lt of localTasks) {
+        if (taskMap.has(lt.id)) {
           const rt = taskMap.get(lt.id)!;
-          if (lt.status === 'Done' || lt.status === 'Working' || (lt.rescheduleCount || 0) > (rt.rescheduleCount || 0)) {
+          // Guard: Only overlay local changes if user actually progressed or rescheduled the task in this session!
+          // NEVER blindly overwrite a remote task just because local had status === 'Done' from an old browser cache!
+          if ((lt.totalActualMinutes || 0) > (rt.totalActualMinutes || 0)) {
+            taskMap.set(lt.id, { ...rt, totalActualMinutes: lt.totalActualMinutes, actualEndTime: lt.actualEndTime });
+          } else if ((lt.rescheduleCount || 0) > (rt.rescheduleCount || 0)) {
+            taskMap.set(lt.id, { ...rt, rescheduleCount: lt.rescheduleCount, taskDate: lt.taskDate, startTime: lt.startTime, endTime: lt.endTime });
+          }
+        } else {
+          // Task exists locally but NOT on remote.
+          // Anti-resurrection guard: ONLY retain if it was genuinely created in THIS active browser session!
+          const dateAddedTime = lt.dateAdded ? new Date(lt.dateAdded).getTime() : 0;
+          if (dateAddedTime >= sessionStart && dateAddedTime > remoteUpdatedAt) {
+            // Truly newly created task in this session: keep it!
             taskMap.set(lt.id, lt);
           }
+          // Otherwise, it was deleted on another device or is a stale artifact from an old session: DO NOT resurrect it!
         }
       }
       const mergedTasks = Array.from(taskMap.values());
 
-      // Merge categories
+      // Merge categories: Remote base, keep local only if newly added
       const remoteCats: Category[] = Array.isArray(remote.categories) ? (remote.categories as Category[]) : [];
-      const catMap = new Map<string, Category>();
-      for (const c of remoteCats) catMap.set(c.id, c);
-      for (const c of local.categories) catMap.set(c.id, c);
-      const mergedCategories = Array.from(catMap.values());
+      const localCats: Category[] = Array.isArray(local.categories) ? local.categories : [];
+      const remoteCatIds = new Set(remoteCats.map(c => c.id));
+      const mergedCategories = [...remoteCats];
+      for (const lc of localCats) {
+        if (!remoteCatIds.has(lc.id) && !lc.isSystem) {
+          mergedCategories.push(lc);
+        }
+      }
 
-      // Merge buffer notes
+      // Merge buffer notes: Remote base, keep local only if newly added in this active session
       const remoteNotes: BufferStatusNote[] = Array.isArray(remote.bufferNotes) ? (remote.bufferNotes as BufferStatusNote[]) : [];
-      const noteMap = new Map<string, BufferStatusNote>();
-      for (const n of remoteNotes) noteMap.set(n.id, n);
-      for (const n of local.bufferNotes) noteMap.set(n.id, n);
-      const mergedBufferNotes = Array.from(noteMap.values());
+      const localNotes: BufferStatusNote[] = Array.isArray(local.bufferNotes) ? local.bufferNotes : [];
+      const remoteNoteIds = new Set(remoteNotes.map(n => n.id));
+      const mergedBufferNotes = [...remoteNotes];
+      for (const ln of localNotes) {
+        if (!remoteNoteIds.has(ln.id)) {
+          const noteTime = ln.createdAt ? new Date(ln.createdAt).getTime() : 0;
+          if (noteTime >= sessionStart && noteTime > remoteUpdatedAt) {
+            mergedBufferNotes.push(ln);
+          }
+        }
+      }
 
-      // Merge plan projects
+      // Plan projects: Remote base, keep local only if newly added
       const remoteProjects: PlanProjectFolder[] = Array.isArray(remote.planProjects) ? (remote.planProjects as PlanProjectFolder[]) : [];
-      const projectMap = new Map<string, PlanProjectFolder>();
-      for (const p of remoteProjects) projectMap.set(p.id, p);
-      for (const p of local.planProjects) projectMap.set(p.id, p);
-      const mergedPlanProjects = Array.from(projectMap.values());
+      const localProjects: PlanProjectFolder[] = Array.isArray(local.planProjects) ? local.planProjects : [];
+      const remoteProjIds = new Set(remoteProjects.map(p => p.id));
+      const mergedPlanProjects = [...remoteProjects];
+      for (const lp of localProjects) {
+        if (!remoteProjIds.has(lp.id)) {
+          mergedPlanProjects.push(lp);
+        }
+      }
 
-      // Merge reminders
+      // Merge reminders: Remote base, keep local only if newly added in this active session
       const remoteReminders: Reminder[] = Array.isArray(remote.reminders) ? (remote.reminders as Reminder[]) : [];
-      const remMap = new Map<string, Reminder>();
-      for (const r of remoteReminders) remMap.set(r.id, r);
-      for (const r of local.reminders) remMap.set(r.id, r);
-      const mergedReminders = Array.from(remMap.values());
+      const localReminders: Reminder[] = Array.isArray(local.reminders) ? local.reminders : [];
+      const remoteRemIds = new Set(remoteReminders.map(r => r.id));
+      const mergedReminders = [...remoteReminders];
+      for (const lr of localReminders) {
+        if (!remoteRemIds.has(lr.id)) {
+          const remTime = (lr as any).createdAt ? new Date((lr as any).createdAt).getTime() : (lr.date ? new Date(lr.date).getTime() : 0);
+          if (remTime >= sessionStart && remTime > remoteUpdatedAt) {
+            mergedReminders.push(lr);
+          }
+        }
+      }
 
-      // Merge knowledge
+      // Merge knowledge: Remote base, keep local only if newly added in this active session
       const remoteKnowledge: KnowledgeItem[] = Array.isArray(remote.knowledge) ? (remote.knowledge as KnowledgeItem[]) : [];
-      const knowMap = new Map<string, KnowledgeItem>();
-      for (const k of remoteKnowledge) knowMap.set(k.id, k);
-      for (const k of local.knowledge) knowMap.set(k.id, k);
-      const mergedKnowledge = Array.from(knowMap.values());
+      const localKnowledge: KnowledgeItem[] = Array.isArray(local.knowledge) ? local.knowledge : [];
+      const remoteKnowIds = new Set(remoteKnowledge.map(k => k.id));
+      const mergedKnowledge = [...remoteKnowledge];
+      for (const lk of localKnowledge) {
+        if (!remoteKnowIds.has(lk.id)) {
+          const knowTime = lk.createdAt ? new Date(lk.createdAt).getTime() : 0;
+          if (knowTime >= sessionStart && knowTime > remoteUpdatedAt) {
+            mergedKnowledge.push(lk);
+          }
+        }
+      }
 
       // Apply merged state locally
       isRemoteUpdateRef.current = true;
@@ -1048,7 +1124,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setPlanProjects(mergedPlanProjects);
       setReminders(mergedReminders);
       setKnowledge(mergedKnowledge);
-      setTimeout(() => { isRemoteUpdateRef.current = false; }, 1000);
+      setTimeout(() => { 
+        isRemoteUpdateRef.current = false;
+        hasPendingPushRef.current = false;
+      }, 1000);
 
       // Build merged bundle and force push
       const mergedBundle = {
@@ -1067,6 +1146,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (pushRes.success) {
         const serverTime = pushRes.serverUpdatedAt || new Date().toISOString();
         lastSyncedAtRef.current = serverTime;
+        lastModifiedAtRef.current = serverTime;
         hasPendingPushRef.current = false;
         setCloudSyncStatus('synced');
         setSyncConflict(null);
@@ -1129,7 +1209,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         return;
       }
 
-      // 2. If this device has unsynced local mutations, handle conflict or auto-merge
+      // If initial pull is not yet complete on boot, ignore broadcast (initial pull will fetch latest)
+      if (!isInitialPullDoneRef.current) {
+        return;
+      }
+
+      // 2. If this device has unsynced local mutations made in this session, handle conflict or auto-merge
       if (hasPendingPushRef.current) {
         console.warn('[Realtime Conflict] Remote update received while local changes are pending');
         const cfgCurrent = cloudSyncConfigRef.current;
@@ -1148,7 +1233,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         }
       } else {
         applyBundleRef.current(remotePayload);
+        const remoteTime = ((remotePayload as Record<string, unknown>).syncedAt as string) || new Date().toISOString();
+        lastSyncedAtRef.current = remoteTime;
+        lastModifiedAtRef.current = remoteTime;
+        hasPendingPushRef.current = false;
         setCloudSyncStatus('synced');
+        setSyncConflict(null);
         playNotificationChime('success');
       }
     });
@@ -1199,7 +1289,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // Page Unload / Tab Close: Flush any pending debounced save to cloud with keepalive beacon
   useEffect(() => {
     const handleUnloadFlush = () => {
-      if (hasPendingPushRef.current) {
+      // Guard: ONLY flush if initial boot pull completed AND real pending changes exist in this session!
+      if (isInitialPullDoneRef.current && hasPendingPushRef.current) {
         const cfg = cloudSyncConfigRef.current;
         if (cfg.isEnabled && cfg.supabaseUrl && cfg.supabaseAnonKey && cloudSyncStatus !== 'conflict') {
           const bundle = getFullBundle();

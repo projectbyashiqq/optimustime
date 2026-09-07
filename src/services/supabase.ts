@@ -122,7 +122,7 @@ export async function pushStateToCloud(
 
   try {
     // 1. Conflict Guarding: Check if cloud has newer data than local expectedUpdatedAt
-    if (!options?.force && options?.expectedUpdatedAt) {
+    if (!options?.force) {
       const { data: remoteData, error: checkError } = await client
         .from('optimustime_sync')
         .select('updated_at')
@@ -131,15 +131,27 @@ export async function pushStateToCloud(
 
       if (!checkError && remoteData?.updated_at) {
         const remoteTime = new Date(remoteData.updated_at).getTime();
-        const expectedTime = new Date(options.expectedUpdatedAt).getTime();
-        // Allow a 2-second grace period for clock skew
-        if (remoteTime > expectedTime + 2000) {
-          console.warn(`[Sync Conflict] Remote updated_at (${remoteData.updated_at}) > expected (${options.expectedUpdatedAt})`);
+        if (options?.expectedUpdatedAt) {
+          const expectedTime = new Date(options.expectedUpdatedAt).getTime();
+          // Allow a 2-second grace period for clock skew
+          if (remoteTime > expectedTime + 2000) {
+            console.warn(`[Sync Conflict] Remote updated_at (${remoteData.updated_at}) > expected (${options.expectedUpdatedAt})`);
+            return {
+              success: false,
+              conflict: true,
+              remoteUpdatedAt: remoteData.updated_at,
+              error: 'Cloud has newer changes from another device.'
+            };
+          }
+        } else {
+          // If the caller didn't supply expectedUpdatedAt, and remote already has an existing workspace,
+          // reject with conflict so we never blindly overwrite cloud with an unverified baseline!
+          console.warn(`[Sync Conflict] Remote workspace exists (${remoteData.updated_at}) but push has no baseline lastSyncedAt.`);
           return {
             success: false,
             conflict: true,
             remoteUpdatedAt: remoteData.updated_at,
-            error: 'Cloud has newer changes from another device.'
+            error: 'Cloud already contains data from another device. Please pull or merge first.'
           };
         }
       }
