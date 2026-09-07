@@ -700,7 +700,7 @@ export const AdminSettingsView: React.FC = () => {
       periods: periodsList
     });
     try {
-      localStorage.setItem('optimustime_app_state_v2_time_periods', JSON.stringify({
+      localStorage.setItem('optimustime_app_state_v3_time_periods', JSON.stringify({
         isEnabled: periodCustomizeEnabled,
         periods: periodsList
       }));

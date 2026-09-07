@@ -278,7 +278,7 @@ interface AppContextType {
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
-const STORAGE_KEY = 'optimustime_app_state_v2';
+const STORAGE_KEY = 'optimustime_app_state_v3';
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   // Load state from LocalStorage or Fallback
@@ -658,7 +658,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // Security Settings & Authentication State
   const [securitySettings, setSecuritySettings] = useState<SecuritySettings>(() => {
     try {
-      const saved = localStorage.getItem(`${STORAGE_KEY}_security`);
+      const saved = localStorage.getItem(`${STORAGE_KEY}_security`) || localStorage.getItem('optimustime_app_state_v2_security');
       return saved ? JSON.parse(saved) : DEFAULT_SECURITY;
     } catch {
       return DEFAULT_SECURITY;
@@ -667,12 +667,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
     try {
-      const savedSec = localStorage.getItem(`${STORAGE_KEY}_security`);
+      const savedSec = localStorage.getItem(`${STORAGE_KEY}_security`) || localStorage.getItem('optimustime_app_state_v2_security');
       const sec: SecuritySettings = savedSec ? JSON.parse(savedSec) : DEFAULT_SECURITY;
       if (!sec.isPasswordProtected) return true;
 
-      const localAuth = localStorage.getItem(`${STORAGE_KEY}_auth_session`);
-      const sessionAuth = sessionStorage.getItem(`${STORAGE_KEY}_auth_session`);
+      const localAuth = localStorage.getItem(`${STORAGE_KEY}_auth_session`) || localStorage.getItem('optimustime_app_state_v2_auth_session');
+      const sessionAuth = sessionStorage.getItem(`${STORAGE_KEY}_auth_session`) || sessionStorage.getItem('optimustime_app_state_v2_auth_session');
       return Boolean(localAuth === 'true' || sessionAuth === 'true');
     } catch {
       return false;
@@ -695,7 +695,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // Cloud Sync Config & Status
   const [cloudSyncConfig, setCloudSyncConfig] = useState<CloudSyncConfig>(() => {
     try {
-      const saved = localStorage.getItem(`${STORAGE_KEY}_cloud_sync`);
+      const saved = localStorage.getItem(`${STORAGE_KEY}_cloud_sync`) || localStorage.getItem('optimustime_app_state_v2_cloud_sync');
       const parsed: CloudSyncConfig | null = saved ? JSON.parse(saved) : null;
       // If DEFAULT_CLOUD_SYNC has env vars configured and saved config has no URL, prefer DEFAULT_CLOUD_SYNC
       if (DEFAULT_CLOUD_SYNC.supabaseUrl && (!parsed || !parsed.supabaseUrl)) {

@@ -97,6 +97,7 @@ export const NotesView: React.FC<NotesViewProps> = ({ onOpenTaskModal }) => {
   // Tab mode: 'split' (Side-by-Side Note | Reminder) | 'notes' | 'reminders'
   const [tabMode, setTabMode] = useState<NotesTabMode>('split');
   const [statusFilter, setStatusFilter] = useState<'ACTIVE' | 'COMPLETED' | 'ALL'>('ACTIVE');
+  const [sortOrder, setSortOrder] = useState<'recent' | 'oldest'>('recent');
   const [localSearch, setLocalSearch] = useState('');
 
   // Form State
@@ -132,35 +133,65 @@ export const NotesView: React.FC<NotesViewProps> = ({ onOpenTaskModal }) => {
     return tasks.filter(t => isReminderCategory(t.category));
   }, [tasks]);
 
-  // Filter Notes by search and status
+  // Filter Notes by search and status - Sorted Recent First
   const filteredNotes = useMemo(() => {
-    return allNotes.filter(t => {
-      if (statusFilter === 'ACTIVE' && (t.status === 'Done' || t.status === 'Terminated')) return false;
-      if (statusFilter === 'COMPLETED' && t.status !== 'Done') return false;
-      if (effectiveQuery) {
-        const matchTitle = t.title.toLowerCase().includes(effectiveQuery);
-        const matchDesc = (t.description || t.notes || '').toLowerCase().includes(effectiveQuery);
-        const matchTag = (t.subCategory || '').toLowerCase().includes(effectiveQuery);
-        if (!matchTitle && !matchDesc && !matchTag) return false;
-      }
-      return true;
-    });
-  }, [allNotes, statusFilter, effectiveQuery]);
+    return allNotes
+      .filter(t => {
+        if (statusFilter === 'ACTIVE' && (t.status === 'Done' || t.status === 'Terminated')) return false;
+        if (statusFilter === 'COMPLETED' && t.status !== 'Done') return false;
+        if (effectiveQuery) {
+          const matchTitle = t.title.toLowerCase().includes(effectiveQuery);
+          const matchDesc = (t.description || t.notes || '').toLowerCase().includes(effectiveQuery);
+          const matchTag = (t.subCategory || '').toLowerCase().includes(effectiveQuery);
+          if (!matchTitle && !matchDesc && !matchTag) return false;
+        }
+        return true;
+      })
+      .sort((a, b) => {
+        const mul = sortOrder === 'recent' ? 1 : -1;
+        // 1. Primary: Task Date (most recent event/note date first)
+        const dateComp = (b.taskDate || '').localeCompare(a.taskDate || '');
+        if (dateComp !== 0) return dateComp * mul;
 
-  // Filter Reminders by search and status
+        // 2. Secondary: Creation / Added timestamp descending
+        const addedA = a.dateAdded ? new Date(a.dateAdded).getTime() : 0;
+        const addedB = b.dateAdded ? new Date(b.dateAdded).getTime() : 0;
+        if (addedA !== addedB) return (addedB - addedA) * mul;
+
+        // 3. Tertiary: Start time descending
+        return (b.startTime || '').localeCompare(a.startTime || '') * mul;
+      });
+  }, [allNotes, statusFilter, effectiveQuery, sortOrder]);
+
+  // Filter Reminders by search and status - Sorted Recent Event First
   const filteredReminders = useMemo(() => {
-    return allReminders.filter(t => {
-      if (statusFilter === 'ACTIVE' && (t.status === 'Done' || t.status === 'Terminated')) return false;
-      if (statusFilter === 'COMPLETED' && t.status !== 'Done') return false;
-      if (effectiveQuery) {
-        const matchTitle = t.title.toLowerCase().includes(effectiveQuery);
-        const matchDesc = (t.description || t.notes || '').toLowerCase().includes(effectiveQuery);
-        const matchTag = (t.subCategory || '').toLowerCase().includes(effectiveQuery);
-        if (!matchTitle && !matchDesc && !matchTag) return false;
-      }
-      return true;
-    });
-  }, [allReminders, statusFilter, effectiveQuery]);
+    return allReminders
+      .filter(t => {
+        if (statusFilter === 'ACTIVE' && (t.status === 'Done' || t.status === 'Terminated')) return false;
+        if (statusFilter === 'COMPLETED' && t.status !== 'Done') return false;
+        if (effectiveQuery) {
+          const matchTitle = t.title.toLowerCase().includes(effectiveQuery);
+          const matchDesc = (t.description || t.notes || '').toLowerCase().includes(effectiveQuery);
+          const matchTag = (t.subCategory || '').toLowerCase().includes(effectiveQuery);
+          if (!matchTitle && !matchDesc && !matchTag) return false;
+        }
+        return true;
+      })
+      .sort((a, b) => {
+        const mul = sortOrder === 'recent' ? 1 : -1;
+        // 1. Primary: Task Date (most recent event date first)
+        const dateComp = (b.taskDate || '').localeCompare(a.taskDate || '');
+        if (dateComp !== 0) return dateComp * mul;
+
+        // 2. Secondary: Creation / Added timestamp descending
+        const addedA = a.dateAdded ? new Date(a.dateAdded).getTime() : 0;
+        const addedB = b.dateAdded ? new Date(b.dateAdded).getTime() : 0;
+        if (addedA !== addedB) return (addedB - addedA) * mul;
+
+        // 3. Tertiary: Start time descending
+        return (b.startTime || '').localeCompare(a.startTime || '') * mul;
+      });
+  }, [allReminders, statusFilter, effectiveQuery, sortOrder]);
 
   const openCreateNote = () => {
     setEditingId(null);
@@ -427,6 +458,16 @@ export const NotesView: React.FC<NotesViewProps> = ({ onOpenTaskModal }) => {
               </button>
             ))}
           </div>
+
+          {/* Sort Order: Recent First Toggle */}
+          <button
+            onClick={() => setSortOrder(prev => prev === 'recent' ? 'oldest' : 'recent')}
+            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-theme-card border border-theme-border text-xs font-bold text-theme-text hover:bg-theme-card-hover transition-colors cursor-pointer shadow-2xs"
+            title={`Currently sorted: ${sortOrder === 'recent' ? 'Most Recent Events & Notes First' : 'Oldest First'}. Click to toggle.`}
+          >
+            <Clock className="w-3.5 h-3.5 text-amber-500" />
+            <span>{sortOrder === 'recent' ? 'Recent First ↓' : 'Oldest First ↑'}</span>
+          </button>
         </div>
 
       </div>
