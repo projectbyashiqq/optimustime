@@ -99,6 +99,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
     rescheduleTask,
     extendTaskDuration,
     deleteTask,
+    terminateTask,
     requestDeleteTask,
     detectConflicts,
     searchQuery,
@@ -323,12 +324,37 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
     }
   };
 
+  // Morning Review: Status Change Handler (handles all statuses: Pending, Working, Done, Hold, Terminated, Incomplete, Reschedule)
+  const handleMorningStatusChange = (taskToUpdate: Task, newStatus: TaskStatus) => {
+    if (newStatus === 'Reschedule') {
+      handleMorningReschedule(taskToUpdate);
+      return;
+    }
+    if (newStatus === 'Done') {
+      completeTask(taskToUpdate.id);
+      return;
+    }
+    if (newStatus === 'Working') {
+      startTask(taskToUpdate.id);
+      return;
+    }
+    if (newStatus === 'Hold') {
+      pauseTask(taskToUpdate.id);
+      return;
+    }
+    if (newStatus === 'Terminated') {
+      terminateTask(taskToUpdate.id);
+      return;
+    }
+    updateTask({
+      ...taskToUpdate,
+      status: newStatus
+    });
+  };
+
   // Morning Review: Mark Done (completed offline yesterday)
   const handleMorningMarkDone = (taskToMark: Task) => {
-    updateTask({
-      ...taskToMark,
-      status: 'Done'
-    });
+    completeTask(taskToMark.id);
   };
 
   // Morning Review: Keep Incomplete (leave in history as Incomplete, dismiss from review)
@@ -672,8 +698,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
           prioritySettings={prioritySettings}
           onRescheduleTask={handleMorningReschedule}
           onMoveToToday={handleMorningMoveToToday}
-          onMarkDone={handleMorningMarkDone}
-          onKeepIncomplete={handleMorningKeepIncomplete}
+          onStatusChange={handleMorningStatusChange}
           onDismissReview={handleDismissMorningReview}
         />
       )}
