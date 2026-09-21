@@ -4296,3 +4296,148 @@ export function getScientificDynamicGapSlots(params: {
 
   return gatheredSlots;
 }
+
+export interface NextFreeSlotParams {
+  selectedDate: string;
+  durationMinutes: number;
+  tasks: Array<{
+    id?: string;
+    taskDate: string;
+    startTime?: string;
+    endTime?: string;
+    bufferMinutes?: number;
+    hasNoTime?: boolean;
+    status: string;
+    recurrence?: string;
+    selectedDays?: string[];
+    excludedDates?: string[];
+  }>;
+  capacitySettings?: {
+    dayStartTime?: string;
+    dayEndTime?: string;
+    sleepStartTime?: string;
+    sleepEndTime?: string;
+    defaultBufferMinutes?: number;
+  };
+  defaultBufferMinutes?: number;
+}
+
+export interface CalculatedNextFreeSlotResult {
+  targetDate: string;
+  startTime: string;
+  endTime: string;
+  durationMinutes: number;
+  crossesMidnight: boolean;
+  endDate: string;
+  isNextDay: boolean;
+  isAfterExistingTask: boolean;
+}
+
+/**
+ * Calculates the next free time slot after existing timed tasks on the selected date.
+ * Places the task right after the latest scheduled task (+ buffer), or at current time/day start if no tasks exist.
+ * If the day is full or in sleep hours, smoothly rolls over to the next available daytime opening (tomorrow).
+ * Accurately tracks midnight spanning (crossesMidnight & endDate).
+ */
+export function calculateNextFreeTimeAfterTimedTasks(params: NextFreeSlotParams): CalculatedNextFreeSlotResult {
+  const timedTasks = params.tasks.filter(t => {
+    if (!isTaskScheduledForDate(t as any, params.selectedDate)) return false;
+    if (t.hasNoTime || !t.startTime || t.startTime === 'Anytime' || t.startTime === 'Free Time' || t.startTime === 'No Time' || t.startTime === 'All Day') return false;
+    if (t.status === 'Terminated') return false;
+    return true;
+  });
+
+  const bstNow = getBangladeshNow();
+  const todayStr = toISODateString(bstNow);
+  const isToday = params.selectedDate === todayStr;
+  const currentMins = bstNow.getHours() * 60 + bstNow.getMinutes();
+  const defaultBuffer = params.defaultBufferMinutes ?? params.capacitySettings?.defaultBufferMinutes ?? 15;
+  const sleepStartStr = params.capacitySettings?.sleepStartTime || '11:00 PM';
+  const sleepEndStr = params.capacitySettings?.sleepEndTime || '06:00 AM';
+
+  let startMin: number;
+  let isAfter = false;
+
+  if (timedTasks.length > 0) {
+    let latestEndMin = -1;
+    let bufferToUse = defaultBuffer;
+
+    for (const t of timedTasks) {
+      let s = parse12HourToMinutes(t.startTime!);
+      let e = parse12HourToMinutes(t.endTime!);
+      if (e <= s) e += 1440; // overnight task
+      const buf = t.bufferMinutes !== undefined ? t.bufferMinutes : defaultBuffer;
+      if (e > latestEndMin) {
+        latestEndMin = e;
+        bufferToUse = buf;
+      }
+    }
+
+    startMin = latestEndMin + bufferToUse;
+    isAfter = true;
+
+    // If selected date is today, avoid scheduling in the past
+    if (isToday) {
+      const minAllowed = Math.ceil((currentMins + 5) / 5) * 5;
+      if (startMin < minAllowed) {
+        startMin = minAllowed;
+      }
+    }
+  } else {
+    // No timed tasks on this date yet: start from dayStartTime or current time
+    const dayStartStr = params.capacitySettings?.dayStartTime || '09:00 AM';
+    startMin = parse12HourToMinutes(dayStartStr);
+    if (isToday) {
+      const minAllowed = Math.ceil((currentMins + 5) / 5) * 5;
+      if (startMin < minAllowed) {
+        startMin = minAllowed;
+      }
+    }
+  }
+
+  const candidateStartStr = formatMinutesTo12Hour(startMin % 1440);
+  const candidateEndStr = addMinutesToTime(candidateStartStr, params.durationMinutes);
+
+  // Check if candidate slot falls into sleep window or overflows the day:
+  // If so, use findNextAvailableSlot to find the next valid opening (either earlier daytime gap, or tomorrow)
+  if (isTimeInSleepWindow(candidateStartStr, candidateEndStr, sleepStartStr, sleepEndStr)) {
+    const gapSlot = findNextAvailableSlot(
+      params.durationMinutes, 
+      params.tasks as any, 
+      params.capacitySettings, 
+      undefined, 
+      params.selectedDate
+    );
+    if (gapSlot) {
+      const crosses = Boolean(gapSlot.crossesMidnight || taskCrossesMidnight(gapSlot.startTime, gapSlot.endTime));
+      const targetDate = gapSlot.date;
+      const endDate = gapSlot.endDate || getTaskEndDate(targetDate, gapSlot.startTime, gapSlot.endTime);
+      return {
+        targetDate,
+        startTime: gapSlot.startTime,
+        endTime: gapSlot.endTime,
+        durationMinutes: params.durationMinutes,
+        crossesMidnight: crosses,
+        endDate,
+        isNextDay: targetDate !== params.selectedDate,
+        isAfterExistingTask: isAfter
+      };
+    }
+  }
+
+  const crosses = taskCrossesMidnight(candidateStartStr, candidateEndStr);
+  const targetDate = params.selectedDate;
+  const endDate = getTaskEndDate(targetDate, candidateStartStr, candidateEndStr);
+
+  return {
+    targetDate,
+    startTime: candidateStartStr,
+    endTime: candidateEndStr,
+    durationMinutes: params.durationMinutes,
+    crossesMidnight: crosses,
+    endDate,
+    isNextDay: false,
+    isAfterExistingTask: isAfter
+  };
+}
+

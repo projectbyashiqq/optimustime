@@ -1,10 +1,18 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useMemo, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
 import { PriorityLevel } from '../types';
 import { 
-  getDayOfWeekFromDate 
+  getDayOfWeekFromDate, 
+  calculateNextFreeTimeAfterTimedTasks 
 } from '../utils/timeUtils';
-import { Plus, Check } from 'lucide-react';
+import { 
+  Plus, 
+  Check, 
+  Clock, 
+  Sparkles, 
+  Coffee, 
+  Zap 
+} from 'lucide-react';
 
 interface QuickTaskEntryBarProps {
   selectedDate: string;
@@ -13,17 +21,55 @@ interface QuickTaskEntryBarProps {
 }
 
 const PRIORITIES: PriorityLevel[] = ['P1', 'P2', 'P3', 'P4', 'P5'];
+const COMMON_DURATIONS = [15, 30, 45, 60, 90];
 
 export const QuickTaskEntryBar: React.FC<QuickTaskEntryBarProps> = ({
   selectedDate,
   className = ''
 }) => {
-  const { addTask, categories, prioritySettings } = useApp();
+  const { 
+    addTask, 
+    categories, 
+    prioritySettings, 
+    tasks, 
+    capacitySettings, 
+    defaultTaskSettings 
+  } = useApp();
+
   const [title, setTitle] = useState('');
   const [priority, setPriority] = useState<PriorityLevel>('P3');
   const [category, setCategory] = useState<string>(categories[0]?.name || 'VRTX');
   const [isSuccessFlash, setIsSuccessFlash] = useState(false);
+  const [lastAddedSlot, setLastAddedSlot] = useState<string>('');
+  const [scheduleMode, setScheduleMode] = useState<'auto-slot' | 'anytime'>('auto-slot');
   const inputRef = useRef<HTMLInputElement>(null);
+
+  // Set default duration based on chosen priority or settings
+  const priorityDefaultMin = prioritySettings[priority]?.defaultMinutes || 45;
+  const [duration, setDuration] = useState<number>(priorityDefaultMin > 0 ? priorityDefaultMin : 30);
+
+  // When priority changes, update duration to that priority's default if user hasn't explicitly customized
+  const handlePriorityChange = (newP: PriorityLevel) => {
+    setPriority(newP);
+    const defM = prioritySettings[newP]?.defaultMinutes;
+    if (defM && defM > 0) {
+      setDuration(defM);
+    } else {
+      setDuration(30);
+    }
+  };
+
+  // Calculate the next free slot after timed tasks on the selected date
+  const nextSlot = useMemo(() => {
+    if (scheduleMode === 'anytime') return null;
+    return calculateNextFreeTimeAfterTimedTasks({
+      selectedDate,
+      durationMinutes: duration,
+      tasks,
+      capacitySettings,
+      defaultBufferMinutes: defaultTaskSettings?.defaultBufferMinutes
+    });
+  }, [scheduleMode, selectedDate, duration, tasks, capacitySettings, defaultTaskSettings]);
 
   const handleSubmit = (e?: React.FormEvent) => {
     if (e) e.preventDefault();
@@ -32,19 +78,28 @@ export const QuickTaskEntryBar: React.FC<QuickTaskEntryBarProps> = ({
       return;
     }
 
-    // Fast-add task without time or complex rituals
+    const defaultBuffer = defaultTaskSettings?.defaultBufferMinutes ?? capacitySettings?.defaultBufferMinutes ?? 15;
+    const isAutoSlot = scheduleMode === 'auto-slot' && nextSlot;
+
+    const taskDate = isAutoSlot ? nextSlot.targetDate : selectedDate;
+    const crossesMidnight = isAutoSlot ? nextSlot.crossesMidnight : false;
+    const endDate = isAutoSlot ? nextSlot.endDate : selectedDate;
+
+    // Fast-add task scheduled into the next free time after any timed task
     addTask({
       title: title.trim(),
       description: '',
-      taskDate: selectedDate,
-      dayOfWeek: getDayOfWeekFromDate(selectedDate),
+      taskDate,
+      dayOfWeek: getDayOfWeekFromDate(taskDate),
       priority,
       category,
-      startTime: 'Anytime',
-      endTime: 'Anytime',
-      hasNoTime: true,
-      appointedMinutes: 0,
-      bufferMinutes: 0,
+      startTime: isAutoSlot ? nextSlot.startTime : 'Anytime',
+      endTime: isAutoSlot ? nextSlot.endTime : 'Anytime',
+      crossesMidnight,
+      endDate,
+      hasNoTime: !isAutoSlot,
+      appointedMinutes: duration,
+      bufferMinutes: isAutoSlot ? defaultBuffer : 0,
       status: 'Pending',
       recurrence: 'None',
       subtasks: [],
@@ -52,9 +107,13 @@ export const QuickTaskEntryBar: React.FC<QuickTaskEntryBarProps> = ({
       signalNoise: priority === 'P5' ? 'noise' : 'signal'
     });
 
+    const slotLabel = isAutoSlot 
+      ? (nextSlot.isNextDay ? `Tomorrow ${nextSlot.startTime}` : `${nextSlot.startTime}`)
+      : 'Buffer';
+    setLastAddedSlot(slotLabel);
     setTitle('');
     setIsSuccessFlash(true);
-    setTimeout(() => setIsSuccessFlash(false), 1500);
+    setTimeout(() => setIsSuccessFlash(false), 1800);
 
     // Keep focus on input for instant multi-task entry
     inputRef.current?.focus();
@@ -67,8 +126,87 @@ export const QuickTaskEntryBar: React.FC<QuickTaskEntryBarProps> = ({
   };
 
   return (
-    <div className={`glass-panel p-2 sm:p-2.5 rounded-2xl border border-blue-400/40 dark:border-blue-700/50 shadow-md shadow-blue-500/5 bg-gradient-to-r from-blue-500/[0.04] via-theme-card to-indigo-500/[0.04] transition-all ${className}`}>
+    <div className={`glass-panel p-2.5 sm:p-3 rounded-2xl border border-blue-400/40 dark:border-blue-700/50 shadow-md shadow-blue-500/5 bg-gradient-to-r from-blue-500/[0.04] via-theme-card to-indigo-500/[0.04] transition-all space-y-2 ${className}`}>
+      
+      {/* Top Strip: Next Free Slot Badge & Duration Customizer */}
+      <div className="flex items-center justify-between gap-2 flex-wrap text-xs">
+        <div className="flex items-center gap-1.5 flex-wrap">
+          {scheduleMode === 'auto-slot' && nextSlot ? (
+            <div 
+              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border font-mono font-bold text-[11px] shadow-2xs ${
+                nextSlot.isNextDay
+                  ? 'bg-purple-50/90 dark:bg-purple-950/60 border-purple-200 dark:border-purple-800/80 text-purple-700 dark:text-purple-300'
+                  : nextSlot.crossesMidnight
+                  ? 'bg-indigo-50/90 dark:bg-indigo-950/60 border-indigo-200 dark:border-indigo-800/80 text-indigo-700 dark:text-indigo-300'
+                  : 'bg-blue-50/80 dark:bg-blue-950/60 border-blue-200 dark:border-blue-800/80 text-blue-700 dark:text-blue-300'
+              }`}
+              title={
+                nextSlot.isNextDay 
+                  ? "Today is full up to sleep time; automatically rolling over to earliest opening Tomorrow"
+                  : nextSlot.crossesMidnight 
+                  ? "This task starts tonight and spans past midnight into tomorrow"
+                  : nextSlot.isAfterExistingTask 
+                  ? "Auto-placed after previous timed tasks" 
+                  : "Starts at earliest daytime opening"
+              }
+            >
+              <Clock className="w-3.5 h-3.5 text-blue-500 animate-pulse" />
+              <span>
+                {nextSlot.isNextDay ? 'Next Slot (Tomorrow):' : 'Next Slot:'}
+              </span>
+              <span className="font-extrabold">{nextSlot.startTime} – {nextSlot.endTime}</span>
+              <span className="text-[10px] opacity-75">({duration}m)</span>
+              {nextSlot.crossesMidnight && (
+                <span className="text-[10px] px-1.5 py-0.2 rounded bg-purple-200/60 dark:bg-purple-900/60 text-purple-800 dark:text-purple-200 font-sans font-bold flex items-center gap-0.5">
+                  <span>🌙</span>
+                  <span>Spans Midnight</span>
+                </span>
+              )}
+            </div>
+          ) : (
+            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300 font-mono font-bold text-[11px]">
+              <Coffee className="w-3.5 h-3.5" />
+              <span>Flexible Buffer Mode (No Fixed Time)</span>
+            </div>
+          )}
+
+          {/* Duration Selector Pills */}
+          <div className="flex items-center gap-1 bg-theme-card-hover/80 p-0.5 rounded-lg border border-theme-border/60">
+            {COMMON_DURATIONS.map((dur) => (
+              <button
+                key={dur}
+                type="button"
+                onClick={() => setDuration(dur)}
+                className={`px-1.5 py-0.5 rounded text-[10px] font-mono font-bold transition-all cursor-pointer ${
+                  duration === dur
+                    ? 'bg-blue-600 text-white shadow-2xs'
+                    : 'text-theme-muted hover:text-theme-text'
+                }`}
+                title={`Task duration: ${dur} minutes`}
+              >
+                {dur}m
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Schedule Mode Switch (Next Slot vs Anytime) */}
+        <button
+          type="button"
+          onClick={() => setScheduleMode(scheduleMode === 'auto-slot' ? 'anytime' : 'auto-slot')}
+          className="text-[10px] font-bold text-theme-muted hover:text-theme-text transition-colors flex items-center gap-1 cursor-pointer"
+          title="Toggle between Auto-scheduling after timed tasks or Anytime Buffer pool"
+        >
+          <span>Mode:</span>
+          <span className="underline decoration-dotted text-blue-600 dark:text-blue-400">
+            {scheduleMode === 'auto-slot' ? '⏰ Auto-Fit Timeline' : '⚡ No Time (Buffer)'}
+          </span>
+        </button>
+      </div>
+
+      {/* Main Input Form */}
       <form onSubmit={handleSubmit} className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+        
         {/* Fast Task Title Input */}
         <div className="flex-1 relative min-w-0">
           <input
@@ -76,7 +214,11 @@ export const QuickTaskEntryBar: React.FC<QuickTaskEntryBarProps> = ({
             type="text"
             value={title}
             onChange={(e) => setTitle(e.target.value)}
-            placeholder="⚡ Fast entry: Type task title and press Enter (No time needed)..."
+            placeholder={
+              scheduleMode === 'auto-slot' && nextSlot
+                ? `⚡ Fast entry: Type title and press Enter (slots at ${nextSlot.startTime})...`
+                : "⚡ Fast entry: Type task title and press Enter..."
+            }
             className="w-full pl-3.5 pr-20 py-2 sm:py-2.5 rounded-xl border border-theme-border bg-theme-card text-theme-text placeholder-theme-muted text-xs sm:text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-all shadow-2xs"
           />
 
@@ -99,7 +241,7 @@ export const QuickTaskEntryBar: React.FC<QuickTaskEntryBarProps> = ({
                 <button
                   key={p}
                   type="button"
-                  onClick={() => setPriority(p)}
+                  onClick={() => handlePriorityChange(p)}
                   className={`px-2 py-1 rounded-lg text-xs font-mono font-black transition-all cursor-pointer ${
                     isSelected
                       ? p === 'P1'
@@ -112,7 +254,7 @@ export const QuickTaskEntryBar: React.FC<QuickTaskEntryBarProps> = ({
                       ? { backgroundColor: meta.bgColor, color: meta.color, borderColor: `${meta.color}60` }
                       : undefined
                   }
-                  title={`Default Priority: ${p} (${meta.label})`}
+                  title={`Priority: ${p} (${meta.label})`}
                 >
                   {p}
                 </button>
@@ -135,7 +277,7 @@ export const QuickTaskEntryBar: React.FC<QuickTaskEntryBarProps> = ({
             {isSuccessFlash ? (
               <>
                 <Check className="w-3.5 h-3.5 stroke-[3]" />
-                <span>Added!</span>
+                <span>Added ({lastAddedSlot})!</span>
               </>
             ) : (
               <>
