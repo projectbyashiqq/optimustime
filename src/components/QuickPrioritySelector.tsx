@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { Task, PriorityLevel } from '../types';
 import { useApp } from '../context/AppContext';
 import { Sparkles, ChevronDown, Check } from 'lucide-react';
@@ -24,18 +25,60 @@ export const QuickPrioritySelector: React.FC<QuickPrioritySelectorProps> = ({
 }) => {
   const { prioritySettings, updateTask } = useApp();
   const [isOpen, setIsOpen] = useState(false);
-  const containerRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const popoverRef = useRef<HTMLDivElement>(null);
+  const [coords, setCoords] = useState<{ top: number; left: number }>({ top: 0, left: 0 });
 
-  // Close when clicking outside
+  const updatePosition = () => {
+    if (!triggerRef.current) return;
+    const rect = triggerRef.current.getBoundingClientRect();
+    const popoverHeight = popoverRef.current?.offsetHeight || 255;
+    const popoverWidth = popoverRef.current?.offsetWidth || 256;
+
+    const spaceBelow = window.innerHeight - rect.bottom;
+    const shouldOpenUp = spaceBelow < popoverHeight + 10 && rect.top > popoverHeight + 10;
+
+    let left = rect.left;
+    if (left + popoverWidth > window.innerWidth - 12) {
+      left = Math.max(12, window.innerWidth - popoverWidth - 12);
+    }
+    if (left < 12) left = 12;
+
+    let top = shouldOpenUp ? rect.top - popoverHeight - 6 : rect.bottom + 6;
+    if (top < 12) top = 12;
+    if (top + popoverHeight > window.innerHeight - 12) {
+      top = Math.max(12, window.innerHeight - popoverHeight - 12);
+    }
+
+    setCoords({ top, left });
+  };
+
+  // Close when clicking outside and update position on scroll/resize
   useEffect(() => {
     if (!isOpen) return;
+
+    updatePosition();
+    const rafId = requestAnimationFrame(updatePosition);
+
+    const handleScrollOrResize = () => updatePosition();
+    window.addEventListener('resize', handleScrollOrResize);
+    window.addEventListener('scroll', handleScrollOrResize, true);
+
     const handleClickOutside = (e: MouseEvent) => {
-      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
-        setIsOpen(false);
+      const target = e.target as Node;
+      if (triggerRef.current?.contains(target) || popoverRef.current?.contains(target)) {
+        return;
       }
+      setIsOpen(false);
     };
+
     document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
+    return () => {
+      cancelAnimationFrame(rafId);
+      window.removeEventListener('resize', handleScrollOrResize);
+      window.removeEventListener('scroll', handleScrollOrResize, true);
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
   }, [isOpen]);
 
   const currentMeta = prioritySettings[task.priority] || {
@@ -60,9 +103,10 @@ export const QuickPrioritySelector: React.FC<QuickPrioritySelectorProps> = ({
   const isSm = size === 'sm';
 
   return (
-    <div ref={containerRef} className={`relative inline-block text-left ${className}`}>
+    <div className={`inline-block text-left ${className}`}>
       {/* Priority Trigger Button */}
       <button
+        ref={triggerRef}
         type="button"
         onClick={handleToggle}
         className={`group flex items-center justify-center gap-1 rounded-xl font-mono font-black transition-all cursor-pointer select-none active:scale-95 ${
@@ -88,11 +132,18 @@ export const QuickPrioritySelector: React.FC<QuickPrioritySelectorProps> = ({
         <ChevronDown className={`w-3 h-3 opacity-60 group-hover:opacity-100 transition-transform duration-200 shrink-0 ${isOpen ? 'rotate-180' : ''}`} />
       </button>
 
-      {/* Floating Dropdown Popover */}
-      {isOpen && (
+      {/* Floating Dropdown Popover (Mounted via Portal directly to body to bypass any parent overflow clipping) */}
+      {isOpen && createPortal(
         <div
+          ref={popoverRef}
           onClick={(e) => e.stopPropagation()}
-          className="absolute left-0 mt-1.5 w-60 sm:w-64 rounded-2xl bg-white/95 dark:bg-slate-900/95 backdrop-blur-xl border border-slate-200/80 dark:border-slate-800 shadow-2xl z-50 p-1.5 space-y-1 animate-fade-in ring-1 ring-black/5"
+          style={{
+            position: 'fixed',
+            top: `${coords.top}px`,
+            left: `${coords.left}px`,
+            zIndex: 99999
+          }}
+          className="w-60 sm:w-64 rounded-2xl bg-white/95 dark:bg-slate-900/95 backdrop-blur-xl border border-slate-200/90 dark:border-slate-800 shadow-2xl p-1.5 space-y-1 animate-fade-in ring-1 ring-black/10"
         >
           <div className="px-2.5 py-1 text-[10px] font-mono font-bold uppercase tracking-wider text-theme-muted border-b border-theme-border/50 flex items-center justify-between">
             <span>Select Priority</span>
@@ -143,7 +194,8 @@ export const QuickPrioritySelector: React.FC<QuickPrioritySelectorProps> = ({
               );
             })}
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );
