@@ -193,7 +193,7 @@ export const QuickTimeSelector: React.FC<QuickTimeSelectorProps> = ({
         ref={triggerRef}
         type="button"
         onClick={handleToggle}
-        className={`group flex items-center gap-1.5 px-2.5 py-1 rounded-lg font-mono text-xs font-bold transition-all cursor-pointer select-none active:scale-95 border ${
+        className={`group flex items-center gap-1 px-2 py-0.5 rounded-lg font-mono text-[11px] font-bold transition-all cursor-pointer select-none active:scale-95 border ${
           isNoTime
             ? 'text-amber-600 dark:text-amber-400 bg-amber-500/10 border-amber-500/30 hover:bg-amber-500/20'
             : isInSleep
@@ -204,20 +204,20 @@ export const QuickTimeSelector: React.FC<QuickTimeSelectorProps> = ({
       >
         {isNoTime ? (
           <>
-            <Zap className="w-3 h-3 text-amber-500 fill-amber-500 shrink-0" />
+            <Zap className="w-2.5 h-2.5 text-amber-500 fill-amber-500 shrink-0" />
             <span>Anytime</span>
-            <span className="text-[10px] font-normal opacity-70 hidden sm:inline">(Free Slot)</span>
+            <span className="text-[9px] font-normal opacity-70 hidden sm:inline">(Free)</span>
           </>
         ) : (
           <>
-            <Clock className="w-3 h-3 text-blue-500 shrink-0" />
+            <Clock className="w-2.5 h-2.5 text-blue-500 shrink-0" />
             <span>{task.startTime} - {task.endTime}</span>
             {task.appointedMinutes > 0 && (
               <span className="text-[10px] font-normal opacity-75">({task.appointedMinutes}m)</span>
             )}
           </>
         )}
-        <ChevronDown className={`w-3 h-3 opacity-50 group-hover:opacity-100 transition-transform duration-200 shrink-0 ${isOpen ? 'rotate-180' : ''}`} />
+        <ChevronDown className={`w-2.5 h-2.5 opacity-50 group-hover:opacity-100 transition-transform duration-200 shrink-0 ${isOpen ? 'rotate-180' : ''}`} />
       </button>
 
       {/* Floating Time Editor Popover (Mounted via Portal directly to body to bypass any parent overflow clipping) */}

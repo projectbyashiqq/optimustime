@@ -109,11 +109,11 @@ export const QuickPrioritySelector: React.FC<QuickPrioritySelectorProps> = ({
         ref={triggerRef}
         type="button"
         onClick={handleToggle}
-        className={`group flex items-center justify-center gap-1 rounded-xl font-mono font-black transition-all cursor-pointer select-none active:scale-95 ${
+        className={`group flex items-center justify-center gap-0.5 rounded-lg font-mono font-black transition-all cursor-pointer select-none active:scale-95 ${
           task.priority === 'P1'
-            ? 'bg-gradient-to-tr from-rose-600 via-red-500 to-amber-400 text-white shadow-md shadow-red-500/25 ring-1 ring-red-400/80 border border-red-300 dark:border-red-400 hover:brightness-110'
+            ? 'bg-gradient-to-tr from-rose-600 via-red-500 to-amber-400 text-white shadow-xs shadow-red-500/25 ring-1 ring-red-400/80 border border-red-300 dark:border-red-400 hover:brightness-110'
             : 'border border-theme-border/70 hover:border-theme-border shadow-2xs hover:shadow-xs'
-        } ${isSm ? 'px-2 py-0.5 text-xs min-w-[38px]' : 'px-2.5 py-1.5 text-xs sm:text-sm min-w-[48px]'}`}
+        } ${isSm ? 'px-1.5 py-0.5 text-[11px] min-w-[34px]' : 'px-2 py-0.5 text-xs min-w-[38px]'}`}
         style={
           task.priority === 'P1'
             ? undefined
@@ -123,13 +123,13 @@ export const QuickPrioritySelector: React.FC<QuickPrioritySelectorProps> = ({
       >
         {task.priority === 'P1' ? (
           <span className="flex items-center gap-0.5 tracking-tight font-black font-display">
-            <Sparkles className="w-3 h-3 text-yellow-200 fill-yellow-200 shrink-0" />
+            <Sparkles className="w-2.5 h-2.5 text-yellow-200 fill-yellow-200 shrink-0" />
             <span>P1</span>
           </span>
         ) : (
           <span className="font-bold tracking-tight">{task.priority}</span>
         )}
-        <ChevronDown className={`w-3 h-3 opacity-60 group-hover:opacity-100 transition-transform duration-200 shrink-0 ${isOpen ? 'rotate-180' : ''}`} />
+        <ChevronDown className={`w-2.5 h-2.5 opacity-60 group-hover:opacity-100 transition-transform duration-200 shrink-0 ${isOpen ? 'rotate-180' : ''}`} />
       </button>
 
       {/* Floating Dropdown Popover (Mounted via Portal directly to body to bypass any parent overflow clipping) */}

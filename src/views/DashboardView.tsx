@@ -1147,7 +1147,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
                             </div>
                           )}
                           <div
-                            className={`p-4 rounded-2xl border transition-all duration-200 relative overflow-hidden ${
+                            className={`px-3.5 py-2.5 sm:py-3 rounded-xl border transition-all duration-200 relative overflow-hidden ${
                               isInSleep && !isNoTime
                                 ? isDue
                                   ? 'card-night-due'
@@ -1176,28 +1176,32 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
                               }`} />
                             )}
 
-                            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 relative z-10">
+                            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2.5 sm:gap-3 relative z-10">
                               
                               {/* Left: Priority + Time + Title */}
-                              <div className="flex items-start gap-3 flex-1">
+                              <div className="flex items-start gap-2 sm:gap-2.5 flex-1 min-w-0">
                                 
                                 {/* Secondary Tier: Interactive Priority Selector Button */}
-                                <QuickPrioritySelector task={task} />
+                                <QuickPrioritySelector task={task} size="sm" />
 
-                                <div className="space-y-1.5 flex-1">
+                                <div className="space-y-1 flex-1 min-w-0">
                                   
                                   {/* Primary Tier (High Contrast): Task Title + Secondary Tier: Duration */}
-                                  <div className="flex items-baseline gap-2 flex-wrap">
+                                  <div className="flex items-center gap-2 flex-wrap">
                                     <h4 className={
                                       isInSleep && !isNoTime
                                         ? isWorking
-                                          ? 'card-night-working-title text-lg sm:text-xl font-display leading-snug'
-                                          : 'card-night-title text-lg sm:text-xl font-display leading-snug'
-                                        : getTaskTitleClasses(task.title, task.status === 'Done', false, isWorking)
+                                          ? 'card-night-working-title text-sm sm:text-base font-bold font-display leading-tight truncate'
+                                          : 'card-night-title text-sm sm:text-base font-bold font-display leading-tight truncate'
+                                        : task.status === 'Done'
+                                          ? 'text-sm sm:text-base font-bold line-through text-theme-muted opacity-75 truncate'
+                                          : isWorking
+                                            ? 'text-sm sm:text-base font-bold text-blue-600 dark:text-blue-400 font-display leading-tight truncate'
+                                            : 'text-sm sm:text-base font-bold text-theme-text font-display leading-tight truncate'
                                     }>
                                       {task.title}
                                     </h4>
-                                    <span className={`font-mono text-xs font-bold px-2 py-0.5 rounded-md border shadow-2xs ${
+                                    <span className={`font-mono text-[10px] sm:text-[11px] font-semibold px-1.5 py-0.2 rounded border shadow-2xs ${
                                       isInSleep && !isNoTime
                                         ? 'night-time-pill'
                                         : 'text-theme-muted bg-theme-card-hover/80 border-theme-border'
@@ -1358,20 +1362,20 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
                                 )}
 
                                 {/* Live Status Badge + Countdown Pill */}
-                                <div className="flex items-center gap-2 flex-wrap py-0.5">
+                                <div className="flex items-center gap-1.5 flex-wrap py-0.5">
                                   <select
                                     value={task.status}
                                     onChange={(e) => handleStatusChange(task, e.target.value as TaskStatus)}
-                                    className={`text-[11px] font-bold px-2.5 py-1 rounded-full border cursor-pointer focus:outline-none transition-colors ${
-                                      task.status === 'Done' ? 'bg-emerald-600 text-white border-emerald-600 shadow-sm' :
-                                      task.status === 'Terminated' ? 'bg-red-600 text-white border-red-600 shadow-sm' :
+                                    className={`text-[10px] sm:text-[11px] font-bold px-2 py-0.5 rounded-lg border cursor-pointer focus:outline-none transition-colors ${
+                                      task.status === 'Done' ? 'bg-emerald-600 text-white border-emerald-600 shadow-xs' :
+                                      task.status === 'Terminated' ? 'bg-red-600 text-white border-red-600 shadow-xs' :
                                       task.status === 'Working' ? (
                                         isInSleep && !isNoTime 
-                                          ? 'bg-gradient-to-r from-cyan-600 to-blue-600 text-white border-cyan-400 shadow-sm animate-pulse'
-                                          : 'bg-blue-600 text-white border-blue-600 shadow-sm animate-pulse'
+                                          ? 'bg-gradient-to-r from-cyan-600 to-blue-600 text-white border-cyan-400 shadow-xs animate-pulse'
+                                          : 'bg-blue-600 text-white border-blue-600 shadow-xs animate-pulse'
                                       ) :
                                       task.status === 'Hold' ? 'bg-amber-100 text-amber-800 border-amber-300 dark:bg-amber-950' :
-                                      task.status === 'Incomplete' ? 'bg-red-600 text-white border-red-600 shadow-sm' :
+                                      task.status === 'Incomplete' ? 'bg-red-600 text-white border-red-600 shadow-xs' :
                                       task.status === 'Reschedule' ? 'bg-purple-100 text-purple-800 border-purple-300' :
                                       isInSleep && !isNoTime
                                         ? 'bg-slate-900 text-white border-slate-700'
@@ -1498,90 +1502,90 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
                             </div>
 
                             {/* Right: Actions */}
-                            <div className={`flex items-center gap-2 w-full sm:w-auto justify-end pt-2 sm:pt-0 border-t sm:border-t-0 relative z-10 ${
+                            <div className={`flex items-center gap-1.5 w-full sm:w-auto justify-end pt-1.5 sm:pt-0 border-t sm:border-t-0 relative z-10 ${
                               isInSleep && !isNoTime ? 'border-white/10' : 'border-theme-border'
                             }`}>
                               {isWorking ? (
-                                <div className="flex items-center gap-1.5">
+                                <div className="flex items-center gap-1">
                                   <button
                                     onClick={() => pauseTask(task.id)}
-                                    className="btn-pro btn-pro-warning p-2 rounded-xl shadow-sm"
+                                    className="btn-pro btn-pro-warning p-1.5 rounded-lg shadow-2xs"
                                     title="Pause Task"
                                   >
-                                    <Pause className="w-4 h-4" />
+                                    <Pause className="w-3.5 h-3.5" />
                                   </button>
                                   <button
                                     onClick={() => completeTask(task.id)}
-                                    className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold shadow-sm transition-all active:scale-95 ${
+                                    className={`flex items-center gap-1 px-3 py-1 rounded-lg text-xs font-bold shadow-2xs transition-all active:scale-95 ${
                                       isInSleep && !isNoTime
                                         ? 'bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-white shadow-emerald-500/30 ring-1 ring-white/20'
                                         : 'btn-pro btn-pro-success'
                                     }`}
                                   >
-                                    <CheckCircle2 className="w-4 h-4 stroke-[2.5]" />
+                                    <CheckCircle2 className="w-3.5 h-3.5 stroke-[2.5]" />
                                     <span>Done</span>
                                   </button>
                                 </div>
                               ) : (
                                 <button
                                   onClick={() => startTask(task.id)}
-                                  className={`flex items-center gap-1.5 px-4 py-1.5 rounded-xl text-xs font-bold shadow-sm active:scale-95 transition-all cursor-pointer ${
+                                  className={`flex items-center gap-1 px-3 py-1 rounded-lg text-xs font-bold shadow-2xs active:scale-95 transition-all cursor-pointer ${
                                     isInSleep && !isNoTime
                                       ? 'night-btn-start'
                                       : 'btn-pro btn-pro-primary'
                                   }`}
                                 >
-                                  <Play className="w-3.5 h-3.5 fill-white stroke-[2]" />
+                                  <Play className="w-3 h-3 fill-white stroke-[2]" />
                                   <span>Start</span>
                                 </button>
                               )}
 
-                                {task.isMandatorySchedule ? (
-                                  <button
-                                    disabled
-                                    className="p-1.5 rounded-lg opacity-40 text-theme-muted cursor-not-allowed"
-                                    title="🔒 Mandatory Schedule: Locked & Non-Reschedulable"
-                                  >
-                                    <Lock className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
-                                  </button>
-                                ) : (
-                                  <button
-                                    onClick={() => setReschedulingTask(task)}
-                                    className={
-                                      isInSleep && !isNoTime 
-                                        ? 'night-btn-icon'
-                                        : 'btn-pro-icon hover:text-purple-600 hover:border-purple-300 dark:hover:border-purple-800'
-                                    }
-                                    title="Reschedule Task / Find Slot"
-                                  >
-                                    <RotateCcw className="w-3.5 h-3.5" />
-                                  </button>
-                                )}
-
+                              {task.isMandatorySchedule ? (
                                 <button
-                                  onClick={() => onOpenTaskModal(task)}
+                                  disabled
+                                  className="p-1.5 rounded-lg opacity-40 text-theme-muted cursor-not-allowed"
+                                  title="🔒 Mandatory Schedule: Locked & Non-Reschedulable"
+                                >
+                                  <Lock className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
+                                </button>
+                              ) : (
+                                <button
+                                  onClick={() => setReschedulingTask(task)}
                                   className={
                                     isInSleep && !isNoTime 
-                                      ? 'night-btn-icon'
-                                      : 'btn-pro-icon'
+                                      ? 'night-btn-icon p-1.5 rounded-lg'
+                                      : 'btn-pro-icon p-1.5 rounded-lg hover:text-purple-600 hover:border-purple-300 dark:hover:border-purple-800'
                                   }
-                                  title="Edit Task"
+                                  title="Reschedule Task / Find Slot"
                                 >
-                                  <Edit2 className="w-3.5 h-3.5" />
+                                  <RotateCcw className="w-3.5 h-3.5" />
                                 </button>
+                              )}
 
-                                <button
-                                  onClick={() => requestDeleteTask(task, selectedDate)}
-                                  className={
-                                    isInSleep && !isNoTime 
-                                      ? 'night-btn-icon hover:!bg-red-500/30 hover:!border-red-400/50 hover:!text-red-300'
-                                      : 'btn-pro-icon hover:text-red-600 hover:border-red-300 dark:hover:border-red-800'
-                                  }
-                                  title="Delete Task / Occurrence"
-                                >
-                                  <Trash2 className="w-3.5 h-3.5" />
-                                </button>
-                              </div>
+                              <button
+                                onClick={() => onOpenTaskModal(task)}
+                                className={
+                                  isInSleep && !isNoTime 
+                                    ? 'night-btn-icon p-1.5 rounded-lg'
+                                    : 'btn-pro-icon p-1.5 rounded-lg'
+                                }
+                                title="Edit Task"
+                              >
+                                <Edit2 className="w-3.5 h-3.5" />
+                              </button>
+
+                              <button
+                                onClick={() => requestDeleteTask(task, selectedDate)}
+                                className={
+                                  isInSleep && !isNoTime 
+                                    ? 'night-btn-icon p-1.5 rounded-lg hover:!bg-red-500/30 hover:!border-red-400/50 hover:!text-red-300'
+                                    : 'btn-pro-icon p-1.5 rounded-lg hover:text-red-600 hover:border-red-300 dark:hover:border-red-800'
+                                }
+                                title="Delete Task / Occurrence"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
 
                           </div>
                         </div>
@@ -1622,26 +1626,26 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
                           return (
                             <div
                               key={task.id}
-                              className={`p-4 rounded-2xl border transition-all ${
+                              className={`px-3.5 py-2 sm:py-2.5 rounded-xl border transition-all ${
                                 isDone 
-                                  ? 'bg-emerald-50/50 dark:bg-emerald-950/25 border-emerald-300 dark:border-emerald-800/80 shadow-sm'
-                                  : 'bg-red-50/50 dark:bg-red-950/25 border-red-300 dark:border-red-800/80 shadow-sm'
+                                  ? 'bg-emerald-50/50 dark:bg-emerald-950/25 border-emerald-300 dark:border-emerald-800/80 shadow-2xs'
+                                  : 'bg-red-50/50 dark:bg-red-950/25 border-red-300 dark:border-red-800/80 shadow-2xs'
                               }`}
                             >
-                              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-                                <div className="flex items-start gap-3 flex-1">
+                              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2.5 sm:gap-3">
+                                <div className="flex items-start gap-2 sm:gap-2.5 flex-1 min-w-0">
                                   {/* Secondary Tier: Priority Selector */}
                                   <QuickPrioritySelector task={task} size="sm" />
 
-                                  <div className="space-y-1 flex-1">
-                                    <div className="flex items-center gap-2 flex-wrap">
+                                  <div className="space-y-1 flex-1 min-w-0">
+                                    <div className="flex items-center gap-1.5 flex-wrap">
                                       <QuickTimeSelector task={task} />
                                       {timePeriodSettings?.isEnabled && (() => {
                                         const period = getTimePeriodForTime(task.startTime, timePeriodSettings);
                                         if (!period) return null;
                                         return (
                                           <span 
-                                            className="text-[10px] font-bold px-2 py-0.5 rounded-full border flex items-center gap-1 bg-amber-500/10 text-amber-900 dark:text-amber-200 border-amber-300 dark:border-amber-800 shrink-0 shadow-2xs"
+                                            className="text-[10px] font-bold px-1.5 py-0.2 rounded-full border flex items-center gap-0.5 bg-amber-500/10 text-amber-900 dark:text-amber-200 border-amber-300 dark:border-amber-800 shrink-0 shadow-2xs"
                                             title={`Day Zone: ${period.name} (${period.startTime} - ${period.endTime})`}
                                           >
                                             <span>{period.emoji || '⏰'}</span>
@@ -1649,27 +1653,27 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
                                           </span>
                                         );
                                       })()}
-                                      <span className="text-[11px] font-mono text-theme-muted font-bold">
+                                      <span className="text-[10px] sm:text-[11px] font-mono text-theme-muted font-bold">
                                         {task.projectCode}
                                       </span>
-                                      <span className="text-[11px] font-semibold text-theme-muted">
+                                      <span className="text-[10px] sm:text-[11px] font-semibold text-theme-muted">
                                         {task.category}
                                       </span>
-                                      <span className={`text-[10px] font-black px-2.5 py-0.5 rounded-full flex items-center gap-1 shadow-sm ${
+                                      <span className={`text-[10px] font-black px-2 py-0.2 rounded-full flex items-center gap-1 shadow-2xs ${
                                         isDone 
                                           ? 'bg-emerald-600 text-white' 
                                           : 'bg-red-600 text-white'
                                       }`}>
-                                        {isDone ? <Check className="w-3 h-3 stroke-[3]" /> : <X className="w-3 h-3 stroke-[3]" />}
+                                        {isDone ? <Check className="w-2.5 h-2.5 stroke-[3]" /> : <X className="w-2.5 h-2.5 stroke-[3]" />}
                                         <span>{isDone ? 'Done' : 'Terminated'}</span>
                                       </span>
                                     </div>
 
                                     <div className="flex items-baseline gap-2 flex-wrap">
-                                      <h4 className="text-base font-bold text-theme-muted line-through font-openSans leading-snug">
+                                      <h4 className="text-sm font-bold text-theme-muted line-through font-display leading-tight truncate">
                                         {task.title}
                                       </h4>
-                                      <span className="font-mono text-xs font-semibold text-theme-muted bg-theme-card-hover px-2 py-0.5 rounded border border-theme-border">
+                                      <span className="font-mono text-[10px] sm:text-[11px] font-semibold text-theme-muted bg-theme-card-hover px-1.5 py-0.2 rounded border border-theme-border">
                                         ~{task.appointedMinutes}m
                                       </span>
                                     </div>
