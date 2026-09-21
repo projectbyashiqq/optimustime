@@ -4381,61 +4381,93 @@ export function calculateNextFreeTimeAfterTimedTasks(params: NextFreeSlotParams)
   let startMin: number;
   let isAfter = false;
 
-  if (slotStrategy === 'current-time' && isToday && timedTasks.length === 0) {
-    startMin = Math.ceil((currentMins + 5) / 5) * 5;
-  } else if (slotStrategy === 'work-start' && timedTasks.length === 0 && !isToday) {
-    startMin = dayStartMin;
-  } else if (timedTasks.length > 0) {
-    // Find the latest task's end time (+ buffer)
+  // Distinguish tasks on selectedDate:
+  // 1. Tasks starting on selectedDate (or recurring on selectedDate)
+  // 2. Tasks continuing from previous date into early morning of selectedDate
+  const parsedTasks: { start: number; end: number; buffer: number; isContinuation: boolean }[] = [];
+
+  for (const t of timedTasks) {
+    const buf = t.bufferMinutes !== undefined ? t.bufferMinutes : defaultBuffer;
+    const isRecurring = Boolean(t.recurrence && t.recurrence !== 'None');
+    const isStartedEarlier = !isRecurring && t.taskDate && t.taskDate < params.selectedDate;
+
+    if (isStartedEarlier) {
+      // Continuation from yesterday: ends in early morning of selectedDate
+      const endM = parse12HourToMinutes(t.endTime!);
+      parsedTasks.push({ start: 0, end: endM, buffer: buf, isContinuation: true });
+    } else {
+      // Starts on selectedDate
+      let s = parse12HourToMinutes(t.startTime!);
+      let e = parse12HourToMinutes(t.endTime!);
+      if (e <= s) e += 1440; // overnight task ending past midnight tonight
+      parsedTasks.push({ start: s, end: e, buffer: buf, isContinuation: false });
+    }
+  }
+
+  if (isToday) {
+    // TODAY: Do not schedule in the past
+    const minAllowed = Math.ceil((currentMins + 5) / 5) * 5;
+
     let latestEndMin = -1;
     let bufferToUse = defaultBuffer;
 
-    for (const t of timedTasks) {
-      let s = parse12HourToMinutes(t.startTime!);
-      let e = parse12HourToMinutes(t.endTime!);
-      if (e <= s) e += 1440; // overnight task ending past midnight
-      const buf = t.bufferMinutes !== undefined ? t.bufferMinutes : defaultBuffer;
-      if (e > latestEndMin) {
-        latestEndMin = e;
-        bufferToUse = buf;
+    for (const pt of parsedTasks) {
+      if (pt.end > latestEndMin) {
+        latestEndMin = pt.end;
+        bufferToUse = pt.buffer;
       }
     }
 
-    startMin = latestEndMin + bufferToUse;
-    isAfter = true;
-
-    // If selected date is today and latestEndMin was in the past, snap forward to upcoming 5m tick
-    if (isToday) {
-      const minAllowed = Math.ceil((currentMins + 5) / 5) * 5;
+    if (latestEndMin > -1) {
+      startMin = latestEndMin + bufferToUse;
+      isAfter = true;
       if (startMin < minAllowed) {
         startMin = minAllowed;
       }
+    } else {
+      startMin = Math.max(dayStartMin, minAllowed);
     }
   } else {
-    // No timed tasks on selectedDate
-    startMin = dayStartMin;
-    if (isToday) {
-      const minAllowed = Math.ceil((currentMins + 5) / 5) * 5;
-      if (startMin < minAllowed) {
-        startMin = minAllowed;
+    // FUTURE DATE OR OTHER DATE:
+    // Daytime work begins at dayStartMin (e.g. 09:00 AM).
+    // Tasks that start on selectedDate during daytime will cascade sequentially.
+    const daytimeTasks = parsedTasks.filter(pt => !pt.isContinuation && pt.end >= dayStartMin);
+
+    if (daytimeTasks.length > 0) {
+      let latestDaytimeEnd = -1;
+      let bufferToUse = defaultBuffer;
+
+      for (const pt of daytimeTasks) {
+        if (pt.end > latestDaytimeEnd) {
+          latestDaytimeEnd = pt.end;
+          bufferToUse = pt.buffer;
+        }
       }
+
+      startMin = latestDaytimeEnd + bufferToUse;
+      isAfter = true;
+    } else {
+      // No daytime tasks on selectedDate: start fresh at dayStartMin!
+      startMin = dayStartMin;
+      isAfter = false;
     }
   }
 
   const endMin = startMin + params.durationMinutes;
 
-  // CHECK IF IT CROSSES DAY OR EXCEEDS BEDTIME:
+  // CHECK IF THE DAY IS GENUINELY EXHAUSTED (exceeds bedtime or late-night sleep window):
+  // Note: Only check sleep window if startMin >= 1200 (8:00 PM or later), so morning hours are never flagged as sleep.
   const candidateStartStr = formatMinutesTo12Hour(startMin % 1440);
   const candidateEndStr = addMinutesToTime(candidateStartStr, params.durationMinutes);
-  const inSleep = isTimeInSleepWindow(candidateStartStr, candidateEndStr, sleepStartStr, sleepEndStr);
+  const isLateNightSleep = startMin >= 1200 && isTimeInSleepWindow(candidateStartStr, candidateEndStr, sleepStartStr, sleepEndStr);
 
-  if (endMin > bedtimeMin || inSleep) {
-    // TODAY HAS ENDED OR IS FULL! Move to TOMORROW!
+  if (endMin > bedtimeMin || isLateNightSleep) {
+    // SELECTED DATE HAS ENDED OR IS FULL! Move to NEXT DAY!
     const [y, m, d] = params.selectedDate.split('-').map(Number);
     const tomorrowDateObj = new Date(y, m - 1, d + 1);
     const tomorrowStr = toISODateString(tomorrowDateObj);
 
-    // Look for existing tasks on tomorrow
+    // Look for existing daytime tasks on tomorrow
     const tomorrowTimedTasks = params.tasks.filter(t => {
       if (!isTaskScheduledForDate(t as any, tomorrowStr)) return false;
       if (t.hasNoTime || !t.startTime || t.startTime === 'Anytime' || t.startTime === 'Free Time' || t.startTime === 'No Time' || t.startTime === 'All Day') return false;
@@ -4444,10 +4476,18 @@ export function calculateNextFreeTimeAfterTimedTasks(params: NextFreeSlotParams)
     });
 
     let tomStartMin = dayStartMin;
-    if (tomorrowTimedTasks.length > 0) {
+    const tomDaytimeTasks = tomorrowTimedTasks.filter(t => {
+      const isRecurring = Boolean(t.recurrence && t.recurrence !== 'None');
+      const isStartedEarlier = !isRecurring && t.taskDate && t.taskDate < tomorrowStr;
+      if (isStartedEarlier) return false;
+      const e = parse12HourToMinutes(t.endTime!);
+      return e >= dayStartMin;
+    });
+
+    if (tomDaytimeTasks.length > 0) {
       let tomLatestEnd = -1;
       let tomBuf = defaultBuffer;
-      for (const t of tomorrowTimedTasks) {
+      for (const t of tomDaytimeTasks) {
         let s = parse12HourToMinutes(t.startTime!);
         let e = parse12HourToMinutes(t.endTime!);
         if (e <= s) e += 1440;
