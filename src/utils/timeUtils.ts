@@ -2,7 +2,7 @@
  * Time utility functions for OptimusTime Time-Boxing and Automation Engines
  */
 
-import { Task, BufferStatusNote, CapacitySettings, DaySlice24, DayBreakdown24Metrics, SignalNoiseType, NamedTimePeriod, TimePeriodSettings } from '../types';
+import { Task, BufferStatusNote, CapacitySettings, DaySlice24, DayBreakdown24Metrics, SignalNoiseType, NamedTimePeriod, TimePeriodSettings, PriorityLevel } from '../types';
 import { detectSignalVsNoise } from './signalNoiseUtils';
 
 export const DAYS_OF_WEEK = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
@@ -2879,10 +2879,9 @@ export function findNextAvailableSlot(
       const nowStart = formatMinutesTo12Hour(curHourMin);
       const nowEnd = formatMinutesTo12Hour(curHourMin + 15);
       const isCurrentlySleepTime = isTimeInSleepWindow(nowStart, nowEnd, sleepStartStr, sleepEndStr);
-
       if (isCurrentlySleepTime) {
-        // Late night sleep hours (e.g. 11:00 PM - 11:59 PM): Today has ended! Rollover to tomorrow
-        if (curHourMin >= wakingEndMin - 15 || curHourMin >= 1320) {
+        // Late night sleep hours: Today has ended! Rollover to tomorrow
+        if (curHourMin >= wakingEndMin - 15) {
           continue;
         }
         // Early morning sleep hours (e.g. 00:00 AM - 05:59 AM): Waking hours begin at wakingStartMin today
@@ -4319,6 +4318,13 @@ export interface NextFreeSlotParams {
     sleepEndTime?: string;
     defaultBufferMinutes?: number;
   };
+  defaultTaskSettings?: {
+    defaultPriority?: PriorityLevel;
+    defaultCategory?: string;
+    defaultBufferMinutes?: number;
+    defaultSmartSlot?: 'auto-fit' | 'current-time' | 'work-start';
+    defaultAppointedMinutes?: number;
+  };
   defaultBufferMinutes?: number;
 }
 
@@ -4335,11 +4341,34 @@ export interface CalculatedNextFreeSlotResult {
 
 /**
  * Calculates the next free time slot after existing timed tasks on the selected date.
- * Places the task right after the latest scheduled task (+ buffer), or at current time/day start if no tasks exist.
- * If the day is full or in sleep hours, smoothly rolls over to the next available daytime opening (tomorrow).
- * Accurately tracks midnight spanning (crossesMidnight & endDate).
+ * Accurately follows the user's task adding rules (presets, buffers, bedtime rules).
+ * Cascades consecutive tasks sequentially. When the day ends or overflows bedtime,
+ * it advances to the next day conflict-free.
  */
 export function calculateNextFreeTimeAfterTimedTasks(params: NextFreeSlotParams): CalculatedNextFreeSlotResult {
+  const bstNow = getBangladeshNow();
+  const todayStr = toISODateString(bstNow);
+  const isToday = params.selectedDate === todayStr;
+  const currentMins = bstNow.getHours() * 60 + bstNow.getMinutes();
+  
+  const defaultBuffer = params.defaultBufferMinutes 
+    ?? params.defaultTaskSettings?.defaultBufferMinutes 
+    ?? params.capacitySettings?.defaultBufferMinutes 
+    ?? 15;
+
+  const dayStartStr = params.capacitySettings?.dayStartTime || '09:00 AM';
+  const dayEndStr = params.capacitySettings?.dayEndTime || '11:59 PM';
+  const sleepStartStr = params.capacitySettings?.sleepStartTime || '02:15 AM';
+  const sleepEndStr = params.capacitySettings?.sleepEndTime || dayStartStr;
+
+  const dayStartMin = parse12HourToMinutes(dayStartStr);
+  const wakeMin = parse12HourToMinutes(sleepEndStr);
+  let bedtimeMin = parse12HourToMinutes(sleepStartStr);
+  if (bedtimeMin <= wakeMin) {
+    bedtimeMin += 1440; // overnight bedtime (e.g. 02:15 AM = 1575 mins)
+  }
+
+  // Filter existing timed tasks on selectedDate
   const timedTasks = params.tasks.filter(t => {
     if (!isTaskScheduledForDate(t as any, params.selectedDate)) return false;
     if (t.hasNoTime || !t.startTime || t.startTime === 'Anytime' || t.startTime === 'Free Time' || t.startTime === 'No Time' || t.startTime === 'All Day') return false;
@@ -4347,25 +4376,24 @@ export function calculateNextFreeTimeAfterTimedTasks(params: NextFreeSlotParams)
     return true;
   });
 
-  const bstNow = getBangladeshNow();
-  const todayStr = toISODateString(bstNow);
-  const isToday = params.selectedDate === todayStr;
-  const currentMins = bstNow.getHours() * 60 + bstNow.getMinutes();
-  const defaultBuffer = params.defaultBufferMinutes ?? params.capacitySettings?.defaultBufferMinutes ?? 15;
-  const sleepStartStr = params.capacitySettings?.sleepStartTime || '11:00 PM';
-  const sleepEndStr = params.capacitySettings?.sleepEndTime || '06:00 AM';
+  const slotStrategy = params.defaultTaskSettings?.defaultSmartSlot || 'auto-fit';
 
   let startMin: number;
   let isAfter = false;
 
-  if (timedTasks.length > 0) {
+  if (slotStrategy === 'current-time' && isToday && timedTasks.length === 0) {
+    startMin = Math.ceil((currentMins + 5) / 5) * 5;
+  } else if (slotStrategy === 'work-start' && timedTasks.length === 0 && !isToday) {
+    startMin = dayStartMin;
+  } else if (timedTasks.length > 0) {
+    // Find the latest task's end time (+ buffer)
     let latestEndMin = -1;
     let bufferToUse = defaultBuffer;
 
     for (const t of timedTasks) {
       let s = parse12HourToMinutes(t.startTime!);
       let e = parse12HourToMinutes(t.endTime!);
-      if (e <= s) e += 1440; // overnight task
+      if (e <= s) e += 1440; // overnight task ending past midnight
       const buf = t.bufferMinutes !== undefined ? t.bufferMinutes : defaultBuffer;
       if (e > latestEndMin) {
         latestEndMin = e;
@@ -4376,7 +4404,7 @@ export function calculateNextFreeTimeAfterTimedTasks(params: NextFreeSlotParams)
     startMin = latestEndMin + bufferToUse;
     isAfter = true;
 
-    // If selected date is today, avoid scheduling in the past
+    // If selected date is today and latestEndMin was in the past, snap forward to upcoming 5m tick
     if (isToday) {
       const minAllowed = Math.ceil((currentMins + 5) / 5) * 5;
       if (startMin < minAllowed) {
@@ -4384,9 +4412,8 @@ export function calculateNextFreeTimeAfterTimedTasks(params: NextFreeSlotParams)
       }
     }
   } else {
-    // No timed tasks on this date yet: start from dayStartTime or current time
-    const dayStartStr = params.capacitySettings?.dayStartTime || '09:00 AM';
-    startMin = parse12HourToMinutes(dayStartStr);
+    // No timed tasks on selectedDate
+    startMin = dayStartMin;
     if (isToday) {
       const minAllowed = Math.ceil((currentMins + 5) / 5) * 5;
       if (startMin < minAllowed) {
@@ -4395,39 +4422,84 @@ export function calculateNextFreeTimeAfterTimedTasks(params: NextFreeSlotParams)
     }
   }
 
+  const endMin = startMin + params.durationMinutes;
+
+  // CHECK IF IT CROSSES DAY OR EXCEEDS BEDTIME:
   const candidateStartStr = formatMinutesTo12Hour(startMin % 1440);
   const candidateEndStr = addMinutesToTime(candidateStartStr, params.durationMinutes);
+  const inSleep = isTimeInSleepWindow(candidateStartStr, candidateEndStr, sleepStartStr, sleepEndStr);
 
-  // Check if candidate slot falls into sleep window or overflows the day:
-  // If so, use findNextAvailableSlot to find the next valid opening (either earlier daytime gap, or tomorrow)
-  if (isTimeInSleepWindow(candidateStartStr, candidateEndStr, sleepStartStr, sleepEndStr)) {
-    const gapSlot = findNextAvailableSlot(
-      params.durationMinutes, 
-      params.tasks as any, 
-      params.capacitySettings, 
-      undefined, 
-      params.selectedDate
-    );
-    if (gapSlot) {
-      const crosses = Boolean(gapSlot.crossesMidnight || taskCrossesMidnight(gapSlot.startTime, gapSlot.endTime));
-      const targetDate = gapSlot.date;
-      const endDate = gapSlot.endDate || getTaskEndDate(targetDate, gapSlot.startTime, gapSlot.endTime);
-      return {
-        targetDate,
-        startTime: gapSlot.startTime,
-        endTime: gapSlot.endTime,
-        durationMinutes: params.durationMinutes,
-        crossesMidnight: crosses,
-        endDate,
-        isNextDay: targetDate !== params.selectedDate,
-        isAfterExistingTask: isAfter
-      };
+  if (endMin > bedtimeMin || inSleep) {
+    // TODAY HAS ENDED OR IS FULL! Move to TOMORROW!
+    const [y, m, d] = params.selectedDate.split('-').map(Number);
+    const tomorrowDateObj = new Date(y, m - 1, d + 1);
+    const tomorrowStr = toISODateString(tomorrowDateObj);
+
+    // Look for existing tasks on tomorrow
+    const tomorrowTimedTasks = params.tasks.filter(t => {
+      if (!isTaskScheduledForDate(t as any, tomorrowStr)) return false;
+      if (t.hasNoTime || !t.startTime || t.startTime === 'Anytime' || t.startTime === 'Free Time' || t.startTime === 'No Time' || t.startTime === 'All Day') return false;
+      if (t.status === 'Terminated') return false;
+      return true;
+    });
+
+    let tomStartMin = dayStartMin;
+    if (tomorrowTimedTasks.length > 0) {
+      let tomLatestEnd = -1;
+      let tomBuf = defaultBuffer;
+      for (const t of tomorrowTimedTasks) {
+        let s = parse12HourToMinutes(t.startTime!);
+        let e = parse12HourToMinutes(t.endTime!);
+        if (e <= s) e += 1440;
+        const buf = t.bufferMinutes !== undefined ? t.bufferMinutes : defaultBuffer;
+        if (e > tomLatestEnd) {
+          tomLatestEnd = e;
+          tomBuf = buf;
+        }
+      }
+      tomStartMin = tomLatestEnd + tomBuf;
     }
+
+    const tomorrowStartStr = formatMinutesTo12Hour(tomStartMin % 1440);
+    const tomorrowEndStr = addMinutesToTime(tomorrowStartStr, params.durationMinutes);
+    const crosses = taskCrossesMidnight(tomorrowStartStr, tomorrowEndStr);
+    const endDate = crosses ? getTaskEndDate(tomorrowStr, tomorrowStartStr, tomorrowEndStr) : tomorrowStr;
+
+    return {
+      targetDate: tomorrowStr,
+      startTime: tomorrowStartStr,
+      endTime: tomorrowEndStr,
+      durationMinutes: params.durationMinutes,
+      crossesMidnight: crosses,
+      endDate,
+      isNextDay: true,
+      isAfterExistingTask: isAfter
+    };
   }
 
+  // Fits before bedtime on selectedDate:
+  // Check if startMin is on the next calendar day (startMin >= 1440):
+  if (startMin >= 1440) {
+    const [y, m, d] = params.selectedDate.split('-').map(Number);
+    const tomorrowDateObj = new Date(y, m - 1, d + 1);
+    const tomorrowStr = toISODateString(tomorrowDateObj);
+
+    return {
+      targetDate: tomorrowStr,
+      startTime: candidateStartStr,
+      endTime: candidateEndStr,
+      durationMinutes: params.durationMinutes,
+      crossesMidnight: false,
+      endDate: tomorrowStr,
+      isNextDay: true,
+      isAfterExistingTask: isAfter
+    };
+  }
+
+  // Starts today before midnight:
   const crosses = taskCrossesMidnight(candidateStartStr, candidateEndStr);
   const targetDate = params.selectedDate;
-  const endDate = getTaskEndDate(targetDate, candidateStartStr, candidateEndStr);
+  const endDate = crosses ? getTaskEndDate(targetDate, candidateStartStr, candidateEndStr) : targetDate;
 
   return {
     targetDate,
@@ -4440,4 +4512,5 @@ export function calculateNextFreeTimeAfterTimedTasks(params: NextFreeSlotParams)
     isAfterExistingTask: isAfter
   };
 }
+
 

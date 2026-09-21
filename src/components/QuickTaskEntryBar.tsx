@@ -11,7 +11,8 @@ import {
   Clock, 
   Sparkles, 
   Coffee, 
-  Zap 
+  Zap,
+  Calendar
 } from 'lucide-react';
 
 interface QuickTaskEntryBarProps {
@@ -25,6 +26,7 @@ const COMMON_DURATIONS = [15, 30, 45, 60, 90];
 
 export const QuickTaskEntryBar: React.FC<QuickTaskEntryBarProps> = ({
   selectedDate,
+  onDateChange,
   className = ''
 }) => {
   const { 
@@ -37,18 +39,41 @@ export const QuickTaskEntryBar: React.FC<QuickTaskEntryBarProps> = ({
   } = useApp();
 
   const [title, setTitle] = useState('');
-  const [priority, setPriority] = useState<PriorityLevel>('P3');
-  const [category, setCategory] = useState<string>(categories[0]?.name || 'VRTX');
+  
+  // Follow the user's task adding rules and presets
+  const initialPriority = defaultTaskSettings?.defaultPriority || 'P1';
+  const initialCategory = defaultTaskSettings?.defaultCategory || categories[0]?.name || 'VRTX';
+  const initialDuration = defaultTaskSettings?.defaultAppointedMinutes 
+    || prioritySettings[initialPriority]?.defaultMinutes 
+    || 60;
+
+  const [priority, setPriority] = useState<PriorityLevel>(initialPriority);
+  const [category, setCategory] = useState<string>(initialCategory);
+  const [duration, setDuration] = useState<number>(initialDuration > 0 ? initialDuration : 30);
   const [isSuccessFlash, setIsSuccessFlash] = useState(false);
   const [lastAddedSlot, setLastAddedSlot] = useState<string>('');
   const [scheduleMode, setScheduleMode] = useState<'auto-slot' | 'anytime'>('auto-slot');
   const inputRef = useRef<HTMLInputElement>(null);
 
-  // Set default duration based on chosen priority or settings
-  const priorityDefaultMin = prioritySettings[priority]?.defaultMinutes || 45;
-  const [duration, setDuration] = useState<number>(priorityDefaultMin > 0 ? priorityDefaultMin : 30);
+  // Sync state if defaultTaskSettings update in background
+  useEffect(() => {
+    if (defaultTaskSettings) {
+      if (defaultTaskSettings.defaultPriority) {
+        setPriority(defaultTaskSettings.defaultPriority);
+      }
+      if (defaultTaskSettings.defaultCategory) {
+        setCategory(defaultTaskSettings.defaultCategory);
+      }
+      const defDur = defaultTaskSettings.defaultAppointedMinutes 
+        || prioritySettings[defaultTaskSettings.defaultPriority]?.defaultMinutes 
+        || 60;
+      if (defDur > 0) {
+        setDuration(defDur);
+      }
+    }
+  }, [defaultTaskSettings, prioritySettings]);
 
-  // When priority changes, update duration to that priority's default if user hasn't explicitly customized
+  // When priority changes manually, update duration to that priority's rule
   const handlePriorityChange = (newP: PriorityLevel) => {
     setPriority(newP);
     const defM = prioritySettings[newP]?.defaultMinutes;
@@ -59,7 +84,7 @@ export const QuickTaskEntryBar: React.FC<QuickTaskEntryBarProps> = ({
     }
   };
 
-  // Calculate the next free slot after timed tasks on the selected date
+  // Calculate the next free slot after timed tasks according to user rules
   const nextSlot = useMemo(() => {
     if (scheduleMode === 'anytime') return null;
     return calculateNextFreeTimeAfterTimedTasks({
@@ -67,6 +92,7 @@ export const QuickTaskEntryBar: React.FC<QuickTaskEntryBarProps> = ({
       durationMinutes: duration,
       tasks,
       capacitySettings,
+      defaultTaskSettings,
       defaultBufferMinutes: defaultTaskSettings?.defaultBufferMinutes
     });
   }, [scheduleMode, selectedDate, duration, tasks, capacitySettings, defaultTaskSettings]);
@@ -83,9 +109,9 @@ export const QuickTaskEntryBar: React.FC<QuickTaskEntryBarProps> = ({
 
     const taskDate = isAutoSlot ? nextSlot.targetDate : selectedDate;
     const crossesMidnight = isAutoSlot ? nextSlot.crossesMidnight : false;
-    const endDate = isAutoSlot ? nextSlot.endDate : selectedDate;
+    const endDate = isAutoSlot ? nextSlot.endDate : taskDate;
 
-    // Fast-add task scheduled into the next free time after any timed task
+    // Fast-add task scheduled into the next free time following all rules
     addTask({
       title: title.trim(),
       description: '',
@@ -108,14 +134,19 @@ export const QuickTaskEntryBar: React.FC<QuickTaskEntryBarProps> = ({
     });
 
     const slotLabel = isAutoSlot 
-      ? (nextSlot.isNextDay ? `Tomorrow ${nextSlot.startTime}` : `${nextSlot.startTime}`)
+      ? (nextSlot.isNextDay ? `${taskDate} ${nextSlot.startTime}` : `${nextSlot.startTime}`)
       : 'Buffer';
     setLastAddedSlot(slotLabel);
     setTitle('');
     setIsSuccessFlash(true);
     setTimeout(() => setIsSuccessFlash(false), 1800);
 
-    // Keep focus on input for instant multi-task entry
+    // If task crossed to the next day, automatically move the view to the new date!
+    if (isAutoSlot && nextSlot.targetDate !== selectedDate) {
+      onDateChange?.(nextSlot.targetDate);
+    }
+
+    // Keep focus on input for continuous multi-task entry
     inputRef.current?.focus();
   };
 
@@ -142,22 +173,28 @@ export const QuickTaskEntryBar: React.FC<QuickTaskEntryBarProps> = ({
               }`}
               title={
                 nextSlot.isNextDay 
-                  ? "Today is full up to sleep time; automatically rolling over to earliest opening Tomorrow"
+                  ? `Day is full/exceeds bedtime. Automatically advances to ${nextSlot.targetDate}`
                   : nextSlot.crossesMidnight 
                   ? "This task starts tonight and spans past midnight into tomorrow"
                   : nextSlot.isAfterExistingTask 
-                  ? "Auto-placed after previous timed tasks" 
+                  ? "Sequentially placed after previous timed tasks" 
                   : "Starts at earliest daytime opening"
               }
             >
               <Clock className="w-3.5 h-3.5 text-blue-500 animate-pulse" />
               <span>
-                {nextSlot.isNextDay ? 'Next Slot (Tomorrow):' : 'Next Slot:'}
+                {nextSlot.isNextDay ? `Next Slot (${nextSlot.targetDate}):` : 'Next Slot:'}
               </span>
               <span className="font-extrabold">{nextSlot.startTime} – {nextSlot.endTime}</span>
               <span className="text-[10px] opacity-75">({duration}m)</span>
+              {nextSlot.isNextDay && (
+                <span className="text-[10px] px-1.5 py-0.2 rounded bg-purple-200/70 dark:bg-purple-900/70 text-purple-900 dark:text-purple-100 font-sans font-bold flex items-center gap-0.5">
+                  <Calendar className="w-2.5 h-2.5" />
+                  <span>Moves to Next Day</span>
+                </span>
+              )}
               {nextSlot.crossesMidnight && (
-                <span className="text-[10px] px-1.5 py-0.2 rounded bg-purple-200/60 dark:bg-purple-900/60 text-purple-800 dark:text-purple-200 font-sans font-bold flex items-center gap-0.5">
+                <span className="text-[10px] px-1.5 py-0.2 rounded bg-indigo-200/70 dark:bg-indigo-900/70 text-indigo-900 dark:text-indigo-100 font-sans font-bold flex items-center gap-0.5">
                   <span>🌙</span>
                   <span>Spans Midnight</span>
                 </span>
