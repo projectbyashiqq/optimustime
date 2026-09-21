@@ -57,6 +57,7 @@ import { ListTodo, Table as TableIcon, CalendarDays, Grid3X3, Repeat, Bell, Stic
 import { NotesView } from './NotesView';
 import { QuickPrioritySelector } from '../components/QuickPrioritySelector';
 import { QuickTimeSelector } from '../components/QuickTimeSelector';
+import { QuickTaskEntryBar } from '../components/QuickTaskEntryBar';
 
 type TimeRangeFilter = 'ALL' | 'TODAY' | 'TOMORROW' | 'THIS_WEEK' | 'NEXT_WEEK' | 'NEXT_MONTH' | 'NEXT_YEAR';
 export type AllTasksViewMode = 'list' | 'table' | 'timeline' | '24hours' | 'weekly' | 'monthly' | 'notes_reminders';
@@ -88,7 +89,7 @@ export const AllTasksView: React.FC<AllTasksViewProps> = ({ onOpenTaskModal, onO
 
   const [isExportMenuOpen, setIsExportMenuOpen] = useState(false);
   const [timeRange, setTimeRange] = useState<TimeRangeFilter>('ALL');
-  const [densityMode, setDensityMode] = useState<'compact' | 'expanded'>('compact');
+  const [densityMode, setDensityMode] = useState<'compact' | 'expanded'>('expanded');
   const [collapsedHorizons, setCollapsedHorizons] = useState<Record<string, boolean>>({});
   const [selectedCategory, setSelectedCategory] = useState<string>('ALL');
   const [selectedPriority, setSelectedPriority] = useState<PriorityLevel | 'ALL'>('ALL');
@@ -548,14 +549,14 @@ export const AllTasksView: React.FC<AllTasksViewProps> = ({ onOpenTaskModal, onO
             <div className="flex items-center gap-1">
               <button
                 onClick={() => pauseTask(task.id)}
-                className="p-1 rounded-lg bg-amber-500 text-white hover:bg-amber-600 transition-colors shadow-2xs"
+                className="btn-pro btn-pro-warning p-1 rounded-lg shadow-2xs"
                 title="Pause Task"
               >
                 <Pause className="w-3 h-3" />
               </button>
               <button
                 onClick={() => completeTask(task.id)}
-                className="flex items-center gap-0.5 px-2 py-1 rounded-lg bg-emerald-500 text-white hover:bg-emerald-600 text-[10px] font-bold transition-colors shadow-2xs"
+                className="btn-pro btn-pro-success flex items-center gap-0.5 px-2 py-0.5 rounded-lg text-[10px] font-bold shadow-2xs"
                 title="Mark as Done"
               >
                 <Check className="w-3 h-3" />
@@ -565,7 +566,7 @@ export const AllTasksView: React.FC<AllTasksViewProps> = ({ onOpenTaskModal, onO
           ) : (
             <button
               onClick={() => startTask(task.id)}
-              className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-[10px] font-bold shadow-2xs transition-all"
+              className="btn-pro btn-pro-primary flex items-center gap-1 px-2.5 py-0.5 rounded-lg text-[10px] font-bold shadow-2xs"
               title="Start Task Now"
             >
               <Play className="w-2.5 h-2.5 fill-white" />
@@ -577,7 +578,7 @@ export const AllTasksView: React.FC<AllTasksViewProps> = ({ onOpenTaskModal, onO
           {!task.isMandatorySchedule && (
             <button
               onClick={() => handleStatusChange(task, 'Reschedule')}
-              className="p-1 rounded-lg hover:bg-theme-card-hover text-theme-muted hover:text-purple-600 transition-colors"
+              className="btn-pro-icon p-1 rounded-lg hover:text-purple-600"
               title="Smart Reschedule"
             >
               <RotateCcw className="w-3.5 h-3.5" />
@@ -587,7 +588,7 @@ export const AllTasksView: React.FC<AllTasksViewProps> = ({ onOpenTaskModal, onO
           {/* Edit Button */}
           <button
             onClick={() => onOpenTaskModal(task)}
-            className="p-1 rounded-lg hover:bg-theme-card-hover text-theme-muted hover:text-blue-600 transition-colors"
+            className="btn-pro-icon p-1 rounded-lg"
             title="Edit Task"
           >
             <Edit2 className="w-3.5 h-3.5" />
@@ -596,7 +597,7 @@ export const AllTasksView: React.FC<AllTasksViewProps> = ({ onOpenTaskModal, onO
           {/* Delete Button */}
           <button
             onClick={() => requestDeleteTask(task, selectedCalendarDate || task.taskDate)}
-            className="p-1 rounded-lg hover:bg-red-50 dark:hover:bg-red-950/40 text-theme-muted hover:text-red-500 transition-colors"
+            className="btn-pro-icon p-1 rounded-lg hover:text-red-500 hover:border-red-300 dark:hover:border-red-800"
             title="Delete Task"
           >
             <Trash2 className="w-3.5 h-3.5" />
@@ -606,12 +607,12 @@ export const AllTasksView: React.FC<AllTasksViewProps> = ({ onOpenTaskModal, onO
     );
   };
 
-  // Comfortable View Task Card (Expanded with full details)
+  // Comfortable View Task Card (Dashboard-matching compact & sleek design)
   const renderTaskExpanded = (task: Task) => {
     const priorityMeta = prioritySettings[task.priority];
     const isWorking = task.status === 'Working';
     const isIncomplete = task.status === 'Incomplete';
-    const now = new Date();
+    const now = nowTime;
     const isCurrentRunningSlot = isTaskInRunningSlot(task.taskDate, task.startTime, task.endTime, now);
     const isRunning = isWorking || (task.status === 'Pending' && isCurrentRunningSlot);
     const isDue = isIncomplete || 
@@ -624,115 +625,183 @@ export const AllTasksView: React.FC<AllTasksViewProps> = ({ onOpenTaskModal, onO
     return (
       <div
         key={task.id}
-        className={`p-4 rounded-2xl border transition-all duration-200 ${
-          isDue
-            ? 'bg-red-50/30 dark:bg-red-950/20 border-red-300 dark:border-red-900/60 shadow-sm'
-            : isRunning
-              ? isInSleep
-                ? 'bg-gradient-to-br from-[#060e22] via-[#0b1736] to-[#171238] text-slate-100 border-cyan-400/90 shadow-[0_0_35px_rgba(6,182,212,0.35)] ring-2 ring-cyan-500/50'
-                : 'bg-gradient-to-r from-blue-50/90 via-sky-50/50 to-theme-card dark:from-blue-950/60 dark:via-sky-950/30 dark:to-theme-card border-blue-500 shadow-xl shadow-blue-500/20 ring-2 ring-blue-500/60'
-              : isInSleep
-              ? 'bg-gradient-to-br from-[#080c18]/98 via-[#0e1428]/98 to-[#181332]/98 text-slate-100 border-indigo-500/35 shadow-xl shadow-indigo-950/30 ring-1 ring-indigo-500/30 hover:border-indigo-400/60'
-              : isSimultaneous
-                ? 'bg-purple-50/20 dark:bg-purple-950/10 border-purple-300 dark:border-purple-800 hover:shadow-md'
-                : 'bg-theme-card border-theme-border hover:shadow-md'
+        className={`px-3.5 py-2.5 sm:py-3 rounded-xl border transition-all duration-200 relative overflow-hidden ${
+          isInSleep
+            ? isDue
+              ? 'card-night-due'
+              : isWorking
+                ? 'card-night-working'
+                : isRunning
+                  ? 'card-night-working'
+                  : 'card-night-cosmic'
+            : isDue
+              ? 'bg-red-50/30 dark:bg-red-950/20 border-red-300 dark:border-red-900/60 shadow-sm'
+              : isWorking
+                ? 'bg-theme-card border-blue-500/80 shadow-lg shadow-blue-500/15 ring-1 ring-blue-500/40 card-working-ambient'
+                : isRunning
+                  ? 'bg-theme-card border-blue-400/60 shadow-md ring-1 ring-blue-400/30'
+                  : isSimultaneous
+                    ? 'bg-theme-card border-purple-300 dark:border-purple-800 hover:shadow-md'
+                    : 'bg-theme-card border-theme-border hover:border-blue-300 dark:hover:border-blue-700 hover:shadow-md'
         }`}
       >
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-          
-          {/* Left Metadata & Details */}
-          <div className="flex items-start gap-3 flex-1">
-            <QuickPrioritySelector task={task} />
+        {/* Seamless Card Border State: Pulsing Left Accent Bar when Working */}
+        {isWorking && (
+          <div className={`glow-accent-bar animate-pulse ${
+            isInSleep 
+              ? 'bg-gradient-to-b from-cyan-400 via-sky-400 to-indigo-500 shadow-[0_0_12px_rgba(6,182,212,0.8)]' 
+              : ''
+          }`} />
+        )}
 
-            <div className="space-y-1 flex-1">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2.5 sm:gap-3 relative z-10">
+          
+          {/* Left: Priority + Time + Title */}
+          <div className="flex items-start gap-2 sm:gap-2.5 flex-1 min-w-0">
+            <QuickPrioritySelector task={task} size="sm" />
+
+            <div className="space-y-1 flex-1 min-w-0">
+              
+              {/* Task Title + Duration */}
+              <div className="flex items-center gap-2 flex-wrap">
+                <h4 
+                  onClick={() => onOpenTaskModal(task)}
+                  className={`cursor-pointer hover:text-blue-600 transition-colors ${
+                    isInSleep
+                      ? isWorking
+                        ? 'card-night-working-title text-sm sm:text-base font-bold font-display leading-tight truncate'
+                        : 'card-night-title text-sm sm:text-base font-bold font-display leading-tight truncate'
+                      : task.status === 'Done'
+                        ? 'text-sm sm:text-base font-bold line-through text-theme-muted opacity-75 truncate'
+                        : isWorking
+                          ? 'text-sm sm:text-base font-bold text-blue-600 dark:text-blue-400 font-display leading-tight truncate'
+                          : 'text-sm sm:text-base font-bold text-theme-text font-display leading-tight truncate'
+                  }`}
+                  title={task.title}
+                >
+                  {task.title}
+                </h4>
+                <span className={`font-mono text-[10px] sm:text-[11px] font-semibold px-1.5 py-0.2 rounded border shadow-2xs ${
+                  isInSleep
+                    ? 'night-time-pill'
+                    : 'text-theme-muted bg-theme-card-hover/80 border-theme-border'
+                }`}>
+                  ~{task.appointedMinutes}m
+                </span>
+              </div>
+
+              {/* Context row: Time, Date, Project Code, Category, Badges */}
               <div className="flex items-center gap-2 flex-wrap text-xs">
-                <span className="font-mono font-bold text-blue-600 dark:text-blue-400 bg-theme-card-hover px-2 py-0.5 rounded border border-theme-border">
+                <QuickTimeSelector task={task} isInSleep={isInSleep} />
+
+                {/* Date with day of week */}
+                <span className="font-mono text-[11px] text-theme-muted flex items-center gap-1 font-semibold">
+                  <Calendar className="w-3 h-3 text-blue-500" />
+                  <span>{formatDisplayDate(task.taskDate)} ({task.dayOfWeek.slice(0, 3)})</span>
+                </span>
+
+                {/* Project Code */}
+                <span className={`text-[11px] font-mono font-bold transition-colors ${
+                  isInSleep
+                    ? 'text-cyan-300 bg-white/10 px-1.5 py-0.5 rounded border border-cyan-400/20 hover:text-cyan-200'
+                    : 'text-theme-muted hover:text-blue-500'
+                }`}>
                   {task.projectCode}
                 </span>
 
-                <span className="text-theme-muted flex items-center gap-1 font-mono font-semibold">
-                  <Calendar className="w-3.5 h-3.5 text-blue-500" />
-                  {formatDisplayDate(task.taskDate)} ({task.dayOfWeek.slice(0, 3)})
-                </span>
-
-                <QuickTimeSelector task={task} />
-
-                <span className="font-semibold text-theme-muted">
+                {/* Category */}
+                <span className={`text-[11px] font-medium ${
+                  isInSleep ? 'text-slate-300' : 'text-theme-muted'
+                }`}>
                   {task.category}
+                  {task.subCategory ? ` / ${task.subCategory}` : ''}
                 </span>
+
+                {/* Rescheduled Tracker Badge */}
+                {Boolean(task.rescheduleCount && task.rescheduleCount > 0) && (
+                  <span 
+                    className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded-full border flex items-center gap-1 shrink-0 ${
+                      isInSleep
+                        ? 'border-purple-400/40 bg-purple-500/20 text-purple-200'
+                        : 'border-purple-300 dark:border-purple-800 bg-purple-50/80 dark:bg-purple-950/40 text-purple-700 dark:text-purple-300'
+                    }`}
+                    title={`Rescheduled ${task.rescheduleCount}x`}
+                  >
+                    <RotateCcw className="w-2.5 h-2.5" />
+                    <span>Rescheduled {task.rescheduleCount}x</span>
+                  </span>
+                )}
 
                 {/* Mandatory Fixed Schedule Badge */}
                 {task.isMandatorySchedule && (
                   <span 
-                    className="text-[10px] font-black px-2 py-0.5 bg-amber-100 dark:bg-amber-950/80 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-700/80 rounded-full flex items-center gap-1 shadow-sm"
-                    title="Mandatory Fixed Schedule: Cannot be rescheduled, auto-shifted, or displaced"
+                    className={`text-[11px] font-medium px-2 py-0.5 rounded-full border flex items-center gap-1 shrink-0 ${
+                      isInSleep
+                        ? 'border-white/15 bg-white/10 text-slate-300'
+                        : 'border-theme-border/70 bg-theme-card-hover/40 text-theme-muted'
+                    }`}
+                    title="Mandatory Fixed Schedule"
                   >
-                    <Lock className="w-2.5 h-2.5 text-amber-600 dark:text-amber-400" />
-                    <span>MANDATORY FIXED</span>
+                    <Lock className="w-2.5 h-2.5 text-theme-muted" />
+                    <span>Fixed</span>
                   </span>
                 )}
 
+                {/* Sleep Window Badge */}
                 {isInSleep && (
                   <span 
-                    className="text-[10px] font-black px-2 py-0.5 bg-indigo-950 text-indigo-300 border border-indigo-700/80 rounded-full flex items-center gap-1 shadow-sm"
-                    title="Scheduled on Sleep / Recovery Window"
+                    className="text-[11px] font-semibold px-2 py-0.5 rounded-full border border-indigo-400/50 bg-indigo-900/60 text-indigo-200 flex items-center gap-1 shrink-0 shadow-2xs"
+                    title="Scheduled in Sleep Window"
                   >
-                    <Moon className="w-2.5 h-2.5 text-indigo-400" />
-                    <span>🌙 SLEEP TIME</span>
+                    <Moon className="w-2.5 h-2.5 text-indigo-300" />
+                    <span>Sleep Zone</span>
                   </span>
                 )}
 
+                {/* Recurrence Badge */}
                 {task.recurrence !== 'None' && (
                   <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-300">
                     ↻ {task.recurrence}
                   </span>
                 )}
 
-                {/* Simultaneous / Overlapped Signal Badge */}
+                {/* Simultaneous Badge */}
                 {isSimultaneous && (
                   <span 
-                    className="text-[10px] font-black px-2 py-0.5 bg-gradient-to-r from-purple-600 to-indigo-600 text-white rounded-full flex items-center gap-1 shadow-sm shadow-purple-500/20"
-                    title={simultaneousList.length > 0 ? `Co-running simultaneously with: ${simultaneousList.map(s => `${s.projectCode} (${s.title})`).join(', ')}` : 'Marked to run simultaneously (Free on Gap Finder)'}
+                    className={`text-[11px] font-semibold px-2 py-0.5 rounded-full border flex items-center gap-1 shrink-0 ${
+                      isInSleep
+                        ? 'border-purple-400/50 bg-purple-900/60 text-purple-200'
+                        : 'border-purple-200/80 dark:border-purple-800/50 bg-purple-50/50 dark:bg-purple-950/30 text-purple-700 dark:text-purple-300'
+                    }`}
+                    title={simultaneousList.length > 0 ? `Co-running simultaneously with: ${simultaneousList.map(s => `${s.projectCode} (${s.title})`).join(', ')}` : 'Marked to run simultaneously'}
                   >
-                    <Zap className="w-2.5 h-2.5 text-yellow-300" />
-                    <span>🔀 SIMULTANEOUS{simultaneousList.length > 0 ? ` (${simultaneousList.length})` : ''}</span>
+                    <Zap className="w-2.5 h-2.5 text-purple-400" />
+                    <span>{simultaneousList.length > 0 ? `Simultaneous (${simultaneousList.length})` : 'Simultaneous'}</span>
                   </span>
                 )}
 
-                {/* Running Time Blue Lighting Badge */}
-                {isRunning && !isDue && (
-                  <span className="text-[10px] font-black px-2 py-0.5 bg-blue-600 text-white rounded-full flex items-center gap-1.5 shadow-md shadow-blue-500/40">
-                    <span className="relative flex h-2 w-2">
-                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-sky-200 opacity-90"></span>
-                      <span className="relative inline-flex rounded-full h-2 w-2 bg-white"></span>
-                    </span>
-                    <span>{isWorking ? '⚡ RUNNING NOW' : '⚡ RUNNING TIME'}</span>
-                  </span>
-                )}
-
-                {isDue && (
-                  <span className="text-[10px] font-black px-2 py-0.5 bg-red-600 text-white rounded-full flex items-center gap-1.5 shadow-sm animate-pulse">
+                {/* Primary High-Saturation Signal */}
+                {isDue ? (
+                  <span className="text-[11px] font-black tracking-wider px-2.5 py-0.5 bg-red-600 text-white rounded-full flex items-center gap-1.5 shadow-sm animate-pulse">
                     <span className="relative flex h-2 w-2">
                       <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-80"></span>
                       <span className="relative inline-flex rounded-full h-2 w-2 bg-white"></span>
                     </span>
                     <span>{isIncomplete ? '⚠️ INCOMPLETE' : isWorking ? '⚡ OVERTIME DUE' : '🚨 DUE NOW'}</span>
                   </span>
-                )}
-              </div>
-
-              {/* Task Title (Auto-scaled dynamic typography) + Appointed Duration */}
-              <div className="flex items-baseline gap-2 flex-wrap">
-                <h4 className={getTaskTitleClasses(task.title, task.status === 'Done', isInSleep && !isDue, isWorking)}>
-                  {task.title}
-                </h4>
-                <span className={`font-mono text-xs font-bold px-2 py-0.5 rounded-md border shadow-2xs ${
-                  isInSleep
-                    ? 'text-indigo-200 bg-indigo-950/80 border-indigo-800/80'
-                    : 'text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/60 border-blue-200 dark:border-blue-900/60'
-                }`}>
-                  ~{task.appointedMinutes}m
-                </span>
+                ) : isRunning ? (
+                  <span className={`text-[11px] font-black tracking-wider px-2.5 py-0.5 rounded-full flex items-center gap-1.5 shadow-md ${
+                    isInSleep
+                      ? 'bg-gradient-to-r from-cyan-500 to-blue-600 text-white shadow-cyan-500/40 ring-1 ring-white/30'
+                      : 'bg-blue-600 text-white shadow-blue-500/40'
+                  }`}>
+                    <span className="relative flex h-2 w-2">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-200 opacity-90"></span>
+                      <span className="relative inline-flex rounded-full h-2 w-2 bg-white"></span>
+                    </span>
+                    <span>{isWorking ? (isInSleep ? '⚡ NIGHT WORKING' : '⚡ WORKING NOW') : '⚡ RUNNING TIME'}</span>
+                  </span>
+                ) : null}
               </div>
 
               {/* Simultaneous Co-Running Twin Details */}
@@ -751,27 +820,33 @@ export const AllTasksView: React.FC<AllTasksViewProps> = ({ onOpenTaskModal, onO
               )}
 
               {/* Live Status Badge + Countdown Pill */}
-              <div className="flex items-center gap-2 flex-wrap py-0.5">
+              <div className="flex items-center gap-1.5 flex-wrap py-0.5">
                 <select
                   value={task.status}
                   onChange={(e) => handleStatusChange(task, e.target.value as TaskStatus)}
-                  className={`text-[10px] font-bold px-2 py-0.5 rounded-full border cursor-pointer focus:outline-none transition-colors ${
-                    task.status === 'Done' ? 'bg-emerald-600 text-white border-emerald-600 shadow-sm' :
-                    task.status === 'Terminated' ? 'bg-red-600 text-white border-red-600 shadow-sm' :
-                    task.status === 'Working' ? 'bg-blue-600 text-white border-blue-600 shadow-sm animate-pulse' :
+                  className={`text-[10px] sm:text-[11px] font-bold px-2 py-0.5 rounded-lg border cursor-pointer focus:outline-none transition-colors ${
+                    task.status === 'Done' ? 'bg-emerald-600 text-white border-emerald-600 shadow-xs' :
+                    task.status === 'Terminated' ? 'bg-red-600 text-white border-red-600 shadow-xs' :
+                    task.status === 'Working' ? (
+                      isInSleep 
+                        ? 'bg-gradient-to-r from-cyan-600 to-blue-600 text-white border-cyan-400 shadow-xs animate-pulse'
+                        : 'bg-blue-600 text-white border-blue-600 shadow-xs animate-pulse'
+                    ) :
                     task.status === 'Hold' ? 'bg-amber-100 text-amber-800 border-amber-300 dark:bg-amber-950' :
-                    task.status === 'Incomplete' ? 'bg-red-600 text-white border-red-600 shadow-sm' :
+                    task.status === 'Incomplete' ? 'bg-red-600 text-white border-red-600 shadow-xs' :
                     task.status === 'Reschedule' ? 'bg-purple-100 text-purple-800 border-purple-300' :
-                    'bg-slate-100 text-slate-700 border-slate-300 dark:bg-slate-800 dark:text-slate-300'
+                    isInSleep
+                      ? 'bg-slate-900 text-white border-slate-700'
+                      : 'bg-slate-100 text-slate-700 border-slate-300 dark:bg-slate-800 dark:text-slate-300'
                   }`}
                 >
-                  <option value="Pending">● Pending</option>
-                  <option value="Working">⚡ Working</option>
-                  <option value="Done">✓ Done</option>
-                  <option value="Hold">⏸ Hold</option>
-                  <option value="Incomplete">⚠️ Incomplete</option>
-                  <option value="Reschedule">↻ Reschedule</option>
-                  <option value="Terminated">✕ Terminated</option>
+                  <option value="Pending" className="bg-slate-900 text-white">● Pending</option>
+                  <option value="Working" className="bg-slate-900 text-white">⚡ Working</option>
+                  <option value="Done" className="bg-slate-900 text-white">✓ Done</option>
+                  <option value="Hold" className="bg-slate-900 text-white">⏸ Hold</option>
+                  <option value="Incomplete" className="bg-slate-900 text-white">⚠️ Incomplete</option>
+                  <option value="Reschedule" className="bg-slate-900 text-white">↻ Reschedule</option>
+                  <option value="Terminated" className="bg-slate-900 text-white">✕ Terminated</option>
                 </select>
 
                 {/* Live Countdown */}
@@ -789,9 +864,11 @@ export const AllTasksView: React.FC<AllTasksViewProps> = ({ onOpenTaskModal, onO
                     const timeFormatted = `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
 
                     return (
-                      <span className={`text-[11px] font-mono font-bold px-2 py-0.5 rounded-lg flex items-center gap-1 shadow-sm ${
+                      <span className={`text-[11px] font-mono font-bold px-2.5 py-0.5 rounded-lg flex items-center gap-1 shadow-sm ${
                         isOvertime
                           ? 'bg-amber-400 text-amber-950 animate-pulse font-black'
+                          : isInSleep
+                          ? 'bg-cyan-500/25 text-cyan-100 border border-cyan-400/50 font-black shadow-cyan-500/20'
                           : 'bg-blue-600 text-white'
                       }`}>
                         <Hourglass className="w-3 h-3 animate-spin" />
@@ -809,7 +886,11 @@ export const AllTasksView: React.FC<AllTasksViewProps> = ({ onOpenTaskModal, onO
                       const h = Math.floor(diffMin / 60);
                       const m = diffMin % 60;
                       return (
-                        <span className="text-[11px] font-mono font-semibold text-blue-700 dark:text-blue-300 bg-blue-50 dark:bg-blue-950/60 px-2 py-0.5 rounded-lg border border-blue-200 dark:border-blue-800 flex items-center gap-1">
+                        <span className={`text-[11px] font-mono font-semibold px-2 py-0.5 rounded-lg border flex items-center gap-1 ${
+                          isInSleep
+                            ? 'night-time-pill'
+                            : 'text-blue-700 dark:text-blue-300 bg-blue-50 dark:bg-blue-950/60 border-blue-200 dark:border-blue-800'
+                        }`}>
                           <Timer className="w-3 h-3 text-blue-500" />
                           <span>Starts in {h > 0 ? `${h}h ` : ''}{m}m</span>
                         </span>
@@ -817,42 +898,77 @@ export const AllTasksView: React.FC<AllTasksViewProps> = ({ onOpenTaskModal, onO
                     }
                   }
 
+                  if (task.status === 'Done') {
+                    const workMins = task.totalActualMinutes || task.appointedMinutes;
+                    return (
+                      <span className="text-[11px] font-mono font-bold px-2 py-0.5 rounded-lg bg-emerald-100/90 dark:bg-emerald-950/80 text-emerald-800 dark:text-emerald-200 border border-emerald-300 dark:border-emerald-700 flex items-center gap-1 shadow-2xs">
+                        <CheckCircle2 className="w-3 h-3 text-emerald-600 dark:text-emerald-400" />
+                        <span>Work Time: {workMins}m</span>
+                        {task.actualEndTime && (
+                          <span className="text-theme-muted font-normal text-[11px]">({task.startTime} - {task.actualEndTime})</span>
+                        )}
+                      </span>
+                    );
+                  }
+
                   return null;
                 })()}
               </div>
 
               {task.description && (
-                <p className="text-xs sm:text-sm text-theme-muted line-clamp-1">
+                <p className={`text-xs sm:text-sm line-clamp-1 font-normal ${
+                  isInSleep ? 'text-slate-300' : 'text-theme-muted'
+                }`}>
                   {task.description}
                 </p>
+              )}
+
+              {task.subtasks && task.subtasks.length > 0 && (
+                <div className="flex items-center gap-2 pt-1 text-[11px] text-theme-muted font-medium">
+                  <Layers className="w-3 h-3 text-purple-500" />
+                  <span>
+                    {task.subtasks.filter(s => s.isCompleted).length} / {task.subtasks.length} Sub-tasks Completed
+                  </span>
+                </div>
               )}
             </div>
           </div>
 
-          {/* Right Actions */}
-          <div className="flex items-center gap-2 w-full sm:w-auto justify-end pt-2 sm:pt-0 border-t sm:border-t-0 border-theme-border">
+          {/* Right: Actions */}
+          <div className={`flex items-center gap-1.5 w-full sm:w-auto justify-end pt-1.5 sm:pt-0 border-t sm:border-t-0 relative z-10 ${
+            isInSleep ? 'border-white/10' : 'border-theme-border'
+          }`}>
             {isWorking ? (
-              <div className="flex items-center gap-1.5">
+              <div className="flex items-center gap-1">
                 <button
                   onClick={() => pauseTask(task.id)}
-                  className="p-2 rounded-xl bg-amber-500 text-white hover:bg-amber-600 transition-colors shadow-sm"
+                  className="btn-pro btn-pro-warning p-1.5 rounded-lg shadow-2xs"
+                  title="Pause Task"
                 >
-                  <Pause className="w-4 h-4" />
+                  <Pause className="w-3.5 h-3.5" />
                 </button>
                 <button
                   onClick={() => completeTask(task.id)}
-                  className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-emerald-500 text-white hover:bg-emerald-600 text-xs font-bold transition-colors shadow-sm"
+                  className={`flex items-center gap-1 px-3 py-1 rounded-lg text-xs font-bold shadow-2xs transition-all active:scale-95 ${
+                    isInSleep
+                      ? 'bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-white shadow-emerald-500/30 ring-1 ring-white/20'
+                      : 'btn-pro btn-pro-success'
+                  }`}
                 >
-                  <CheckCircle2 className="w-4 h-4" />
+                  <CheckCircle2 className="w-3.5 h-3.5 stroke-[2.5]" />
                   <span>Done</span>
                 </button>
               </div>
             ) : (
               <button
                 onClick={() => startTask(task.id)}
-                className="flex items-center gap-1 px-3.5 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold shadow-sm transition-all"
+                className={`flex items-center gap-1 px-3 py-1 rounded-lg text-xs font-bold shadow-2xs active:scale-95 transition-all cursor-pointer ${
+                  isInSleep
+                    ? 'night-btn-start'
+                    : 'btn-pro btn-pro-primary'
+                }`}
               >
-                <Play className="w-3.5 h-3.5 fill-white" />
+                <Play className="w-3 h-3 fill-white stroke-[2]" />
                 <span>Start</span>
               </button>
             )}
@@ -868,7 +984,11 @@ export const AllTasksView: React.FC<AllTasksViewProps> = ({ onOpenTaskModal, onO
             ) : (
               <button
                 onClick={() => setReschedulingTask(task)}
-                className="p-1.5 rounded-lg hover:bg-purple-50 dark:hover:bg-purple-950/40 text-theme-muted hover:text-purple-600 transition-colors"
+                className={
+                  isInSleep 
+                    ? 'night-btn-icon p-1.5 rounded-lg'
+                    : 'btn-pro-icon p-1.5 rounded-lg hover:text-purple-600 hover:border-purple-300 dark:hover:border-purple-800'
+                }
                 title="Reschedule Task / Find Slot"
               >
                 <RotateCcw className="w-3.5 h-3.5" />
@@ -877,7 +997,11 @@ export const AllTasksView: React.FC<AllTasksViewProps> = ({ onOpenTaskModal, onO
 
             <button
               onClick={() => onOpenTaskModal(task)}
-              className="p-1.5 rounded-lg hover:bg-theme-card-hover text-theme-muted hover:text-theme-text transition-colors"
+              className={
+                isInSleep 
+                  ? 'night-btn-icon p-1.5 rounded-lg'
+                  : 'btn-pro-icon p-1.5 rounded-lg'
+              }
               title="Edit Task"
             >
               <Edit2 className="w-3.5 h-3.5" />
@@ -885,7 +1009,11 @@ export const AllTasksView: React.FC<AllTasksViewProps> = ({ onOpenTaskModal, onO
 
             <button
               onClick={() => requestDeleteTask(task, selectedCalendarDate || task.taskDate)}
-              className="p-1.5 rounded-lg hover:bg-red-50 dark:hover:bg-red-950/40 text-theme-muted hover:text-red-500 transition-colors"
+              className={
+                isInSleep
+                  ? 'night-btn-icon p-1.5 rounded-lg hover:text-red-400'
+                  : 'btn-pro-icon p-1.5 rounded-lg hover:text-red-500 hover:border-red-300 dark:hover:border-red-800'
+              }
               title="Delete Task / Occurrence"
             >
               <Trash2 className="w-3.5 h-3.5" />
@@ -992,22 +1120,9 @@ export const AllTasksView: React.FC<AllTasksViewProps> = ({ onOpenTaskModal, onO
             </button>
           </div>
 
-          {/* Density Mode Switcher (Compact View vs Comfortable View) */}
+          {/* Density Mode Switcher (Dashboard Cards vs Compact List) */}
           {viewMode === 'list' && (
             <div className="flex items-center gap-1 p-1 bg-theme-card-hover rounded-xl border border-theme-border shadow-inner shrink-0">
-              <button
-                type="button"
-                onClick={() => setDensityMode('compact')}
-                className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all shrink-0 ${
-                  densityMode === 'compact'
-                    ? 'bg-blue-600 text-white shadow-sm'
-                    : 'text-theme-muted hover:text-theme-text'
-                }`}
-                title="Compact View: Ultra-dense layout to see many tasks at a time"
-              >
-                <LayoutList className="w-3.5 h-3.5" />
-                <span>Compact View</span>
-              </button>
               <button
                 type="button"
                 onClick={() => setDensityMode('expanded')}
@@ -1016,10 +1131,23 @@ export const AllTasksView: React.FC<AllTasksViewProps> = ({ onOpenTaskModal, onO
                     ? 'bg-blue-600 text-white shadow-sm'
                     : 'text-theme-muted hover:text-theme-text'
                 }`}
-                title="Comfortable View: Detailed task cards"
+                title="Dashboard Cards: Full sleek task cards matching Dashboard view"
               >
                 <LayoutGrid className="w-3.5 h-3.5" />
-                <span>Comfortable</span>
+                <span>Dashboard Cards</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setDensityMode('compact')}
+                className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all shrink-0 ${
+                  densityMode === 'compact'
+                    ? 'bg-blue-600 text-white shadow-sm'
+                    : 'text-theme-muted hover:text-theme-text'
+                }`}
+                title="Compact List: Dense 1-line list"
+              >
+                <LayoutList className="w-3.5 h-3.5" />
+                <span>Compact List</span>
               </button>
             </div>
           )}
@@ -1175,7 +1303,13 @@ export const AllTasksView: React.FC<AllTasksViewProps> = ({ onOpenTaskModal, onO
 
       {viewMode === 'list' && (
         <>
-      {/* Multi-Dimensional Filter Bar */}
+          {/* Quick Fast-Entry Task System */}
+          <QuickTaskEntryBar
+            selectedDate={selectedCalendarDate}
+            onDateChange={setSelectedCalendarDate}
+          />
+
+          {/* Multi-Dimensional Filter Bar */}
       <div className="p-4 rounded-2xl bg-theme-card border border-theme-border shadow-sm space-y-3">
         <div className="flex items-center justify-between text-xs font-bold text-theme-muted uppercase tracking-wider">
           <span className="flex items-center gap-1.5">
@@ -1458,65 +1592,60 @@ export const AllTasksView: React.FC<AllTasksViewProps> = ({ onOpenTaskModal, onO
                         return (
                           <div
                             key={task.id}
-                            className={`p-4 rounded-2xl border transition-all ${
+                            className={`px-3.5 py-2.5 rounded-xl border transition-all ${
                               isDone 
-                                ? 'bg-emerald-50/50 dark:bg-emerald-950/25 border-emerald-300 dark:border-emerald-800/80 shadow-sm'
-                                : 'bg-red-50/50 dark:bg-red-950/25 border-red-300 dark:border-red-800/80 shadow-sm'
+                                ? 'bg-emerald-50/40 dark:bg-emerald-950/20 border-emerald-300 dark:border-emerald-800/80 shadow-2xs'
+                                : 'bg-red-50/40 dark:bg-red-950/20 border-red-300 dark:border-red-800/80 shadow-2xs'
                             }`}
                           >
-                            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-                              <div className="flex items-start gap-3 flex-1">
-                                <div
-                                  className="px-2 py-1 rounded-lg text-center font-black text-xs min-w-[42px] shrink-0"
-                                  style={{ backgroundColor: priorityMeta?.bgColor, color: priorityMeta?.color }}
-                                >
-                                  {task.priority}
-                                </div>
+                            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2.5">
+                              <div className="flex items-start gap-2.5 flex-1 min-w-0">
+                                <QuickPrioritySelector task={task} size="sm" />
 
-                                <div className="space-y-1 flex-1">
+                                <div className="space-y-1 flex-1 min-w-0">
                                   <div className="flex items-center gap-2 flex-wrap text-xs">
-                                    <span className="font-mono font-bold text-theme-muted bg-theme-card-hover px-2 py-0.5 rounded border border-theme-border">
+                                    <span className="font-mono font-bold text-theme-muted bg-theme-card-hover px-1.5 py-0.5 rounded border border-theme-border text-[11px]">
                                       {task.projectCode}
                                     </span>
-                                    <span className="text-theme-muted flex items-center gap-1 font-mono font-semibold">
-                                      <Calendar className="w-3.5 h-3.5 text-theme-muted" />
+                                    <span className="text-theme-muted flex items-center gap-1 font-mono font-semibold text-[11px]">
+                                      <Calendar className="w-3 h-3 text-theme-muted" />
                                       {formatDisplayDate(task.taskDate)}
                                     </span>
-                                    <span className="font-mono text-theme-muted font-bold">
+                                    <span className="font-mono text-theme-muted font-bold text-[11px]">
                                       {task.startTime} - {task.endTime}
                                     </span>
-                                    <span className="text-theme-muted font-semibold">
+                                    <span className="text-theme-muted font-medium text-[11px]">
                                       {task.category}
                                     </span>
-                                    <span className={`text-[10px] font-black px-2.5 py-0.5 rounded-full flex items-center gap-1 shadow-sm ${
+                                    <span className={`text-[10px] font-black px-2 py-0.2 rounded-full flex items-center gap-1 shadow-2xs ${
                                       isDone 
                                         ? 'bg-emerald-600 text-white' 
                                         : 'bg-red-600 text-white'
                                     }`}>
-                                      {isDone ? <Check className="w-3 h-3 stroke-[3]" /> : <X className="w-3 h-3 stroke-[3]" />}
+                                      {isDone ? <Check className="w-2.5 h-2.5 stroke-[3]" /> : <X className="w-2.5 h-2.5 stroke-[3]" />}
                                       <span>{isDone ? 'Done' : 'Terminated'}</span>
                                     </span>
                                   </div>
 
-                                  <h4 className="text-base font-bold text-theme-muted line-through font-openSans leading-snug">
+                                  <h4 className="text-sm font-bold text-theme-muted line-through font-display leading-tight truncate">
                                     {task.title}
                                   </h4>
 
                                   {isDone ? (
                                     <div className="text-[11px] font-mono text-emerald-600 dark:text-emerald-400 font-semibold flex items-center gap-1">
-                                      <Check className="w-3.5 h-3.5 text-emerald-500" />
-                                      <span>Execution Completed & Done • {task.totalActualMinutes || task.appointedMinutes}m (+{task.bufferMinutes}m buffer applied)</span>
+                                      <Check className="w-3 h-3 text-emerald-500" />
+                                      <span>Execution Completed & Done • {task.totalActualMinutes || task.appointedMinutes}m</span>
                                     </div>
                                   ) : (
                                     <div className="text-[11px] font-mono text-red-600 dark:text-red-400 font-semibold flex items-center gap-1">
-                                      <X className="w-3.5 h-3.5 text-red-500" />
+                                      <X className="w-3 h-3 text-red-500" />
                                       <span>Terminated & Closed • {task.totalActualMinutes || task.appointedMinutes}m</span>
                                     </div>
                                   )}
                                 </div>
                               </div>
 
-                              <div className="flex items-center gap-2 w-full sm:w-auto justify-end pt-2 sm:pt-0 border-t sm:border-t-0 border-theme-border">
+                              <div className="flex items-center gap-1.5 w-full sm:w-auto justify-end pt-1.5 sm:pt-0 border-t sm:border-t-0 border-theme-border">
                                 <button
                                   onClick={() => updateTask({ ...task, status: 'Pending' })}
                                   className="px-2.5 py-1 text-xs font-bold rounded-lg bg-theme-card-hover hover:bg-theme-border text-theme-text transition-colors"
@@ -1526,14 +1655,14 @@ export const AllTasksView: React.FC<AllTasksViewProps> = ({ onOpenTaskModal, onO
                                 </button>
                                 <button
                                   onClick={() => onOpenTaskModal(task)}
-                                  className="p-1.5 rounded-lg hover:bg-theme-card-hover text-theme-muted hover:text-theme-text"
+                                  className="btn-pro-icon p-1.5 rounded-lg"
                                   title="Edit Task"
                                 >
                                   <Edit2 className="w-3.5 h-3.5" />
                                 </button>
                                 <button
                                   onClick={() => requestDeleteTask(task, selectedCalendarDate || task.taskDate)}
-                                  className="p-1.5 rounded-lg hover:bg-red-50 dark:hover:bg-red-950/40 text-theme-muted hover:text-red-500"
+                                  className="btn-pro-icon p-1.5 rounded-lg hover:text-red-500 hover:border-red-300 dark:hover:border-red-800"
                                   title="Delete Task / Occurrence"
                                 >
                                   <Trash2 className="w-3.5 h-3.5" />

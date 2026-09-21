@@ -445,6 +445,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
     return parse12HourToMinutes(a.startTime) - parse12HourToMinutes(b.startTime);
   });
 
+  // Separate timed tasks from tasks without fixed times (flexible buffer tasks)
+  const timedDateTasks = dateTasks.filter(t => !isReminderCategory(t.category) && !isNoteCategory(t.category) && !isNoTimeTask(t));
+  const noTimeDateTasks = dateTasks.filter(t => !isReminderCategory(t.category) && !isNoteCategory(t.category) && isNoTimeTask(t));
+
   // Find Gaps in today's schedule (strictly bounded to working hours, protecting sleep window)
   const wakingStart = capacitySettings.dayStartTime || '06:00 AM';
   const wakingEnd = capacitySettings.dayEndTime || '11:00 PM';
@@ -1058,25 +1062,212 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
             </div>
           )}
 
+          {/* AVAILABLE BUFFER ZONE (Tasks Without Fixed Times - Not Like Notes) */}
+          {noTimeDateTasks.filter(t => t.status !== 'Done' && t.status !== 'Terminated').length > 0 && (
+            <div className="p-4 rounded-2xl border-2 border-emerald-400/60 dark:border-emerald-700/60 bg-gradient-to-r from-emerald-500/[0.05] via-theme-card to-teal-500/[0.04] space-y-3 shadow-sm">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <div className="w-6 h-6 rounded-lg bg-emerald-500/15 border border-emerald-500/30 text-emerald-600 dark:text-emerald-400 flex items-center justify-center">
+                    <Coffee className="w-3.5 h-3.5 stroke-[2.5]" />
+                  </div>
+                  <h4 className="text-xs sm:text-sm font-black text-theme-text uppercase tracking-wider font-display flex items-center gap-2">
+                    <span>Available Buffer Zone</span>
+                    <span className="text-xs font-normal text-theme-muted font-mono">
+                      ({noTimeDateTasks.filter(t => t.status !== 'Done' && t.status !== 'Terminated').length} flexible tasks • no times)
+                    </span>
+                  </h4>
+                </div>
+                <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950/80 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800 font-mono">
+                  Buffer Time Pool
+                </span>
+              </div>
+
+              <div className="space-y-2.5">
+                {noTimeDateTasks
+                  .filter(t => t.status !== 'Done' && t.status !== 'Terminated')
+                  .map((task) => (
+                    <div
+                      key={task.id}
+                      className="px-3.5 py-2.5 sm:py-3 rounded-xl border border-theme-border bg-theme-card hover:border-emerald-400/80 dark:hover:border-emerald-600/80 transition-all duration-200 relative overflow-hidden shadow-2xs"
+                    >
+                      {task.status === 'Working' && (
+                        <div className="glow-accent-bar animate-pulse bg-gradient-to-b from-emerald-400 to-teal-500" />
+                      )}
+
+                      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2.5 sm:gap-3 relative z-10">
+                        {/* Left: Priority + Title + Context (NO TIME DISPLAY) */}
+                        <div className="flex items-start gap-2 sm:gap-2.5 flex-1 min-w-0">
+                          <QuickPrioritySelector task={task} size="sm" />
+
+                          <div className="space-y-1 flex-1 min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <h4
+                                onClick={() => onOpenTaskModal(task)}
+                                className={`cursor-pointer hover:text-blue-600 transition-colors text-sm sm:text-base font-bold font-display leading-tight truncate ${
+                                  task.status === 'Done' ? 'line-through text-theme-muted opacity-75' :
+                                  task.status === 'Working' ? 'text-blue-600 dark:text-blue-400' :
+                                  'text-theme-text'
+                                }`}
+                                title={task.title}
+                              >
+                                {task.title}
+                              </h4>
+                              {task.appointedMinutes > 0 && (
+                                <span className="font-mono text-[10px] sm:text-[11px] font-semibold px-1.5 py-0.2 rounded border shadow-2xs text-theme-muted bg-theme-card-hover/80 border-theme-border">
+                                  ~{task.appointedMinutes}m
+                                </span>
+                              )}
+                            </div>
+
+                            {/* Context: Project Code, Category, Buffer pill, Assign Slot button - WITHOUT TIMES */}
+                            <div className="flex items-center gap-2 flex-wrap text-xs">
+                              <span className="text-[11px] font-mono font-bold text-theme-muted hover:text-blue-500">
+                                {task.projectCode}
+                              </span>
+
+                              <span className="text-[11px] font-medium text-theme-muted">
+                                {task.category}
+                                {task.subCategory ? ` / ${task.subCategory}` : ''}
+                              </span>
+
+                              <span className="text-[10px] font-mono font-semibold px-2 py-0.5 rounded-full bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 flex items-center gap-1">
+                                <span>🌿 In Buffer Zone</span>
+                              </span>
+
+                              <button
+                                onClick={() => setReschedulingTask(task)}
+                                className="text-[10px] font-bold px-2 py-0.5 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300 border border-blue-200 dark:border-blue-800 flex items-center gap-1 transition-colors"
+                                title="Assign this buffer task into a specific scheduled slot"
+                              >
+                                <Clock className="w-3 h-3" />
+                                <span>Assign Slot</span>
+                              </button>
+                            </div>
+
+                            {/* Status Dropdown & Live Timer */}
+                            <div className="flex items-center gap-1.5 flex-wrap py-0.5">
+                              <select
+                                value={task.status}
+                                onChange={(e) => handleStatusChange(task, e.target.value as TaskStatus)}
+                                className={`text-[10px] sm:text-[11px] font-bold px-2 py-0.5 rounded-lg border cursor-pointer focus:outline-none transition-colors ${
+                                  task.status === 'Done' ? 'bg-emerald-600 text-white border-emerald-600 shadow-xs' :
+                                  task.status === 'Terminated' ? 'bg-red-600 text-white border-red-600 shadow-xs' :
+                                  task.status === 'Working' ? 'bg-blue-600 text-white border-blue-600 shadow-xs animate-pulse' :
+                                  task.status === 'Hold' ? 'bg-amber-100 text-amber-800 border-amber-300 dark:bg-amber-950' :
+                                  'bg-slate-100 text-slate-700 border-slate-300 dark:bg-slate-800 dark:text-slate-300'
+                                }`}
+                              >
+                                <option value="Pending">● Pending</option>
+                                <option value="Working">⚡ Working</option>
+                                <option value="Done">✓ Done</option>
+                                <option value="Hold">⏸ Hold</option>
+                                <option value="Reschedule">↻ Reschedule</option>
+                                <option value="Terminated">✕ Terminated</option>
+                              </select>
+
+                              {task.status === 'Working' && (() => {
+                                const lastLog = task.executionLogs[task.executionLogs.length - 1];
+                                const startMs = lastLog ? new Date(lastLog.startedAt).getTime() : nowTime.getTime();
+                                const elapsedSec = Math.max(0, Math.floor((nowTime.getTime() - startMs) / 1000));
+                                const m = Math.floor(elapsedSec / 60);
+                                const s = elapsedSec % 60;
+                                const timeFormatted = `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+                                return (
+                                  <span className="text-[11px] font-mono font-bold px-2.5 py-0.5 rounded-lg bg-blue-600 text-white flex items-center gap-1 shadow-sm">
+                                    <Hourglass className="w-3 h-3 animate-spin" />
+                                    <span>Working: {timeFormatted}</span>
+                                  </span>
+                                );
+                              })()}
+                            </div>
+
+                            {task.description && (
+                              <p className="text-xs sm:text-sm line-clamp-1 font-normal text-theme-muted">
+                                {task.description}
+                              </p>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Right: Actions */}
+                        <div className="flex items-center gap-1.5 w-full sm:w-auto justify-end pt-1.5 sm:pt-0 border-t sm:border-t-0 border-theme-border relative z-10">
+                          {task.status === 'Working' ? (
+                            <div className="flex items-center gap-1">
+                              <button
+                                onClick={() => pauseTask(task.id)}
+                                className="btn-pro btn-pro-warning p-1.5 rounded-lg shadow-2xs"
+                                title="Pause Task"
+                              >
+                                <Pause className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                onClick={() => completeTask(task.id)}
+                                className="btn-pro btn-pro-success flex items-center gap-1 px-3 py-1 rounded-lg text-xs font-bold shadow-2xs"
+                              >
+                                <CheckCircle2 className="w-3.5 h-3.5 stroke-[2.5]" />
+                                <span>Done</span>
+                              </button>
+                            </div>
+                          ) : (
+                            <button
+                              onClick={() => startTask(task.id)}
+                              className="btn-pro btn-pro-primary flex items-center gap-1 px-3 py-1 rounded-lg text-xs font-bold shadow-2xs"
+                            >
+                              <Play className="w-3 h-3 fill-white stroke-[2]" />
+                              <span>Start</span>
+                            </button>
+                          )}
+
+                          <button
+                            onClick={() => setReschedulingTask(task)}
+                            className="btn-pro-icon p-1.5 rounded-lg hover:text-purple-600 hover:border-purple-300 dark:hover:border-purple-800"
+                            title="Assign to Buffer Slot / Reschedule"
+                          >
+                            <RotateCcw className="w-3.5 h-3.5" />
+                          </button>
+
+                          <button
+                            onClick={() => onOpenTaskModal(task)}
+                            className="btn-pro-icon p-1.5 rounded-lg"
+                            title="Edit Task"
+                          >
+                            <Edit2 className="w-3.5 h-3.5" />
+                          </button>
+
+                          <button
+                            onClick={() => requestDeleteTask(task, selectedDate)}
+                            className="btn-pro-icon p-1.5 rounded-lg hover:text-red-500 hover:border-red-300 dark:hover:border-red-800"
+                            title="Delete Task"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+              </div>
+            </div>
+          )}
+
           {/* Timeline Header & Count */}
           <div className="flex items-center justify-between">
             <h3 className="text-sm font-bold text-theme-text uppercase tracking-wider flex items-center gap-2">
               <span>Day Schedule Timeline</span>
               <span className="text-xs font-normal text-theme-muted">
-                ({dateTasks.filter(t => !isReminderCategory(t.category) && !isNoteCategory(t.category) && t.status !== 'Done' && t.status !== 'Terminated').length} active • {dateTasks.filter(t => !isReminderCategory(t.category) && !isNoteCategory(t.category) && (t.status === 'Done' || t.status === 'Terminated')).length} completed)
+                ({timedDateTasks.filter(t => t.status !== 'Done' && t.status !== 'Terminated').length} active • {dateTasks.filter(t => !isReminderCategory(t.category) && !isNoteCategory(t.category) && (t.status === 'Done' || t.status === 'Terminated')).length} completed)
               </span>
             </h3>
           </div>
 
           {/* Active Tasks Section */}
-          {dateTasks.filter(t => !isReminderCategory(t.category) && !isNoteCategory(t.category)).length === 0 ? (
-            <div className="glass-panel rounded-2xl p-8 text-center space-y-3">
-              <div className="w-12 h-12 rounded-2xl bg-blue-50 dark:bg-blue-950/40 text-blue-500 mx-auto flex items-center justify-center">
-                <Clock className="w-6 h-6" />
+          {timedDateTasks.filter(t => t.status !== 'Done' && t.status !== 'Terminated').length === 0 ? (
+            <div className="glass-panel rounded-2xl p-6 text-center space-y-2">
+              <div className="w-10 h-10 rounded-xl bg-blue-50 dark:bg-blue-950/40 text-blue-500 mx-auto flex items-center justify-center">
+                <Clock className="w-5 h-5" />
               </div>
-              <h4 className="text-sm font-bold text-theme-text">No Timed Tasks Scheduled For This Day</h4>
+              <h4 className="text-xs sm:text-sm font-bold text-theme-text">No Timed Tasks Scheduled For This Day</h4>
               <p className="text-xs text-theme-muted max-w-sm mx-auto">
-                Take advantage of scientific time-boxing. Fill an empty slot to optimize daily ROI.
+                Schedule a specific time-box slot or work from your Available Buffer Zone above.
               </p>
               <button
                 onClick={() => onOpenTaskModal(undefined, selectedDate)}
@@ -1086,66 +1277,41 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
               </button>
             </div>
           ) : (
-            <div className="space-y-4">
-              
-              {/* Active / In-Progress Tasks List */}
-              {dateTasks.filter(t => t.category !== 'Reminder' && t.status !== 'Done' && t.status !== 'Terminated').length === 0 ? (
-                <div className="p-6 rounded-2xl bg-emerald-50/50 dark:bg-emerald-950/20 border border-emerald-300 dark:border-emerald-800 text-center space-y-1">
-                  <div className="text-sm font-bold text-emerald-700 dark:text-emerald-300 font-display flex items-center justify-center gap-1.5">
-                    <CheckCircle2 className="w-4 h-4 text-emerald-500" />
-                    <span>All Scheduled Tasks For Today Are Completed! 🎉</span>
-                  </div>
-                  <p className="text-xs text-theme-muted">
-                    Check completed tasks in the finished archive below or schedule new high-ROI work.
-                  </p>
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  {dateTasks
-                    .filter(t => t.category !== 'Reminder' && t.status !== 'Done' && t.status !== 'Terminated')
-                    .map((task, idx, arr) => {
-                      const priorityMeta = prioritySettings[task.priority];
-                      const currentMins = nowTime.getHours() * 60 + nowTime.getMinutes();
-                      const todayStrVal = toISODateString(nowTime);
-                      const isWorking = task.status === 'Working';
-                      const isIncomplete = task.status === 'Incomplete';
-                      
-                      const isCurrentRunningSlot = isTaskInRunningSlot(task.taskDate, task.startTime, task.endTime, nowTime);
-                      const isRunning = isWorking || (task.status === 'Pending' && isCurrentRunningSlot);
+            <div className="space-y-3">
+              {timedDateTasks
+                  .filter(t => t.status !== 'Done' && t.status !== 'Terminated')
+                  .map((task, idx, arr) => {
+                    const priorityMeta = prioritySettings[task.priority];
+                    const currentMins = nowTime.getHours() * 60 + nowTime.getMinutes();
+                    const todayStrVal = toISODateString(nowTime);
+                    const isWorking = task.status === 'Working';
+                    const isIncomplete = task.status === 'Incomplete';
+                    
+                    const isCurrentRunningSlot = isTaskInRunningSlot(task.taskDate, task.startTime, task.endTime, nowTime);
+                    const isRunning = isWorking || (task.status === 'Pending' && isCurrentRunningSlot);
 
-                      const isDue = isIncomplete || 
-                        (task.status === 'Pending' && isTaskPastDue(task.taskDate, task.startTime, task.endTime, nowTime)) ||
-                        (task.status === 'Working' && isTaskPastDue(task.taskDate, task.startTime, task.endTime, nowTime));
+                    const isDue = isIncomplete || 
+                      (task.status === 'Pending' && isTaskPastDue(task.taskDate, task.startTime, task.endTime, nowTime)) ||
+                      (task.status === 'Working' && isTaskPastDue(task.taskDate, task.startTime, task.endTime, nowTime));
 
-                      const isSimultaneous = Boolean(task.isSimultaneous);
-                      const simultaneousList = isSimultaneous ? findSimultaneousTasks(task, dateTasks) : [];
-                      const isInSleep = isTaskInSleepWindow(task, capacitySettings);
+                    const isSimultaneous = Boolean(task.isSimultaneous);
+                    const simultaneousList = isSimultaneous ? findSimultaneousTasks(task, dateTasks) : [];
+                    const isInSleep = isTaskInSleepWindow(task, capacitySettings);
 
-                      const isFirstIncomplete = isIncomplete && (idx === 0 || arr[idx - 1].status !== 'Incomplete');
-                      const isNoTime = isNoTimeTask(task);
-                      const isFirstNoTime = isNoTime && !isIncomplete && (idx === 0 || !isNoTimeTask(arr[idx - 1]) || arr[idx - 1].status === 'Incomplete');
+                    const isFirstIncomplete = isIncomplete && (idx === 0 || arr[idx - 1].status !== 'Incomplete');
+                    const isNoTime = false;
 
-                      return (
-                        <React.Fragment key={task.id}>
-                          {isFirstNoTime && (
-                            <div className="pt-5 pb-2 flex items-center gap-2">
-                              <div className="h-px bg-amber-300/60 dark:bg-amber-800/60 flex-1" />
-                              <span className="text-[11px] font-black uppercase tracking-wider text-amber-700 dark:text-amber-400 font-display flex items-center gap-1.5 px-3.5 py-1 bg-amber-100/70 dark:bg-amber-950/60 rounded-full border border-amber-300 dark:border-amber-800/60 shadow-sm">
-                                <Zap className="w-3.5 h-3.5 text-amber-500" />
-                                <span>Anytime & Noise Queue (P5 Free Time • Simultaneous)</span>
-                              </span>
-                              <div className="h-px bg-amber-300/60 dark:bg-amber-800/60 flex-1" />
-                            </div>
-                          )}
-                          {isFirstIncomplete && (
-                            <div className="pt-4 pb-1.5 flex items-center gap-2">
-                              <div className="h-px bg-red-300/60 dark:bg-red-900/60 flex-1" />
-                              <span className="text-[11px] font-black uppercase tracking-wider text-red-600 dark:text-red-400 font-display flex items-center gap-1.5 px-3.5 py-1 bg-red-100/60 dark:bg-red-950/60 rounded-full border border-red-200 dark:border-red-900/60 shadow-sm">
-                                <AlertTriangle className="w-3.5 h-3.5" /> Incomplete Queue (Priority-Ordered: P1 → P5)
-                              </span>
-                              <div className="h-px bg-red-300/60 dark:bg-red-900/60 flex-1" />
-                            </div>
-                          )}
+                    return (
+                      <React.Fragment key={task.id}>
+                        {isFirstIncomplete && (
+                          <div className="pt-4 pb-1.5 flex items-center gap-2">
+                            <div className="h-px bg-red-300/60 dark:bg-red-900/60 flex-1" />
+                            <span className="text-[11px] font-black uppercase tracking-wider text-red-600 dark:text-red-400 font-display flex items-center gap-1.5 px-3.5 py-1 bg-red-100/60 dark:bg-red-950/60 rounded-full border border-red-200 dark:border-red-900/60 shadow-sm">
+                              <AlertTriangle className="w-3.5 h-3.5" /> Incomplete Queue (Priority-Ordered: P1 → P5)
+                            </span>
+                            <div className="h-px bg-red-300/60 dark:bg-red-900/60 flex-1" />
+                          </div>
+                        )}
                           <div
                             className={`px-3.5 py-2.5 sm:py-3 rounded-xl border transition-all duration-200 relative overflow-hidden ${
                               isInSleep && !isNoTime
@@ -1593,7 +1759,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
                       );
                     })}
                 </div>
-              )}
+            )}
 
               {/* Completed & Terminated Section (Separated Automatically at the Bottom) */}
               {dateTasks.filter(t => t.category !== 'Reminder' && (t.status === 'Done' || t.status === 'Terminated')).length > 0 && (
@@ -1723,9 +1889,6 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
                   )}
                 </div>
               )}
-
-            </div>
-          )}
         </div>
 
         {/* Dynamic Gap Finder & Time Matrix Column */}
@@ -1736,10 +1899,11 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
             const isSelectedToday = selectedDate === toISODateString(nowTime);
             const currentMinutesFromMidnight = nowTime.getHours() * 60 + nowTime.getMinutes();
             
-            // Detect unstarted pending tasks scheduled for past or current time on Today
+            // Detect unstarted pending tasks scheduled for past or current time on Today (strictly timed tasks only)
             const unstartedCurrentTasks = isSelectedToday
               ? dateTasks.filter(t => {
                   if (t.status !== 'Pending') return false;
+                  if (isNoTimeTask(t)) return false;
                   const sMin = parse12HourToMinutes(t.startTime);
                   return sMin <= currentMinutesFromMidnight;
                 })

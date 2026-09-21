@@ -2,35 +2,20 @@ import React, { useState, useRef } from 'react';
 import { useApp } from '../context/AppContext';
 import { PriorityLevel } from '../types';
 import { 
-  toISODateString, 
-  getBangladeshNow, 
-  formatDisplayDate,
   getDayOfWeekFromDate 
 } from '../utils/timeUtils';
-import { Plus, Calendar, Sparkles, Check, ArrowRight, Zap, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Plus, Check } from 'lucide-react';
 
 interface QuickTaskEntryBarProps {
   selectedDate: string;
-  onDateChange: (date: string) => void;
+  onDateChange?: (date: string) => void;
   className?: string;
 }
 
 const PRIORITIES: PriorityLevel[] = ['P1', 'P2', 'P3', 'P4', 'P5'];
 
-// Safe helper to shift dates continuously without timezone offset issues
-const getNextDateStr = (dateStr: string, offsetDays: number = 1): string => {
-  const [y, m, d] = dateStr.split('-').map(Number);
-  const dt = new Date(y, m - 1, d);
-  dt.setDate(dt.getDate() + offsetDays);
-  const year = dt.getFullYear();
-  const month = (dt.getMonth() + 1).toString().padStart(2, '0');
-  const day = dt.getDate().toString().padStart(2, '0');
-  return `${year}-${month}-${day}`;
-};
-
 export const QuickTaskEntryBar: React.FC<QuickTaskEntryBarProps> = ({
   selectedDate,
-  onDateChange,
   className = ''
 }) => {
   const { addTask, categories, prioritySettings } = useApp();
@@ -39,10 +24,6 @@ export const QuickTaskEntryBar: React.FC<QuickTaskEntryBarProps> = ({
   const [category, setCategory] = useState<string>(categories[0]?.name || 'VRTX');
   const [isSuccessFlash, setIsSuccessFlash] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
-  const datePickerRef = useRef<HTMLInputElement>(null);
-
-  const todayStr = toISODateString(getBangladeshNow());
-  const isToday = selectedDate === todayStr;
 
   const handleSubmit = (e?: React.FormEvent) => {
     if (e) e.preventDefault();
@@ -86,78 +67,8 @@ export const QuickTaskEntryBar: React.FC<QuickTaskEntryBarProps> = ({
   };
 
   return (
-    <div className={`glass-panel p-2.5 sm:p-3 rounded-2xl sm:rounded-3xl border border-blue-400/40 dark:border-blue-700/50 shadow-md shadow-blue-500/5 bg-gradient-to-r from-blue-500/[0.04] via-theme-card to-indigo-500/[0.04] transition-all ${className}`}>
-      <form onSubmit={handleSubmit} className="flex flex-col md:flex-row items-stretch md:items-center gap-2">
-        
-        {/* Date Selector Segment with Continuous Next Day Navigation */}
-        <div className="flex items-center gap-0.5 shrink-0 p-1 bg-theme-card-hover/90 rounded-xl border border-theme-border/80 shadow-2xs">
-          
-          {/* Previous Day Stepper */}
-          <button
-            type="button"
-            onClick={() => onDateChange(getNextDateStr(selectedDate, -1))}
-            className="p-1 rounded-lg text-theme-muted hover:text-theme-text hover:bg-theme-card/60 transition-all cursor-pointer"
-            title={`Previous Day (${formatDisplayDate(getNextDateStr(selectedDate, -1))})`}
-          >
-            <ChevronLeft className="w-3.5 h-3.5" />
-          </button>
-
-          {/* Today Button */}
-          <button
-            type="button"
-            onClick={() => onDateChange(todayStr)}
-            className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-              isToday
-                ? 'bg-blue-600 text-white shadow-2xs shadow-blue-500/30'
-                : 'text-theme-muted hover:text-theme-text hover:bg-theme-card/60'
-            }`}
-            title="Jump to Today"
-          >
-            Today
-          </button>
-
-          {/* Continuous Next Day Button */}
-          <button
-            type="button"
-            onClick={() => onDateChange(getNextDateStr(selectedDate, 1))}
-            className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-              !isToday
-                ? 'bg-blue-600 text-white shadow-2xs shadow-blue-500/30'
-                : 'text-theme-muted hover:text-theme-text hover:bg-theme-card/60'
-            }`}
-            title={`Advance to Next Day (${formatDisplayDate(getNextDateStr(selectedDate, 1))})`}
-          >
-            <span>Next Day</span>
-            <ChevronRight className="w-3.5 h-3.5 stroke-[2.5]" />
-          </button>
-
-          {/* Active Date Indicator (if future/past day is selected) */}
-          {!isToday && (
-            <span className="hidden sm:inline-flex items-center px-2 py-0.5 rounded-md bg-blue-500/10 text-blue-600 dark:text-blue-400 font-mono text-[11px] font-bold border border-blue-500/20">
-              {formatDisplayDate(selectedDate)}
-            </span>
-          )}
-
-          {/* Custom Date Picker Trigger */}
-          <div className="relative">
-            <button
-              type="button"
-              onClick={() => datePickerRef.current?.showPicker?.() || datePickerRef.current?.click()}
-              className="flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-mono font-bold text-theme-muted hover:text-theme-text hover:bg-theme-card/60 transition-all cursor-pointer"
-              title="Pick any specific calendar date"
-            >
-              <Calendar className="w-3.5 h-3.5" />
-            </button>
-            <input
-              ref={datePickerRef}
-              type="date"
-              value={selectedDate}
-              onChange={(e) => onDateChange(e.target.value)}
-              className="absolute inset-0 opacity-0 pointer-events-none w-full h-full"
-            />
-          </div>
-        </div>
-
+    <div className={`glass-panel p-2 sm:p-2.5 rounded-2xl border border-blue-400/40 dark:border-blue-700/50 shadow-md shadow-blue-500/5 bg-gradient-to-r from-blue-500/[0.04] via-theme-card to-indigo-500/[0.04] transition-all ${className}`}>
+      <form onSubmit={handleSubmit} className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
         {/* Fast Task Title Input */}
         <div className="flex-1 relative min-w-0">
           <input
