@@ -36,6 +36,8 @@ import {
   Moon
 } from 'lucide-react';
 import { exportTasksToExcelWorkbook, exportTasksToDetailedCSV } from '../../utils/excelExporter';
+import { QuickPrioritySelector } from '../QuickPrioritySelector';
+import { QuickTimeSelector } from '../QuickTimeSelector';
 
 interface TableViewProps {
   onOpenTaskModal: (task?: Task, date?: string, startTime?: string) => void;
@@ -560,13 +562,8 @@ export const TableView: React.FC<TableViewProps> = ({
                       </td>
 
                       {/* Priority Badge */}
-                      <td className="p-3.5 whitespace-nowrap">
-                        <span 
-                          className="px-2 py-0.5 rounded font-black text-[10px] font-mono shadow-xs inline-block"
-                          style={{ backgroundColor: pMeta?.bgColor, color: pMeta?.color }}
-                        >
-                          {task.priority}
-                        </span>
+                      <td className="p-3.5 whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
+                        <QuickPrioritySelector task={task} size="sm" />
                       </td>
 
                       {/* Code */}
@@ -616,9 +613,9 @@ export const TableView: React.FC<TableViewProps> = ({
                       </td>
 
                       {/* Scheduled Slot */}
-                      <td className="p-3.5 whitespace-nowrap font-mono text-[11px] font-bold text-theme-text">
+                      <td className="p-3.5 whitespace-nowrap font-mono text-[11px] font-bold text-theme-text" onClick={(e) => e.stopPropagation()}>
                         <div className="flex items-center gap-1.5 flex-wrap">
-                          <span>{task.startTime} - {task.endTime}</span>
+                          <QuickTimeSelector task={task} isInSleep={isInSleep} />
                           {isInSleep && (
                             <span className="text-[9px] font-black px-1.5 py-0.2 rounded bg-indigo-950 text-indigo-300 border border-indigo-700/60 flex items-center gap-0.5" title="Scheduled on Sleep / Recovery Window">
                               <Moon className="w-2.5 h-2.5 text-indigo-400" />

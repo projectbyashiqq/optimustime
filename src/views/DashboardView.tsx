@@ -51,6 +51,8 @@ import {
   Check, 
   ChevronDown, 
   ChevronUp, 
+  ChevronLeft,
+  ChevronRight,
   Info, 
   Timer, 
   Hourglass, 
@@ -73,6 +75,9 @@ import {
 import { RescheduleModal } from '../components/RescheduleModal';
 import { MorningRolloverBanner } from '../components/MorningRolloverBanner';
 import { ListTodo, CalendarDays, Grid3X3, Table as TableIcon } from 'lucide-react';
+import { QuickTaskEntryBar } from '../components/QuickTaskEntryBar';
+import { QuickPrioritySelector } from '../components/QuickPrioritySelector';
+import { QuickTimeSelector } from '../components/QuickTimeSelector';
 
 interface DashboardViewProps {
   onOpenTaskModal: (task?: Task, date?: string, startTime?: string) => void;
@@ -498,37 +503,58 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
             />
           </div>
 
-          {/* Apple-Style Segmented Today / Tomorrow Switcher */}
+          {/* Apple-Style Segmented Today / Next Day Switcher with Continuous Stepping */}
           {(() => {
             const todayBdStr = toISODateString(getBangladeshNow());
-            const tomorrowBdDate = getBangladeshNow();
-            tomorrowBdDate.setDate(tomorrowBdDate.getDate() + 1);
-            const tomorrowBdStr = toISODateString(tomorrowBdDate);
+            
+            const getShiftedDate = (dateStr: string, offsetDays: number): string => {
+              const [y, m, d] = dateStr.split('-').map(Number);
+              const dt = new Date(y, m - 1, d);
+              dt.setDate(dt.getDate() + offsetDays);
+              const year = dt.getFullYear();
+              const month = (dt.getMonth() + 1).toString().padStart(2, '0');
+              const day = dt.getDate().toString().padStart(2, '0');
+              return `${year}-${month}-${day}`;
+            };
+
+            const isToday = selectedDate === todayBdStr;
 
             return (
               <div className="flex items-center gap-0.5 p-0.5 bg-theme-card-hover/90 rounded-xl border border-theme-border/70 shadow-2xs shrink-0">
                 <button
                   type="button"
+                  onClick={() => setSelectedDate(getShiftedDate(selectedDate, -1))}
+                  className="p-1 rounded-lg text-xs text-theme-muted hover:text-theme-text hover:bg-theme-card/50 transition-all cursor-pointer"
+                  title={`Previous Day (${formatDisplayDate(getShiftedDate(selectedDate, -1))})`}
+                >
+                  <ChevronLeft className="w-3.5 h-3.5" />
+                </button>
+
+                <button
+                  type="button"
                   onClick={() => setSelectedDate(todayBdStr)}
                   className={`px-2.5 py-1 rounded-lg text-xs font-bold whitespace-nowrap shrink-0 transition-all cursor-pointer ${
-                    selectedDate === todayBdStr
+                    isToday
                       ? 'bg-blue-600 text-white shadow-xs shadow-blue-500/25'
                       : 'text-theme-muted hover:text-theme-text hover:bg-theme-card/50'
                   }`}
+                  title="Jump to Today"
                 >
                   Today
                 </button>
 
                 <button
                   type="button"
-                  onClick={() => setSelectedDate(tomorrowBdStr)}
-                  className={`px-2.5 py-1 rounded-lg text-xs font-bold whitespace-nowrap shrink-0 transition-all cursor-pointer ${
-                    selectedDate === tomorrowBdStr
+                  onClick={() => setSelectedDate(getShiftedDate(selectedDate, 1))}
+                  className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold whitespace-nowrap shrink-0 transition-all cursor-pointer ${
+                    !isToday
                       ? 'bg-blue-600 text-white shadow-xs shadow-blue-500/25'
                       : 'text-theme-muted hover:text-theme-text hover:bg-theme-card/50'
                   }`}
+                  title={`Advance to Next Day (${formatDisplayDate(getShiftedDate(selectedDate, 1))})`}
                 >
-                  Tomorrow
+                  <span>Next Day</span>
+                  <ChevronRight className="w-3.5 h-3.5 stroke-[2.5]" />
                 </button>
               </div>
             );
@@ -853,6 +879,12 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
         {/* Scheduled Tasks List (2 Columns on large screens) */}
         <div className="lg:col-span-2 space-y-4">
           
+          {/* Quick Fast-Entry Task System (No time needed, just date select and entry) */}
+          <QuickTaskEntryBar
+            selectedDate={selectedDate}
+            onDateChange={setSelectedDate}
+          />
+          
           {/* 1. URGENT REMINDERS & P1 ALERTS (Distinct Urgent Red-Amber Card) */}
           {dateTasks.filter(t => isReminderCategory(t.category) || (isNoteCategory(t.category) && t.priority === 'P1')).length > 0 && (
             <div className="p-4 rounded-2xl border-2 border-red-400/70 dark:border-red-800/80 bg-red-50/40 dark:bg-red-950/20 space-y-2.5 shadow-sm">
@@ -1124,36 +1156,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
                               {/* Left: Priority + Time + Title */}
                               <div className="flex items-start gap-3 flex-1">
                                 
-                                {/* Secondary Tier: Priority Badge */}
-                                <div
-                                  className={`px-2.5 py-1.5 rounded-xl text-center font-black text-xs sm:text-sm min-w-[46px] shrink-0 flex items-center justify-center transition-all ${
-                                    task.priority === 'P1'
-                                      ? 'bg-gradient-to-tr from-rose-600 via-red-500 to-amber-400 text-white shadow-md shadow-red-500/30 ring-1 ring-red-400/80 border border-red-300 dark:border-red-400 animate-pulse font-display'
-                                      : isInSleep && !isNoTime
-                                      ? 'font-mono border border-indigo-400/40 bg-indigo-950/80 text-white shadow-sm'
-                                      : 'font-mono border border-theme-border/60 shadow-2xs'
-                                  }`}
-                                  style={
-                                    task.priority === 'P1'
-                                      ? undefined
-                                      : isInSleep && !isNoTime
-                                      ? { 
-                                          color: '#FFFFFF', 
-                                          borderColor: priorityMeta?.color ? `${priorityMeta.color}80` : 'rgba(99,102,241,0.5)', 
-                                          backgroundColor: priorityMeta?.color ? `${priorityMeta.color}35` : 'rgba(15,23,42,0.8)' 
-                                        }
-                                      : { backgroundColor: priorityMeta?.bgColor, color: priorityMeta?.color }
-                                  }
-                                >
-                                  {task.priority === 'P1' ? (
-                                    <span className="flex items-center gap-0.5 tracking-tight font-black">
-                                      <Sparkles className="w-3 h-3 text-yellow-200 fill-yellow-200" />
-                                      <span>P1</span>
-                                    </span>
-                                  ) : (
-                                    <span className="font-bold">{task.priority}</span>
-                                  )}
-                                </div>
+                                {/* Secondary Tier: Interactive Priority Selector Button */}
+                                <QuickPrioritySelector task={task} />
 
                                 <div className="space-y-1.5 flex-1">
                                   
@@ -1179,21 +1183,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
 
                                   {/* Secondary Tier (Temporal) & Tertiary Tier (Muted Context) */}
                                   <div className="flex items-center gap-2 flex-wrap">
-                                    {/* Secondary Tier: Time Window */}
-                                    {isNoTime ? (
-                                      <span className="font-mono text-xs font-bold px-2 py-0.5 rounded border text-amber-600 dark:text-amber-400 bg-amber-500/10 border-amber-500/30 flex items-center gap-1">
-                                        <span>⚡</span>
-                                        <span>Anytime • Free Time Slot</span>
-                                      </span>
-                                    ) : (
-                                      <span className={`font-mono text-xs font-bold px-2 py-0.5 rounded border ${
-                                        isInSleep && !isNoTime
-                                          ? 'night-time-pill'
-                                          : 'text-theme-text bg-theme-card-hover border-theme-border'
-                                      }`}>
-                                        {task.startTime} - {task.endTime}
-                                      </span>
-                                    )}
+                                    {/* Secondary Tier: Interactive Quick Time Selector */}
+                                    <QuickTimeSelector task={task} isInSleep={isInSleep && !isNoTime} />
 
                                     {/* Cross-Midnight 2-Date Continuity Badge */}
                                     {taskCrossesMidnight(task.startTime, task.endTime) && (
@@ -1614,29 +1605,12 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
                             >
                               <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
                                 <div className="flex items-start gap-3 flex-1">
-                                  <div
-                                    className={`px-2.5 py-1.5 rounded-xl text-center font-black text-xs sm:text-sm min-w-[48px] shrink-0 flex items-center justify-center transition-all ${
-                                      task.priority === 'P1'
-                                        ? 'bg-gradient-to-tr from-rose-600 via-red-500 to-amber-400 text-white shadow-md shadow-red-500/40 ring-1 ring-red-400/60 font-display'
-                                        : 'font-mono'
-                                    }`}
-                                    style={task.priority === 'P1' ? undefined : { backgroundColor: priorityMeta?.bgColor, color: priorityMeta?.color }}
-                                  >
-                                    {task.priority === 'P1' ? (
-                                      <span className="flex items-center gap-0.5 tracking-tight font-black">
-                                        <Sparkles className="w-3 h-3 text-yellow-200 fill-yellow-200" />
-                                        <span>P1</span>
-                                      </span>
-                                    ) : (
-                                      <span>{task.priority}</span>
-                                    )}
-                                  </div>
+                                  {/* Secondary Tier: Priority Selector */}
+                                  <QuickPrioritySelector task={task} size="sm" />
 
                                   <div className="space-y-1 flex-1">
                                     <div className="flex items-center gap-2 flex-wrap">
-                                      <span className="font-mono text-xs font-bold text-theme-muted bg-theme-card-hover px-2 py-0.5 rounded border border-theme-border">
-                                        {task.startTime} - {task.endTime}
-                                      </span>
+                                      <QuickTimeSelector task={task} />
                                       {timePeriodSettings?.isEnabled && (() => {
                                         const period = getTimePeriodForTime(task.startTime, timePeriodSettings);
                                         if (!period) return null;

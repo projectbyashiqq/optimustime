@@ -55,6 +55,8 @@ import { WeeklyCalendarView } from '../components/views/WeeklyCalendarView';
 import { MonthlyCalendarView } from '../components/views/MonthlyCalendarView';
 import { ListTodo, Table as TableIcon, CalendarDays, Grid3X3, Repeat, Bell, StickyNote } from 'lucide-react';
 import { NotesView } from './NotesView';
+import { QuickPrioritySelector } from '../components/QuickPrioritySelector';
+import { QuickTimeSelector } from '../components/QuickTimeSelector';
 
 type TimeRangeFilter = 'ALL' | 'TODAY' | 'TOMORROW' | 'THIS_WEEK' | 'NEXT_WEEK' | 'NEXT_MONTH' | 'NEXT_YEAR';
 export type AllTasksViewMode = 'list' | 'table' | 'timeline' | '24hours' | 'weekly' | 'monthly' | 'notes_reminders';
@@ -414,16 +416,7 @@ export const AllTasksView: React.FC<AllTasksViewProps> = ({ onOpenTaskModal, onO
         {/* Left Core Data: Priority + Code + Title + Time + Badges */}
         <div className="flex items-center gap-2 min-w-0 flex-1 flex-wrap sm:flex-nowrap">
           {/* Priority Badge */}
-          <div
-            className={`px-2 py-0.5 rounded-lg text-center font-black text-xs min-w-[36px] shrink-0 font-mono shadow-2xs ${
-              task.priority === 'P1'
-                ? 'bg-gradient-to-tr from-rose-600 via-red-500 to-amber-400 text-white shadow-sm shadow-red-500/40 animate-pulse'
-                : ''
-            }`}
-            style={task.priority === 'P1' ? undefined : { backgroundColor: priorityMeta?.bgColor, color: priorityMeta?.color }}
-          >
-            {task.priority}
-          </div>
+          <QuickPrioritySelector task={task} size="sm" />
 
           {/* Project Code */}
           <span className="font-mono font-bold text-[11px] text-blue-600 dark:text-blue-400 bg-theme-card-hover px-1.5 py-0.5 rounded border border-theme-border shrink-0">
@@ -451,10 +444,7 @@ export const AllTasksView: React.FC<AllTasksViewProps> = ({ onOpenTaskModal, onO
           </div>
 
           {/* Scheduled Time Window */}
-          <div className="flex items-center gap-1 text-[11px] font-mono font-semibold text-theme-muted bg-theme-card-hover px-1.5 py-0.5 rounded border border-theme-border shrink-0 whitespace-nowrap">
-            <Clock className="w-3 h-3 text-blue-500 shrink-0" />
-            <span>{task.startTime} - {task.endTime}</span>
-          </div>
+          <QuickTimeSelector task={task} />
 
           {/* Date (if not today) */}
           {task.taskDate !== toISODateString(nowTime) && (
@@ -652,23 +642,7 @@ export const AllTasksView: React.FC<AllTasksViewProps> = ({ onOpenTaskModal, onO
           
           {/* Left Metadata & Details */}
           <div className="flex items-start gap-3 flex-1">
-            <div
-              className={`px-2.5 py-1.5 rounded-xl text-center font-black text-xs sm:text-sm min-w-[48px] shrink-0 flex items-center justify-center transition-all ${
-                task.priority === 'P1'
-                  ? 'bg-gradient-to-tr from-rose-600 via-red-500 to-amber-400 text-white shadow-lg shadow-red-500/50 ring-2 ring-red-400/80 border border-red-300 dark:border-red-400 animate-pulse font-display'
-                  : 'font-mono'
-              }`}
-              style={task.priority === 'P1' ? undefined : { backgroundColor: priorityMeta?.bgColor, color: priorityMeta?.color }}
-            >
-              {task.priority === 'P1' ? (
-                <span className="flex items-center gap-0.5 tracking-tight font-black">
-                  <Sparkles className="w-3 h-3 text-yellow-200 fill-yellow-200" />
-                  <span>P1</span>
-                </span>
-              ) : (
-                <span>{task.priority}</span>
-              )}
-            </div>
+            <QuickPrioritySelector task={task} />
 
             <div className="space-y-1 flex-1">
               <div className="flex items-center gap-2 flex-wrap text-xs">
@@ -681,9 +655,7 @@ export const AllTasksView: React.FC<AllTasksViewProps> = ({ onOpenTaskModal, onO
                   {formatDisplayDate(task.taskDate)} ({task.dayOfWeek.slice(0, 3)})
                 </span>
 
-                <span className="font-mono text-theme-text font-bold bg-theme-card-hover px-2 py-0.5 rounded border border-theme-border">
-                  {task.startTime} - {task.endTime} ({task.appointedMinutes}m)
-                </span>
+                <QuickTimeSelector task={task} />
 
                 <span className="font-semibold text-theme-muted">
                   {task.category}
