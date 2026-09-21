@@ -13,15 +13,18 @@ import {
   isTaskScheduledForDate,
   getTimePeriodForTime,
   formatDisplayDate,
-  formatDurationHuman
+  formatDurationHuman,
+  getScientificDynamicGapSlots,
+  ScientificGapSlot,
+  UltradianFocusType
 } from '../utils/timeUtils';
 import { useApp } from '../context/AppContext';
 import { 
   Calendar, 
   Clock, 
   Sparkles, 
-  ArrowRight,
-  ArrowLeft,
+  ArrowRight, 
+  ArrowLeft, 
   X, 
   Search, 
   Check, 
@@ -34,7 +37,8 @@ import {
   Moon,
   Sunrise,
   CalendarDays,
-  ShieldCheck
+  ShieldCheck,
+  Brain
 } from 'lucide-react';
 
 interface RescheduleModalProps {
@@ -52,7 +56,7 @@ export const RescheduleModal: React.FC<RescheduleModalProps> = ({
   onConfirmReschedule,
   onClose
 }) => {
-  const { timePeriodSettings } = useApp();
+  const { timePeriodSettings, bufferNotes } = useApp();
   const isRecurring = Boolean(task.recurrence && task.recurrence !== 'None');
   const [recurringScope, setRecurringScope] = useState<'single' | 'series'>('single');
 
@@ -105,7 +109,9 @@ export const RescheduleModal: React.FC<RescheduleModalProps> = ({
     }
     return todayStr;
   });
-  const [viewMode, setViewMode] = useState<'week' | 'scanner' | 'custom'>('week');
+  const [viewMode, setViewMode] = useState<'ultradian' | 'week' | 'scanner' | 'custom'>('ultradian');
+  const [ultradianFilter, setUltradianFilter] = useState<'ALL' | UltradianFocusType>('ALL');
+  const [ultradianDayFilter, setUltradianDayFilter] = useState<string>('ALL');
 
   const now = new Date();
   const currentMinutes = now.getHours() * 60 + now.getMinutes();
@@ -255,6 +261,99 @@ export const RescheduleModal: React.FC<RescheduleModalProps> = ({
     );
   }, [customDate, task.appointedMinutes, allTasks, capacitySettings, todayStr, currentMinutes, task.id, task.taskDate, task.startTime, task.endTime, task.simultaneousWithIds]);
 
+  // 0. Ultradian Dynamic Gap Decomposition (90m, 45m, 30m, 15m focus slots across calendar)
+  const ultradianSlots = useMemo(() => {
+    return getScientificDynamicGapSlots({
+      selectedDate: anchorDate >= todayStr ? anchorDate : todayStr,
+      tasks: allTasks,
+      bufferNotes: bufferNotes || [],
+      capacitySettings,
+      timePeriodSettings,
+      minSlots: 36,
+      referenceDate: new Date(),
+      decomposeUltradian: true,
+    });
+  }, [anchorDate, allTasks, bufferNotes, capacitySettings, timePeriodSettings, todayStr]);
+
+  const rhythmCounts = useMemo(() => {
+    const counts: Record<string, number> = {
+      ALL: ultradianSlots.length,
+      deep_focus_90: 0,
+      sprint_45: 0,
+      standard_30: 0,
+      micro_15: 0
+    };
+    for (const s of ultradianSlots) {
+      if (s.ultradianType in counts) {
+        counts[s.ultradianType]++;
+      }
+    }
+    return counts;
+  }, [ultradianSlots]);
+
+  const ultradianDates = useMemo(() => {
+    const dateMap = new Map<string, { label: string; count: number }>();
+    for (const slot of ultradianSlots) {
+      if (!dateMap.has(slot.date)) {
+        dateMap.set(slot.date, { label: slot.dateLabel, count: 0 });
+      }
+      dateMap.get(slot.date)!.count++;
+    }
+    return Array.from(dateMap.entries()).map(([date, info]) => ({
+      date,
+      label: info.label,
+      count: info.count
+    }));
+  }, [ultradianSlots]);
+
+  const filteredUltradianSlots = useMemo(() => {
+    return ultradianSlots.filter(s => {
+      if (ultradianFilter !== 'ALL' && s.ultradianType !== ultradianFilter) return false;
+      if (ultradianDayFilter !== 'ALL' && s.date !== ultradianDayFilter) return false;
+      return true;
+    });
+  }, [ultradianSlots, ultradianFilter, ultradianDayFilter]);
+
+  const ultradianSlotsByDate = useMemo(() => {
+    const groups: Array<{ date: string; dateLabel: string; dayOfWeek: string; slots: ScientificGapSlot[] }> = [];
+    const map = new Map<string, ScientificGapSlot[]>();
+    for (const slot of filteredUltradianSlots) {
+      if (!map.has(slot.date)) {
+        map.set(slot.date, []);
+      }
+      map.get(slot.date)!.push(slot);
+    }
+    map.forEach((slots, date) => {
+      const firstSlot = slots[0];
+      groups.push({
+        date,
+        dateLabel: firstSlot.dateLabel,
+        dayOfWeek: firstSlot.dayOfWeek,
+        slots
+      });
+    });
+    return groups;
+  }, [filteredUltradianSlots]);
+
+  const handleSelectUltradianSlot = (slot: ScientificGapSlot) => {
+    const dur = task.appointedMinutes > 0 ? task.appointedMinutes : slot.durationMinutes;
+    const calcEnd = addMinutesToTime(slot.startTime, dur);
+    setSelectedSlot({
+      date: slot.date,
+      dayOfWeek: slot.dayOfWeek,
+      startTime: slot.startTime,
+      endTime: calcEnd,
+      scheduledMinutesOnDay: 0,
+      remainingCapacityMinutes: slot.durationMinutes,
+      isRedLine: false,
+      period: slot.circadianPeriod,
+      isSimultaneousSlot: slot.isSimultaneous
+    });
+    if (slot.date !== anchorDate) {
+      setAnchorDate(slot.date);
+    }
+  };
+
   // Auto-select the suggested optimal next slot by default
   React.useEffect(() => {
     if (suggestedNextSlot && !selectedSlot) {
@@ -272,14 +371,18 @@ export const RescheduleModal: React.FC<RescheduleModalProps> = ({
         setAnchorDate(suggestedNextSlot.date);
       }
     } else if (!selectedSlot || selectedSlot.date < todayStr) {
-      for (const day of weekDaysData) {
-        if (day.dateStr >= todayStr && day.slots.length > 0) {
-          setSelectedSlot(day.slots[0]);
-          break;
+      if (ultradianSlots.length > 0) {
+        handleSelectUltradianSlot(ultradianSlots[0]);
+      } else {
+        for (const day of weekDaysData) {
+          if (day.dateStr >= todayStr && day.slots.length > 0) {
+            setSelectedSlot(day.slots[0]);
+            break;
+          }
         }
       }
     }
-  }, [suggestedNextSlot, weekDaysData, selectedSlot, todayStr]);
+  }, [suggestedNextSlot, weekDaysData, ultradianSlots, selectedSlot, todayStr]);
 
   const handleApplyReschedule = () => {
     if (!selectedSlot) return;
@@ -582,6 +685,20 @@ export const RescheduleModal: React.FC<RescheduleModalProps> = ({
         {/* Navigation Mode Tabs */}
         <div className="flex items-center gap-1 p-1 bg-theme-card-hover rounded-xl border border-theme-border text-xs font-semibold shrink-0">
           <button
+            type="button"
+            onClick={() => setViewMode('ultradian')}
+            className={`flex-1 py-1.5 px-2 rounded-lg transition-all flex items-center justify-center gap-1 sm:gap-1.5 cursor-pointer text-center ${
+              viewMode === 'ultradian' 
+                ? 'bg-theme-card text-blue-600 dark:text-blue-400 shadow-xs border border-theme-border font-bold' 
+                : 'text-theme-muted hover:text-theme-text'
+            }`}
+          >
+            <Brain className="w-3.5 h-3.5 text-blue-500 shrink-0" />
+            <span className="sm:hidden">Ultradian</span>
+            <span className="hidden sm:inline">🧠 Ultradian Gaps ({ultradianSlots.length})</span>
+          </button>
+          <button
+            type="button"
             onClick={() => setViewMode('week')}
             className={`flex-1 py-1.5 px-2 rounded-lg transition-all flex items-center justify-center gap-1 sm:gap-1.5 cursor-pointer text-center ${
               viewMode === 'week' 
@@ -594,6 +711,7 @@ export const RescheduleModal: React.FC<RescheduleModalProps> = ({
             <span className="hidden sm:inline">7-Day Matrix ({formatDisplayDate(anchorDate)})</span>
           </button>
           <button
+            type="button"
             onClick={() => setViewMode('scanner')}
             className={`flex-1 py-1.5 px-2 rounded-lg transition-all flex items-center justify-center gap-1 sm:gap-1.5 cursor-pointer text-center ${
               viewMode === 'scanner' 
@@ -602,10 +720,11 @@ export const RescheduleModal: React.FC<RescheduleModalProps> = ({
             }`}
           >
             <Search className="w-3.5 h-3.5 shrink-0" />
-            <span className="sm:hidden">100-Day Scan</span>
+            <span className="sm:hidden">100-Day</span>
             <span className="hidden sm:inline">100-Day Smart Scanner</span>
           </button>
           <button
+            type="button"
             onClick={() => setViewMode('custom')}
             className={`flex-1 py-1.5 px-2 rounded-lg transition-all flex items-center justify-center gap-1 sm:gap-1.5 cursor-pointer text-center ${
               viewMode === 'custom' 
@@ -614,14 +733,259 @@ export const RescheduleModal: React.FC<RescheduleModalProps> = ({
             }`}
           >
             <Calendar className="w-3.5 h-3.5 shrink-0" />
-            <span className="sm:hidden">Custom Date</span>
+            <span className="sm:hidden">Custom</span>
             <span className="hidden sm:inline">Custom Date Finder</span>
           </button>
         </div>
 
         {/* Content Body */}
         <div className="flex-1 overflow-y-auto space-y-3 pr-1">
-          
+
+          {/* TAB 0: ULTRADIAN RHYTHM GAPS & MULTIPLE TIME CHOICES */}
+          {viewMode === 'ultradian' && (
+            <div className="space-y-3.5">
+              {/* Ultradian Rhythm Filter Chips */}
+              <div className="space-y-2.5 p-3 rounded-2xl bg-theme-card border border-theme-border shadow-2xs">
+                <div className="flex items-center justify-between gap-2 flex-wrap text-xs">
+                  <span className="font-bold text-theme-text flex items-center gap-1.5">
+                    <Brain className="w-4 h-4 text-blue-500" />
+                    <span>Scientific Ultradian Gaps & Focus Modes</span>
+                  </span>
+                  <span className="text-[11px] text-theme-muted font-medium">
+                    {filteredUltradianSlots.length} available time choices
+                  </span>
+                </div>
+
+                {/* Focus Rhythm Filter Chips */}
+                <div className="flex items-center gap-1.5 overflow-x-auto pb-1 text-xs font-medium no-scrollbar">
+                  <button
+                    type="button"
+                    onClick={() => setUltradianFilter('ALL')}
+                    className={`px-2.5 py-1.5 rounded-xl shrink-0 transition-all flex items-center gap-1.5 cursor-pointer ${
+                      ultradianFilter === 'ALL'
+                        ? 'bg-blue-600 text-white shadow-xs font-semibold'
+                        : 'bg-theme-card-hover text-theme-muted border border-theme-border hover:text-theme-text'
+                    }`}
+                  >
+                    <span>All Rhythms</span>
+                    <span className={`text-[10px] px-1.5 py-0.2 rounded-full ${
+                      ultradianFilter === 'ALL' ? 'bg-white/20 text-white' : 'bg-theme-card text-theme-muted'
+                    }`}>
+                      {rhythmCounts.ALL}
+                    </span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setUltradianFilter('deep_focus_90')}
+                    className={`px-2.5 py-1.5 rounded-xl shrink-0 transition-all flex items-center gap-1.5 cursor-pointer ${
+                      ultradianFilter === 'deep_focus_90'
+                        ? 'bg-indigo-600 text-white shadow-xs font-semibold'
+                        : 'bg-theme-card-hover text-theme-muted border border-theme-border hover:text-theme-text'
+                    }`}
+                  >
+                    <span>🧠 90m Deep Focus</span>
+                    <span className={`text-[10px] px-1.5 py-0.2 rounded-full ${
+                      ultradianFilter === 'deep_focus_90' ? 'bg-white/20 text-white' : 'bg-theme-card text-theme-muted'
+                    }`}>
+                      {rhythmCounts.deep_focus_90}
+                    </span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setUltradianFilter('sprint_45')}
+                    className={`px-2.5 py-1.5 rounded-xl shrink-0 transition-all flex items-center gap-1.5 cursor-pointer ${
+                      ultradianFilter === 'sprint_45'
+                        ? 'bg-amber-600 text-white shadow-xs font-semibold'
+                        : 'bg-theme-card-hover text-theme-muted border border-theme-border hover:text-theme-text'
+                    }`}
+                  >
+                    <span>⚡ 45m Power Sprint</span>
+                    <span className={`text-[10px] px-1.5 py-0.2 rounded-full ${
+                      ultradianFilter === 'sprint_45' ? 'bg-white/20 text-white' : 'bg-theme-card text-theme-muted'
+                    }`}>
+                      {rhythmCounts.sprint_45}
+                    </span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setUltradianFilter('standard_30')}
+                    className={`px-2.5 py-1.5 rounded-xl shrink-0 transition-all flex items-center gap-1.5 cursor-pointer ${
+                      ultradianFilter === 'standard_30'
+                        ? 'bg-emerald-600 text-white shadow-xs font-semibold'
+                        : 'bg-theme-card-hover text-theme-muted border border-theme-border hover:text-theme-text'
+                    }`}
+                  >
+                    <span>🎯 30m Standard</span>
+                    <span className={`text-[10px] px-1.5 py-0.2 rounded-full ${
+                      ultradianFilter === 'standard_30' ? 'bg-white/20 text-white' : 'bg-theme-card text-theme-muted'
+                    }`}>
+                      {rhythmCounts.standard_30}
+                    </span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setUltradianFilter('micro_15')}
+                    className={`px-2.5 py-1.5 rounded-xl shrink-0 transition-all flex items-center gap-1.5 cursor-pointer ${
+                      ultradianFilter === 'micro_15'
+                        ? 'bg-sky-600 text-white shadow-xs font-semibold'
+                        : 'bg-theme-card-hover text-theme-muted border border-theme-border hover:text-theme-text'
+                    }`}
+                  >
+                    <span>☕ Micro Win (15m+)</span>
+                    <span className={`text-[10px] px-1.5 py-0.2 rounded-full ${
+                      ultradianFilter === 'micro_15' ? 'bg-white/20 text-white' : 'bg-theme-card text-theme-muted'
+                    }`}>
+                      {rhythmCounts.micro_15}
+                    </span>
+                  </button>
+                </div>
+
+                {/* Date Sub-Filter Pills */}
+                {ultradianDates.length > 1 && (
+                  <div className="flex items-center gap-1.5 overflow-x-auto pt-1.5 border-t border-theme-border/50 text-[11px] font-medium no-scrollbar">
+                    <span className="text-theme-muted text-[10px] uppercase font-bold shrink-0">Dates:</span>
+                    <button
+                      type="button"
+                      onClick={() => setUltradianDayFilter('ALL')}
+                      className={`px-2.5 py-1 rounded-lg shrink-0 transition-all cursor-pointer ${
+                        ultradianDayFilter === 'ALL'
+                          ? 'bg-blue-600 text-white font-semibold shadow-2xs'
+                          : 'bg-theme-card text-theme-muted border border-theme-border hover:text-theme-text'
+                      }`}
+                    >
+                      All Dates ({ultradianSlots.length})
+                    </button>
+                    {ultradianDates.map(d => (
+                      <button
+                        key={d.date}
+                        type="button"
+                        onClick={() => setUltradianDayFilter(d.date)}
+                        className={`px-2.5 py-1 rounded-lg shrink-0 transition-all cursor-pointer ${
+                          ultradianDayFilter === d.date
+                            ? 'bg-blue-600 text-white font-semibold shadow-2xs'
+                            : 'bg-theme-card text-theme-muted border border-theme-border hover:text-theme-text'
+                        }`}
+                      >
+                        {d.label} ({d.count})
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Slots Display Grouped by Date */}
+              {ultradianSlotsByDate.length > 0 ? (
+                <div className="space-y-4">
+                  {ultradianSlotsByDate.map(group => (
+                    <div key={group.date} className="space-y-2">
+                      <div className="flex items-center justify-between px-1">
+                        <div className="flex items-center gap-2">
+                          <CalendarDays className="w-3.5 h-3.5 text-blue-500" />
+                          <span className="text-xs font-bold text-theme-text font-display">
+                            {group.dateLabel} ({group.dayOfWeek})
+                          </span>
+                          <span className="text-[10px] font-mono text-theme-muted">
+                            {group.date}
+                          </span>
+                        </div>
+                        <span className="text-[11px] font-semibold text-theme-muted bg-theme-card-hover px-2 py-0.5 rounded-full border border-theme-border">
+                          {group.slots.length} time choices
+                        </span>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
+                        {group.slots.map(slot => {
+                          const isSelected = selectedSlot?.date === slot.date && selectedSlot?.startTime === slot.startTime;
+                          const targetDuration = task.appointedMinutes > 0 ? task.appointedMinutes : slot.durationMinutes;
+                          const previewEndTime = addMinutesToTime(slot.startTime, targetDuration);
+
+                          return (
+                            <div
+                              key={slot.slotId}
+                              onClick={() => handleSelectUltradianSlot(slot)}
+                              className={`p-3 rounded-xl border text-left transition-all cursor-pointer flex flex-col justify-between gap-2.5 select-none ${
+                                isSelected
+                                  ? 'bg-blue-600 text-white border-blue-600 shadow-md ring-2 ring-blue-500/40'
+                                  : 'bg-theme-card border-theme-border hover:border-blue-400 dark:hover:border-blue-500 hover:shadow-xs hover:bg-theme-card-hover'
+                              }`}
+                            >
+                              {/* Card Header: Times & Badges */}
+                              <div className="flex items-start justify-between gap-1.5">
+                                <div className="space-y-1">
+                                  <div className={`text-xs sm:text-sm font-mono font-bold tracking-tight ${
+                                    isSelected ? 'text-white' : 'text-theme-text'
+                                  }`}>
+                                    {slot.startTime} – {slot.endTime}
+                                  </div>
+                                  <div className="flex items-center gap-1 flex-wrap">
+                                    <span className={`text-[10px] font-semibold px-2 py-0.2 rounded-full shrink-0 flex items-center gap-1 ${
+                                      isSelected
+                                        ? 'bg-white/20 text-white'
+                                        : 'bg-blue-500/10 text-blue-700 dark:text-blue-300 border border-blue-500/20'
+                                    }`}>
+                                      <span>{slot.ultradianEmoji}</span>
+                                      <span>{slot.ultradianLabel}</span>
+                                    </span>
+                                    <span className={`text-[10px] font-medium px-1.5 py-0.2 rounded-full shrink-0 flex items-center gap-0.5 ${
+                                      isSelected
+                                        ? 'bg-white/15 text-white/90'
+                                        : 'bg-theme-card-hover text-theme-muted border border-theme-border'
+                                    }`}>
+                                      <span>{slot.circadianEmoji}</span>
+                                      <span>{slot.circadianLabel}</span>
+                                    </span>
+                                  </div>
+                                </div>
+
+                                <div className={`w-5 h-5 rounded-full border flex items-center justify-center shrink-0 transition-all ${
+                                  isSelected ? 'bg-white text-blue-600 border-white' : 'border-theme-border text-transparent'
+                                }`}>
+                                  <Check className="w-3 h-3 stroke-[3]" />
+                                </div>
+                              </div>
+
+                              {/* Card Footer: Task Scheduled Fit */}
+                              <div className={`text-[10px] pt-1.5 border-t flex items-center justify-between ${
+                                isSelected ? 'border-white/20 text-white/90' : 'border-theme-border/60 text-theme-muted'
+                              }`}>
+                                {task.appointedMinutes > 0 ? (
+                                  <span className="font-medium">
+                                    Task: <strong className={isSelected ? 'text-white' : 'text-theme-text'}>{slot.startTime} → {previewEndTime}</strong> ({task.appointedMinutes}m)
+                                  </span>
+                                ) : (
+                                  <span className="font-medium">
+                                    Free window: {slot.durationMinutes}m
+                                  </span>
+                                )}
+                                <span className={`text-[9px] font-semibold uppercase tracking-wider px-1.5 py-0.2 rounded-full ${
+                                  isSelected ? 'bg-white/20 text-white' : 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20'
+                                }`}>
+                                  ✓ Conflict-free
+                                </span>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="p-8 text-center rounded-2xl bg-theme-card border border-dashed border-theme-border space-y-2">
+                  <div className="text-2xl">🧠</div>
+                  <div className="text-sm font-semibold text-theme-text">No matching ultradian gap slots found</div>
+                  <p className="text-xs text-theme-muted">
+                    Try selecting "All Rhythms" or "All Dates", or change the anchor date above.
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
+
           {/* TAB 1: TOMORROW & NEXT 7 DAYS MULTIPLE TIME SLOTS */}
           {viewMode === 'week' && (
             <div className="space-y-3">
