@@ -36,7 +36,8 @@ import {
   formatDurationHuman,
   getSmartAmPmRecommendations,
   SmartAmPmRecommendations,
-  isNoTimeTask
+  isNoTimeTask,
+  isTaskScheduledForDate
 } from '../utils/timeUtils';
 import { ConflictModal } from './ConflictModal';
 import { TimePicker } from './TimePicker';
@@ -66,7 +67,12 @@ import {
   Sun,
   Flame,
   Coffee,
-  BookOpen
+  BookOpen,
+  Check,
+  LayoutGrid,
+  ListFilter,
+  ChevronDown,
+  ChevronUp
 } from 'lucide-react';
 
 interface TaskModalProps {
@@ -218,8 +224,22 @@ export const TaskModal: React.FC<TaskModalProps> = ({
   const [startTime, setStartTime] = useState<string>(initialSmartSlot.startTime);
   const [endTime, setEndTime] = useState<string>(initialSmartSlot.endTime);
 
-  // Dynamic GAP Finder (RAW Mode) Free Slots for next 24 hours starting from taskDate
-  const dynamicGapRawSlots = useMemo(() => {
+  // Dynamic GAP Finder Slots Engine (Ultradian Decomposition + Multi-Time & Multi-Day Support)
+  const [slotDecomposition, setSlotDecomposition] = useState<boolean>(() => {
+    try {
+      const saved = localStorage.getItem('optimustime_taskmodal_slot_decomp');
+      return saved !== null ? JSON.parse(saved) : true;
+    } catch {
+      return true;
+    }
+  });
+
+  const [slotViewMode, setSlotViewMode] = useState<'timeline' | 'grid'>('timeline');
+  const [slotTabFilter, setSlotTabFilter] = useState<'all' | 'today' | 'tomorrow'>('all');
+  const [showAllGridSlots, setShowAllGridSlots] = useState<boolean>(false);
+  const [timelineFilter, setTimelineFilter] = useState<'all' | 'tasks_only' | 'gaps_only'>('all');
+
+  const scientificSlots = useMemo(() => {
     const bstNow = getBangladeshNow();
     const curMins = bstNow.getHours() * 60 + bstNow.getMinutes();
     return getScientificDynamicGapSlots({
@@ -228,12 +248,154 @@ export const TaskModal: React.FC<TaskModalProps> = ({
       bufferNotes,
       capacitySettings,
       timePeriodSettings,
-      minSlots: 10,
+      minSlots: 15,
       currentMinutes: curMins,
       referenceDate: bstNow,
-      decomposeUltradian: false // RAW discrete schedule openings
+      decomposeUltradian: slotDecomposition
     });
-  }, [taskDate, tasks, bufferNotes, capacitySettings, timePeriodSettings]);
+  }, [taskDate, tasks, bufferNotes, capacitySettings, timePeriodSettings, slotDecomposition]);
+
+  // Backward compatibility alias for any existing reference
+  const dynamicGapRawSlots = scientificSlots;
+
+  // Existing scheduled tasks on taskDate (ignoring current task being edited)
+  const dayScheduledTasks = useMemo(() => {
+    return tasks
+      .filter(t => {
+        if (t.id === taskToEdit?.id) return false;
+        if (t.hasNoTime || t.priority === 'P5') return false;
+        return isTaskScheduledForDate(t, taskDate);
+      })
+      .sort((a, b) => {
+        const aStart = parse12HourToMinutes(a.startTime);
+        const bStart = parse12HourToMinutes(b.startTime);
+        return aStart - bStart;
+      });
+  }, [tasks, taskDate, taskToEdit?.id]);
+
+  // Unified Chronological Day Timeline Entries (Existing Tasks + Free Ultradian Gaps)
+  const dayTimelineEntries = useMemo(() => {
+    const entries: Array<{
+      id: string;
+      type: 'task' | 'gap';
+      startMinutes: number;
+      endMinutes: number;
+      startTime: string;
+      endTime: string;
+      durationMinutes: number;
+      task?: Task;
+      slot?: ScientificGapSlot;
+    }> = [];
+
+    // 1. Existing scheduled tasks on this day
+    dayScheduledTasks.forEach(t => {
+      let startMin = parse12HourToMinutes(t.startTime);
+      let endMin = parse12HourToMinutes(t.endTime);
+      if (endMin < startMin) endMin += 1440;
+      entries.push({
+        id: `task-${t.id}`,
+        type: 'task',
+        startMinutes: startMin,
+        endMinutes: endMin,
+        startTime: t.startTime,
+        endTime: t.endTime,
+        durationMinutes: t.appointedMinutes || (endMin - startMin),
+        task: t
+      });
+    });
+
+    // 2. Dynamic Free Ultradian Gap slots for this day
+    const dateSlots = scientificSlots.filter(s => s.date === taskDate);
+    dateSlots.forEach(slot => {
+      let startMin = parse12HourToMinutes(slot.startTime);
+      let endMin = parse12HourToMinutes(slot.endTime);
+      if (endMin < startMin) endMin += 1440;
+      entries.push({
+        id: `gap-${slot.slotId}`,
+        type: 'gap',
+        startMinutes: startMin,
+        endMinutes: endMin,
+        startTime: slot.startTime,
+        endTime: slot.endTime,
+        durationMinutes: slot.durationMinutes,
+        slot
+      });
+    });
+
+    // Sort strictly in chronological sequence
+    return entries.sort((a, b) => {
+      if (a.startMinutes !== b.startMinutes) return a.startMinutes - b.startMinutes;
+      return a.type === 'task' ? -1 : 1;
+    });
+  }, [dayScheduledTasks, scientificSlots, taskDate]);
+
+  const filteredTimelineEntries = useMemo(() => {
+    if (timelineFilter === 'tasks_only') return dayTimelineEntries.filter(e => e.type === 'task');
+    if (timelineFilter === 'gaps_only') return dayTimelineEntries.filter(e => e.type === 'gap');
+    return dayTimelineEntries;
+  }, [dayTimelineEntries, timelineFilter]);
+
+  const todaySlots = useMemo(() => scientificSlots.filter(s => s.isToday), [scientificSlots]);
+  const tomorrowSlots = useMemo(() => scientificSlots.filter(s => s.isTomorrow), [scientificSlots]);
+
+  const filteredGridSlots = useMemo(() => {
+    if (slotTabFilter === 'today') return todaySlots;
+    if (slotTabFilter === 'tomorrow') return tomorrowSlots;
+    return scientificSlots;
+  }, [scientificSlots, todaySlots, tomorrowSlots, slotTabFilter]);
+
+  const displayedGridSlots = showAllGridSlots ? filteredGridSlots : filteredGridSlots.slice(0, 10);
+
+  // Helper to identify predecessor & successor tasks for any slot
+  const getAdjacentTaskInfo = (slot: ScientificGapSlot) => {
+    const slotTasks = tasks.filter(t => 
+      t.id !== taskToEdit?.id && 
+      !t.hasNoTime && 
+      t.priority !== 'P5' && 
+      isTaskScheduledForDate(t, slot.date)
+    );
+    const slotStartMin = parse12HourToMinutes(slot.startTime);
+    let slotEndMin = parse12HourToMinutes(slot.endTime);
+    if (slotEndMin < slotStartMin) slotEndMin += 1440;
+
+    let beforeTask: Task | null = null;
+    let afterTask: Task | null = null;
+    let minBeforeDist = Infinity;
+    let minAfterDist = Infinity;
+
+    for (const t of slotTasks) {
+      let tStart = parse12HourToMinutes(t.startTime);
+      let tEnd = parse12HourToMinutes(t.endTime);
+      if (tEnd < tStart) tEnd += 1440;
+
+      if (tEnd <= slotStartMin) {
+        const dist = slotStartMin - tEnd;
+        if (dist < minBeforeDist) {
+          minBeforeDist = dist;
+          beforeTask = t;
+        }
+      }
+      if (tStart >= slotEndMin) {
+        const dist = tStart - slotEndMin;
+        if (dist < minAfterDist) {
+          minAfterDist = dist;
+          afterTask = t;
+        }
+      }
+    }
+
+    return { beforeTask, afterTask };
+  };
+
+  const handleSelectSlot = (slot: ScientificGapSlot) => {
+    setStartTime(slot.startTime);
+    setEndTime(addMinutesToTime(slot.startTime, appointedMinutes));
+    if (slot.date !== taskDate) {
+      setTaskDate(slot.date);
+    }
+    if (validationError) setValidationError(null);
+    setHasConfirmedPastTime(false);
+  };
 
   // Intelligent AM / PM Suggestion Engine (+30min from current time, avoids sleep & busy slots, allows simultaneous)
   const smartAmPm = useMemo(() => {
@@ -1686,101 +1848,421 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                         </div>
                       </div>
                     ) : (
-                      dynamicGapRawSlots.length > 0 && (
-                        <div className="pt-2.5 border-t border-theme-border/60 space-y-2">
-                          <div className="flex items-center justify-between text-[11px]">
-                            <div className="flex items-center gap-1.5 font-bold text-theme-text font-display">
-                              <div className="w-4 h-4 rounded-md bg-amber-500/15 flex items-center justify-center text-amber-500 shrink-0">
-                                <Sparkles className="w-2.5 h-2.5" />
-                              </div>
-                              <span>Next Free Slots</span>
-                              <span className="text-[10px] font-normal text-theme-muted">
-                                • Dynamic GAP Finder (RAW)
+                      <div className="pt-3 border-t border-theme-border/60 space-y-3">
+                        {/* Header Bar: Dynamic Gap Finder & Day Schedule Inspector */}
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                          <div className="flex items-center gap-2">
+                            <div className="w-5 h-5 rounded-md bg-gradient-to-tr from-amber-500/20 to-orange-500/20 text-amber-500 flex items-center justify-center shrink-0">
+                              <Sparkles className="w-3 h-3" />
+                            </div>
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span className="font-bold text-xs text-theme-text font-display">
+                                Dynamic Schedule & GAP Finder
+                              </span>
+                              <span className="text-[10px] text-theme-muted font-normal">
+                                • {formatDisplayDate(taskDate)}
                               </span>
                             </div>
+                          </div>
 
-                            <div className="flex items-center gap-2">
+                          {/* Control Ribbons: View Switcher (Day Flow vs Quick Slots) + Ultradian Toggle */}
+                          <div className="flex items-center gap-1.5 flex-wrap sm:justify-end">
+                            {/* 1. View Mode Switcher */}
+                            <div className="p-0.5 rounded-lg bg-black/[0.04] dark:bg-white/[0.06] border border-theme-border/40 flex items-center gap-0.5">
+                              <button
+                                type="button"
+                                onClick={() => setSlotViewMode('timeline')}
+                                className={`px-2 py-1 rounded-md text-[10px] font-bold transition-all flex items-center gap-1 cursor-pointer ${
+                                  slotViewMode === 'timeline'
+                                    ? 'bg-white dark:bg-slate-800 text-blue-600 dark:text-blue-400 shadow-xs'
+                                    : 'text-theme-muted hover:text-theme-text'
+                                }`}
+                                title="Chronological Day Timeline: shows existing tasks and free Ultradian gaps"
+                              >
+                                <Clock className="w-2.5 h-2.5" />
+                                <span>Day Timeline</span>
+                              </button>
+
+                              <button
+                                type="button"
+                                onClick={() => setSlotViewMode('grid')}
+                                className={`px-2 py-1 rounded-md text-[10px] font-bold transition-all flex items-center gap-1 cursor-pointer ${
+                                  slotViewMode === 'grid'
+                                    ? 'bg-white dark:bg-slate-800 text-blue-600 dark:text-blue-400 shadow-xs'
+                                    : 'text-theme-muted hover:text-theme-text'
+                                }`}
+                                title="Quick Slots Grid: select from all available slots with adjacent task context"
+                              >
+                                <LayoutGrid className="w-2.5 h-2.5" />
+                                <span>Quick Slots</span>
+                              </button>
+                            </div>
+
+                            {/* 2. Ultradian Split Toggle */}
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setSlotDecomposition(prev => {
+                                  const next = !prev;
+                                  try {
+                                    localStorage.setItem('optimustime_taskmodal_slot_decomp', JSON.stringify(next));
+                                  } catch {}
+                                  return next;
+                                });
+                              }}
+                              className={`px-2 py-1 rounded-lg text-[10px] font-bold transition-all border flex items-center gap-1 cursor-pointer shadow-2xs ${
+                                slotDecomposition
+                                  ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900 border-transparent shadow-xs'
+                                  : 'bg-black/[0.03] dark:bg-white/[0.06] text-theme-muted hover:text-theme-text border-black/[0.06] dark:border-white/10'
+                              }`}
+                              title={slotDecomposition ? "Showing 90m, 45m, 30m, 15m Ultradian focus splits" : "Showing raw continuous schedule gaps"}
+                            >
+                              <span>{slotDecomposition ? '🧠 Ultradian' : '⚡ Raw Gaps'}</span>
+                            </button>
+
+                            {/* 3. Auto-fit First Slot button */}
+                            {scientificSlots.length > 0 && (
                               <button
                                 type="button"
                                 onClick={() => {
-                                  const best = dynamicGapRawSlots[0];
-                                  if (best) {
-                                    setStartTime(best.startTime);
-                                    setEndTime(addMinutesToTime(best.startTime, appointedMinutes));
-                                    if (best.date !== taskDate) {
-                                      setTaskDate(best.date);
-                                    }
-                                    if (validationError) setValidationError(null);
-                                  }
+                                  const best = scientificSlots[0];
+                                  if (best) handleSelectSlot(best);
                                 }}
-                                className="text-[10px] font-bold text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-1 cursor-pointer"
+                                className="px-2 py-1 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 dark:bg-blue-950/60 dark:hover:bg-blue-900 dark:text-blue-300 border border-blue-200 dark:border-blue-800 text-[10px] font-bold flex items-center gap-1 cursor-pointer transition-colors shadow-2xs"
                                 title="Auto-fit to earliest available free slot"
                               >
                                 <RotateCcw className="w-2.5 h-2.5" />
-                                <span>Auto-Fit First</span>
+                                <span>Auto-Fit</span>
                               </button>
-                              <span className="text-[9px] font-mono text-theme-muted/70 hidden sm:inline">1-tap select</span>
-                            </div>
-                          </div>
-
-                          {/* Next 24h RAW Free Slots Grid */}
-                          <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-5 gap-2">
-                            {dynamicGapRawSlots.slice(0, 5).map((slot, idx) => {
-                              const isSlotSelected = startTime === slot.startTime && (slot.date === taskDate);
-                              const slotMin = parse12HourToMinutes(slot.startTime);
-                              const isNight = slotMin < 360 || slotMin >= 1200;
-
-                              return (
-                                <button
-                                  key={slot.slotId || idx}
-                                  type="button"
-                                  onClick={() => {
-                                    setStartTime(slot.startTime);
-                                    setEndTime(addMinutesToTime(slot.startTime, appointedMinutes));
-                                    if (slot.date !== taskDate) {
-                                      setTaskDate(slot.date);
-                                    }
-                                    if (validationError) setValidationError(null);
-                                    setHasConfirmedPastTime(false);
-                                  }}
-                                  className={`py-2 px-2.5 rounded-xl text-center border transition-all flex flex-col items-center justify-center gap-1 cursor-pointer shadow-2xs group relative overflow-hidden ${
-                                    isSlotSelected
-                                      ? 'bg-blue-600 text-white border-blue-600 font-black shadow-md ring-2 ring-blue-400/40 scale-[1.02]'
-                                      : 'bg-theme-card hover:bg-theme-card-hover text-theme-text border-theme-border hover:border-blue-400'
-                                  }`}
-                                  title={`Click to set Start Time to ${slot.startTime} on ${slot.dateLabel} (${formatDurationHuman(slot.durationMinutes)} free)`}
-                                >
-                                  {slot.isTomorrow && (
-                                    <span className="absolute top-1 right-1 text-[8px] font-black uppercase px-1 py-0.2 rounded bg-indigo-500/20 text-indigo-600 dark:text-indigo-300">
-                                      Tmrw
-                                    </span>
-                                  )}
-                                  {slot.isSimultaneous && (
-                                    <span className="absolute top-1 left-1 text-[8px] font-black uppercase px-1 py-0.2 rounded bg-purple-500/20 text-purple-600 dark:text-purple-300">
-                                      ⚡ Co
-                                    </span>
-                                  )}
-                                  <div className="flex items-center gap-1 mt-0.5">
-                                    {isNight ? (
-                                      <Moon className={`w-3 h-3 ${isSlotSelected ? 'text-blue-200' : 'text-indigo-400'}`} />
-                                    ) : (
-                                      <Sun className={`w-3 h-3 ${isSlotSelected ? 'text-amber-200' : 'text-amber-500'}`} />
-                                    )}
-                                    <span className="font-mono text-xs font-black tracking-tight">
-                                      {slot.startTime}
-                                    </span>
-                                  </div>
-                                  <div className="flex items-center gap-1 text-[9px] font-mono">
-                                    <span className={`${isSlotSelected ? 'text-blue-100' : 'text-theme-muted group-hover:text-blue-500'}`}>
-                                      {formatDurationHuman(slot.durationMinutes)} free
-                                    </span>
-                                  </div>
-                                </button>
-                              );
-                            })}
+                            )}
                           </div>
                         </div>
-                      )
+
+                        {/* VIEW MODE 1: DAY TIMELINE (Chronological Tasks + Gaps) */}
+                        {slotViewMode === 'timeline' && (
+                          <div className="space-y-2">
+                            {/* Summary Ribbon with filter badges */}
+                            <div className="flex items-center justify-between text-[10px] text-theme-muted pb-1 border-b border-theme-border/40">
+                              <span className="font-medium flex items-center gap-1.5">
+                                <span>📅 {formatDisplayDate(taskDate)}</span>
+                                <span className="text-theme-muted/60">•</span>
+                                <span className="font-semibold text-theme-text">{dayScheduledTasks.length} task{dayScheduledTasks.length === 1 ? '' : 's'}</span>
+                                <span className="text-theme-muted/60">•</span>
+                                <span className="font-semibold text-emerald-600 dark:text-emerald-400">
+                                  {scientificSlots.filter(s => s.date === taskDate).length} free slot{scientificSlots.filter(s => s.date === taskDate).length === 1 ? '' : 's'}
+                                </span>
+                              </span>
+
+                              <div className="flex items-center gap-1">
+                                {[
+                                  { id: 'all', label: `All (${dayTimelineEntries.length})` },
+                                  { id: 'tasks_only', label: `Tasks (${dayScheduledTasks.length})` },
+                                  { id: 'gaps_only', label: `Gaps (${dayTimelineEntries.filter(e => e.type === 'gap').length})` }
+                                ].map(f => (
+                                  <button
+                                    key={f.id}
+                                    type="button"
+                                    onClick={() => setTimelineFilter(f.id as any)}
+                                    className={`px-1.5 py-0.5 rounded text-[9px] font-bold transition-all cursor-pointer ${
+                                      timelineFilter === f.id
+                                        ? 'bg-blue-600 text-white'
+                                        : 'text-theme-muted hover:text-theme-text hover:bg-black/[0.04] dark:hover:bg-white/[0.06]'
+                                    }`}
+                                  >
+                                    {f.label}
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+
+                            {/* Scrollable Chronological Timeline List */}
+                            <div className="max-h-72 overflow-y-auto space-y-1.5 pr-1 custom-scrollbar">
+                              {filteredTimelineEntries.length === 0 ? (
+                                <div className="p-4 text-center text-xs text-theme-muted rounded-xl bg-theme-card-hover/40 border border-dashed border-theme-border">
+                                  No items match this filter for {formatDisplayDate(taskDate)}.
+                                </div>
+                              ) : (
+                                filteredTimelineEntries.map(entry => {
+                                  if (entry.type === 'task' && entry.task) {
+                                    const t = entry.task;
+                                    const isDone = t.status === 'Done';
+                                    const isTerm = t.status === 'Terminated';
+                                    const isWork = t.status === 'Working';
+
+                                    return (
+                                      <div
+                                        key={entry.id}
+                                        className={`p-2.5 rounded-xl border flex items-center justify-between gap-3 text-xs transition-all ${
+                                          isDone
+                                            ? 'bg-emerald-500/[0.04] dark:bg-emerald-950/20 border-emerald-500/30 opacity-80'
+                                            : isTerm
+                                            ? 'bg-red-500/[0.04] dark:bg-red-950/20 border-red-500/30 opacity-70'
+                                            : isWork
+                                            ? 'bg-blue-500/[0.08] dark:bg-blue-950/30 border-blue-500/50 shadow-xs'
+                                            : 'bg-theme-card/90 border-theme-border/90 hover:border-theme-border'
+                                        }`}
+                                      >
+                                        <div className="flex items-center gap-2 min-w-0 flex-1">
+                                          {/* Priority accent stripe */}
+                                          <div className={`w-1 self-stretch rounded-full shrink-0 ${
+                                            t.priority === 'P1' ? 'bg-red-500' :
+                                            t.priority === 'P2' ? 'bg-orange-500' :
+                                            t.priority === 'P3' ? 'bg-blue-500' :
+                                            t.priority === 'P4' ? 'bg-slate-400' : 'bg-zinc-400'
+                                          }`} />
+
+                                          <div className="min-w-0 flex-1">
+                                            <div className="flex items-center gap-1.5 flex-wrap">
+                                              <span className="font-mono text-xs font-bold text-theme-text">
+                                                {entry.startTime} – {entry.endTime}
+                                              </span>
+                                              <span className="text-[10px] text-theme-muted font-mono">
+                                                ({formatDurationHuman(entry.durationMinutes)})
+                                              </span>
+                                              <span className={`text-[9px] font-black px-1.5 py-0.2 rounded font-mono ${
+                                                t.priority === 'P1' ? 'bg-red-500/20 text-red-600 dark:text-red-400' :
+                                                t.priority === 'P2' ? 'bg-orange-500/20 text-orange-600 dark:text-orange-400' :
+                                                t.priority === 'P3' ? 'bg-blue-500/20 text-blue-600 dark:text-blue-400' :
+                                                'bg-slate-500/20 text-slate-600 dark:text-slate-400'
+                                              }`}>
+                                                {t.priority}
+                                              </span>
+                                              {t.category && (
+                                                <span className="text-[9px] font-semibold px-1.5 py-0.2 rounded bg-black/[0.04] dark:bg-white/[0.06] text-theme-muted truncate max-w-[100px]">
+                                                  {t.category}
+                                                </span>
+                                              )}
+                                            </div>
+
+                                            <div className="text-xs font-bold text-theme-text truncate font-display mt-0.5">
+                                              {t.title}
+                                            </div>
+                                          </div>
+                                        </div>
+
+                                        <div className="flex items-center gap-1.5 shrink-0">
+                                          <span className={`text-[9px] font-semibold px-2 py-0.5 rounded-full flex items-center gap-1 ${
+                                            isDone ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400' :
+                                            isTerm ? 'bg-red-500/15 text-red-600 dark:text-red-400' :
+                                            isWork ? 'bg-blue-500/15 text-blue-600 dark:text-blue-400 font-bold animate-pulse' :
+                                            'bg-slate-500/15 text-slate-600 dark:text-slate-400'
+                                          }`}>
+                                            {isDone && <Check className="w-2.5 h-2.5 stroke-[2.5]" />}
+                                            <span>{isWork ? 'Active' : t.status}</span>
+                                          </span>
+                                          <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-black/[0.03] dark:bg-white/[0.05] text-theme-muted/80 border border-theme-border/40 hidden sm:inline">
+                                            Occupied
+                                          </span>
+                                        </div>
+                                      </div>
+                                    );
+                                  }
+
+                                  if (entry.type === 'gap' && entry.slot) {
+                                    const slot = entry.slot;
+                                    const isSlotSelected = startTime === slot.startTime && (taskDate === slot.date);
+
+                                    return (
+                                      <button
+                                        key={entry.id}
+                                        type="button"
+                                        onClick={() => handleSelectSlot(slot)}
+                                        className={`w-full p-2.5 rounded-xl border text-left flex items-center justify-between gap-3 text-xs transition-all cursor-pointer group shadow-2xs ${
+                                          isSlotSelected
+                                            ? 'bg-blue-600 text-white border-blue-600 shadow-md ring-2 ring-blue-400/40 font-bold scale-[1.008]'
+                                            : 'bg-gradient-to-r from-emerald-500/[0.07] via-teal-500/[0.04] to-blue-500/[0.04] dark:from-emerald-500/[0.12] dark:via-teal-500/[0.07] dark:to-blue-500/[0.06] border-emerald-400/40 dark:border-emerald-400/30 hover:border-blue-400 hover:shadow-xs'
+                                        }`}
+                                        title={`Click to set Start Time to ${slot.startTime} on ${slot.dateLabel}`}
+                                      >
+                                        <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                                          <div className={`w-6 h-6 rounded-lg flex items-center justify-center text-xs shrink-0 ${
+                                            isSlotSelected ? 'bg-white/20 text-white' : 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400'
+                                          }`}>
+                                            {slot.ultradianEmoji || '⚡'}
+                                          </div>
+
+                                          <div className="min-w-0 flex-1">
+                                            <div className="flex items-center gap-1.5 flex-wrap">
+                                              <span className={`font-mono text-xs font-black ${isSlotSelected ? 'text-white' : 'text-theme-text'}`}>
+                                                {slot.startTime} – {slot.endTime}
+                                              </span>
+                                              <span className={`text-[10px] font-bold font-mono px-1.5 py-0.2 rounded-full ${
+                                                isSlotSelected ? 'bg-white/20 text-white' : 'bg-emerald-500/20 text-emerald-700 dark:text-emerald-300'
+                                              }`}>
+                                                {formatDurationHuman(slot.durationMinutes)} free
+                                              </span>
+                                              <span className={`text-[10px] font-semibold flex items-center gap-1 ${
+                                                isSlotSelected ? 'text-blue-100' : 'text-theme-muted'
+                                              }`}>
+                                                <span>{slot.ultradianLabel}</span>
+                                              </span>
+                                            </div>
+
+                                            <div className={`text-[10px] truncate mt-0.5 flex items-center gap-1.5 ${
+                                              isSlotSelected ? 'text-blue-100' : 'text-theme-muted'
+                                            }`}>
+                                              <span>{slot.circadianEmoji}</span>
+                                              <span>{slot.circadianLabel}</span>
+                                            </div>
+                                          </div>
+                                        </div>
+
+                                        <div className="flex items-center gap-1.5 shrink-0">
+                                          {isSlotSelected ? (
+                                            <span className="px-2.5 py-1 rounded-lg bg-white text-blue-700 text-[10px] font-black shadow-xs flex items-center gap-1">
+                                              <Check className="w-3 h-3 stroke-[3]" />
+                                              <span>Selected</span>
+                                            </span>
+                                          ) : (
+                                            <span className="px-2 py-1 rounded-lg bg-blue-50 group-hover:bg-blue-600 text-blue-600 group-hover:text-white dark:bg-blue-950/60 dark:text-blue-300 dark:group-hover:bg-blue-600 dark:group-hover:text-white border border-blue-200 dark:border-blue-800 text-[10px] font-bold transition-all flex items-center gap-1">
+                                              <Plus className="w-2.5 h-2.5 stroke-[3]" />
+                                              <span>Select Slot</span>
+                                            </span>
+                                          )}
+                                        </div>
+                                      </button>
+                                    );
+                                  }
+
+                                  return null;
+                                })
+                              )}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* VIEW MODE 2: QUICK SLOTS GRID (Multi-Time & Contextual Cards) */}
+                        {slotViewMode === 'grid' && (
+                          <div className="space-y-2.5">
+                            {/* Filter Tabs: All, Today, Tomorrow */}
+                            <div className="flex items-center justify-between text-[11px] flex-wrap gap-2">
+                              <div className="p-0.5 rounded-lg bg-black/[0.04] dark:bg-white/[0.06] border border-theme-border/40 flex items-center gap-1">
+                                {[
+                                  { id: 'all', label: 'All Slots', count: scientificSlots.length },
+                                  { id: 'today', label: 'Today', count: todaySlots.length },
+                                  { id: 'tomorrow', label: 'Tomorrow', count: tomorrowSlots.length }
+                                ].map(tab => (
+                                  <button
+                                    key={tab.id}
+                                    type="button"
+                                    onClick={() => setSlotTabFilter(tab.id as any)}
+                                    className={`px-2 py-0.5 rounded-md text-[10px] font-semibold transition-all cursor-pointer ${
+                                      slotTabFilter === tab.id
+                                        ? 'bg-white dark:bg-slate-800 text-theme-text font-bold shadow-xs'
+                                        : 'text-theme-muted hover:text-theme-text'
+                                    }`}
+                                  >
+                                    <span>{tab.label}</span>
+                                    <span className="text-[9px] font-mono opacity-70 ml-1">({tab.count})</span>
+                                  </button>
+                                ))}
+                              </div>
+
+                              <span className="text-[9px] font-mono text-theme-muted/80">
+                                1-tap select • shows surrounding tasks
+                              </span>
+                            </div>
+
+                            {/* Responsive Slots Grid */}
+                            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2">
+                              {displayedGridSlots.map((slot, idx) => {
+                                const isSlotSelected = startTime === slot.startTime && (slot.date === taskDate);
+                                const slotMin = parse12HourToMinutes(slot.startTime);
+                                const isNight = slotMin < 360 || slotMin >= 1200;
+                                const adjacent = getAdjacentTaskInfo(slot);
+
+                                return (
+                                  <button
+                                    key={slot.slotId || idx}
+                                    type="button"
+                                    onClick={() => handleSelectSlot(slot)}
+                                    className={`py-2 px-2.5 rounded-xl text-center border transition-all flex flex-col items-center justify-between gap-1.5 cursor-pointer shadow-2xs group relative overflow-hidden text-left ${
+                                      isSlotSelected
+                                        ? 'bg-blue-600 text-white border-blue-600 font-black shadow-md ring-2 ring-blue-400/40 scale-[1.02]'
+                                        : 'bg-theme-card hover:bg-theme-card-hover text-theme-text border-theme-border hover:border-blue-400'
+                                    }`}
+                                    title={`Click to set Start Time to ${slot.startTime} on ${slot.dateLabel} (${formatDurationHuman(slot.durationMinutes)} free)`}
+                                  >
+                                    {slot.isTomorrow && (
+                                      <span className="absolute top-1 right-1 text-[8px] font-black uppercase px-1 py-0.2 rounded bg-indigo-500/20 text-indigo-600 dark:text-indigo-300">
+                                        Tmrw
+                                      </span>
+                                    )}
+                                    {slot.isSimultaneous && (
+                                      <span className="absolute top-1 left-1 text-[8px] font-black uppercase px-1 py-0.2 rounded bg-purple-500/20 text-purple-600 dark:text-purple-300">
+                                        ⚡ Co
+                                      </span>
+                                    )}
+
+                                    <div className="flex items-center gap-1 mt-0.5 w-full justify-center">
+                                      {isNight ? (
+                                        <Moon className={`w-3 h-3 ${isSlotSelected ? 'text-blue-200' : 'text-indigo-400'}`} />
+                                      ) : (
+                                        <Sun className={`w-3 h-3 ${isSlotSelected ? 'text-amber-200' : 'text-amber-500'}`} />
+                                      )}
+                                      <span className="font-mono text-xs font-black tracking-tight">
+                                        {slot.startTime}
+                                      </span>
+                                    </div>
+
+                                    <div className="flex items-center gap-1 text-[9px] font-mono">
+                                      <span className={`${isSlotSelected ? 'text-blue-100 font-bold' : 'text-theme-muted group-hover:text-blue-500 font-medium'}`}>
+                                        {formatDurationHuman(slot.durationMinutes)} free
+                                      </span>
+                                    </div>
+
+                                    <div className={`text-[8px] truncate px-1 py-0.2 rounded-full w-full text-center ${
+                                      isSlotSelected ? 'bg-white/20 text-white' : 'bg-black/[0.03] dark:bg-white/[0.05] text-theme-muted'
+                                    }`}>
+                                      {slot.ultradianEmoji} {slot.ultradianLabel.replace(' Focus', '')}
+                                    </div>
+
+                                    {/* Surrounding Task Hint */}
+                                    {(adjacent.beforeTask || adjacent.afterTask) && (
+                                      <div className={`w-full pt-1 border-t text-[8px] truncate ${
+                                        isSlotSelected ? 'border-white/20 text-blue-100' : 'border-theme-border/40 text-theme-muted/80'
+                                      }`}>
+                                        {adjacent.beforeTask ? (
+                                          <span title={`After: ${adjacent.beforeTask.title}`}>
+                                            After: {adjacent.beforeTask.title.slice(0, 10)}...
+                                          </span>
+                                        ) : (
+                                          <span title={`Before: ${adjacent.afterTask?.title}`}>
+                                            Before: {adjacent.afterTask?.title.slice(0, 10)}...
+                                          </span>
+                                        )}
+                                      </div>
+                                    )}
+                                  </button>
+                                );
+                              })}
+                            </div>
+
+                            {/* Show More / Show Less Toggle Button */}
+                            {filteredGridSlots.length > 10 && (
+                              <div className="text-center pt-1">
+                                <button
+                                  type="button"
+                                  onClick={() => setShowAllGridSlots(prev => !prev)}
+                                  className="text-[10px] font-bold text-blue-600 dark:text-blue-400 hover:underline inline-flex items-center gap-1 cursor-pointer"
+                                >
+                                  {showAllGridSlots ? (
+                                    <>
+                                      <ChevronUp className="w-3 h-3" />
+                                      <span>Show Less</span>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <ChevronDown className="w-3 h-3" />
+                                      <span>Show All ({filteredGridSlots.length} Slots)</span>
+                                    </>
+                                  )}
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
                     )}
 
                   </div>

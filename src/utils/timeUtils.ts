@@ -4310,6 +4310,7 @@ export interface NextFreeSlotParams {
     recurrence?: string;
     selectedDays?: string[];
     excludedDates?: string[];
+    isSimultaneous?: boolean;
   }>;
   capacitySettings?: {
     dayStartTime?: string;
@@ -4368,188 +4369,160 @@ export function calculateNextFreeTimeAfterTimedTasks(params: NextFreeSlotParams)
     bedtimeMin += 1440; // overnight bedtime (e.g. 02:15 AM = 1575 mins)
   }
 
-  // Filter existing timed tasks on selectedDate
-  const timedTasks = params.tasks.filter(t => {
-    if (!isTaskScheduledForDate(t as any, params.selectedDate)) return false;
-    if (t.hasNoTime || !t.startTime || t.startTime === 'Anytime' || t.startTime === 'Free Time' || t.startTime === 'No Time' || t.startTime === 'All Day') return false;
-    if (t.status === 'Terminated') return false;
-    return true;
-  });
+  // Active running task detection for today
+  const activeRunningTask = params.tasks.find(t => 
+    t.status === 'Working' && isTaskScheduledForDate(t as any, todayStr)
+  );
 
-  const slotStrategy = params.defaultTaskSettings?.defaultSmartSlot || 'auto-fit';
-
-  let startMin: number;
-  let isAfter = false;
-
-  // Distinguish tasks on selectedDate:
-  // 1. Tasks starting on selectedDate (or recurring on selectedDate)
-  // 2. Tasks continuing from previous date into early morning of selectedDate
-  const parsedTasks: { start: number; end: number; buffer: number; isContinuation: boolean }[] = [];
-
-  for (const t of timedTasks) {
-    const buf = t.bufferMinutes !== undefined ? t.bufferMinutes : defaultBuffer;
-    const isRecurring = Boolean(t.recurrence && t.recurrence !== 'None');
-    const isStartedEarlier = !isRecurring && t.taskDate && t.taskDate < params.selectedDate;
-
-    if (isStartedEarlier) {
-      // Continuation from yesterday: ends in early morning of selectedDate
-      const endM = parse12HourToMinutes(t.endTime!);
-      parsedTasks.push({ start: 0, end: endM, buffer: buf, isContinuation: true });
-    } else {
-      // Starts on selectedDate
-      let s = parse12HourToMinutes(t.startTime!);
-      let e = parse12HourToMinutes(t.endTime!);
-      if (e <= s) e += 1440; // overnight task ending past midnight tonight
-      parsedTasks.push({ start: s, end: e, buffer: buf, isContinuation: false });
-    }
+  let minAllowedToday = Math.ceil((currentMins + 5) / 5) * 5;
+  if (activeRunningTask && activeRunningTask.startTime && activeRunningTask.endTime) {
+    const rStart = parse12HourToMinutes(activeRunningTask.startTime);
+    let rEnd = parse12HourToMinutes(activeRunningTask.endTime);
+    if (rEnd < rStart) rEnd += 1440;
+    const rBuf = activeRunningTask.bufferMinutes !== undefined ? activeRunningTask.bufferMinutes : defaultBuffer;
+    minAllowedToday = Math.max(minAllowedToday, rEnd + rBuf);
   }
 
-  if (isToday) {
-    // TODAY: Do not schedule in the past
-    const minAllowed = Math.ceil((currentMins + 5) / 5) * 5;
+  // Helper to find the earliest free slot on a specific date that fits the duration without collisions
+  const findSlotOnDate = (dateStr: string, earliestAllowedMin: number) => {
+    const blockingIntervals: { start: number; end: number }[] = [];
 
-    let latestEndMin = -1;
-    let bufferToUse = defaultBuffer;
+    for (const t of params.tasks) {
+      if (!isTaskScheduledForDate(t as any, dateStr)) continue;
+      if (t.hasNoTime || !t.startTime || !t.endTime || t.startTime === 'Anytime' || t.startTime === 'Free Time' || t.startTime === 'No Time' || t.startTime === 'All Day') continue;
+      if (t.status === 'Terminated' || t.isSimultaneous) continue;
 
-    for (const pt of parsedTasks) {
-      if (pt.end > latestEndMin) {
-        latestEndMin = pt.end;
-        bufferToUse = pt.buffer;
-      }
-    }
+      const buf = t.bufferMinutes !== undefined ? t.bufferMinutes : defaultBuffer;
+      let s = parse12HourToMinutes(t.startTime);
+      let e = parse12HourToMinutes(t.endTime);
+      if (e <= s) e += 1440;
 
-    if (latestEndMin > -1) {
-      startMin = latestEndMin + bufferToUse;
-      isAfter = true;
-      if (startMin < minAllowed) {
-        startMin = minAllowed;
-      }
-    } else {
-      startMin = Math.max(dayStartMin, minAllowed);
-    }
-  } else {
-    // FUTURE DATE OR OTHER DATE:
-    // Daytime work begins at dayStartMin (e.g. 09:00 AM).
-    // Tasks that start on selectedDate during daytime will cascade sequentially.
-    const daytimeTasks = parsedTasks.filter(pt => !pt.isContinuation && pt.end >= dayStartMin);
-
-    if (daytimeTasks.length > 0) {
-      let latestDaytimeEnd = -1;
-      let bufferToUse = defaultBuffer;
-
-      for (const pt of daytimeTasks) {
-        if (pt.end > latestDaytimeEnd) {
-          latestDaytimeEnd = pt.end;
-          bufferToUse = pt.buffer;
-        }
-      }
-
-      startMin = latestDaytimeEnd + bufferToUse;
-      isAfter = true;
-    } else {
-      // No daytime tasks on selectedDate: start fresh at dayStartMin!
-      startMin = dayStartMin;
-      isAfter = false;
-    }
-  }
-
-  const endMin = startMin + params.durationMinutes;
-
-  // CHECK IF THE DAY IS GENUINELY EXHAUSTED (exceeds bedtime or late-night sleep window):
-  // Note: Only check sleep window if startMin >= 1200 (8:00 PM or later), so morning hours are never flagged as sleep.
-  const candidateStartStr = formatMinutesTo12Hour(startMin % 1440);
-  const candidateEndStr = addMinutesToTime(candidateStartStr, params.durationMinutes);
-  const isLateNightSleep = startMin >= 1200 && isTimeInSleepWindow(candidateStartStr, candidateEndStr, sleepStartStr, sleepEndStr);
-
-  if (endMin > bedtimeMin || isLateNightSleep) {
-    // SELECTED DATE HAS ENDED OR IS FULL! Move to NEXT DAY!
-    const [y, m, d] = params.selectedDate.split('-').map(Number);
-    const tomorrowDateObj = new Date(y, m - 1, d + 1);
-    const tomorrowStr = toISODateString(tomorrowDateObj);
-
-    // Look for existing daytime tasks on tomorrow
-    const tomorrowTimedTasks = params.tasks.filter(t => {
-      if (!isTaskScheduledForDate(t as any, tomorrowStr)) return false;
-      if (t.hasNoTime || !t.startTime || t.startTime === 'Anytime' || t.startTime === 'Free Time' || t.startTime === 'No Time' || t.startTime === 'All Day') return false;
-      if (t.status === 'Terminated') return false;
-      return true;
-    });
-
-    let tomStartMin = dayStartMin;
-    const tomDaytimeTasks = tomorrowTimedTasks.filter(t => {
       const isRecurring = Boolean(t.recurrence && t.recurrence !== 'None');
-      const isStartedEarlier = !isRecurring && t.taskDate && t.taskDate < tomorrowStr;
-      if (isStartedEarlier) return false;
-      const e = parse12HourToMinutes(t.endTime!);
-      return e >= dayStartMin;
-    });
-
-    if (tomDaytimeTasks.length > 0) {
-      let tomLatestEnd = -1;
-      let tomBuf = defaultBuffer;
-      for (const t of tomDaytimeTasks) {
-        let s = parse12HourToMinutes(t.startTime!);
-        let e = parse12HourToMinutes(t.endTime!);
-        if (e <= s) e += 1440;
-        const buf = t.bufferMinutes !== undefined ? t.bufferMinutes : defaultBuffer;
-        if (e > tomLatestEnd) {
-          tomLatestEnd = e;
-          tomBuf = buf;
-        }
+      const isStartedEarlier = !isRecurring && t.taskDate && t.taskDate < dateStr;
+      if (isStartedEarlier) {
+        blockingIntervals.push({ start: 0, end: e + buf });
+      } else {
+        blockingIntervals.push({ start: s, end: e + buf });
       }
-      tomStartMin = tomLatestEnd + tomBuf;
     }
 
-    const tomorrowStartStr = formatMinutesTo12Hour(tomStartMin % 1440);
-    const tomorrowEndStr = addMinutesToTime(tomorrowStartStr, params.durationMinutes);
-    const crosses = taskCrossesMidnight(tomorrowStartStr, tomorrowEndStr);
-    const endDate = crosses ? getTaskEndDate(tomorrowStr, tomorrowStartStr, tomorrowEndStr) : tomorrowStr;
+    // Sort intervals by start time
+    blockingIntervals.sort((a, b) => a.start - b.start);
+
+    // Merge overlapping or contiguous blocking intervals
+    const mergedBlocks: { start: number; end: number }[] = [];
+    for (const block of blockingIntervals) {
+      if (mergedBlocks.length === 0) {
+        mergedBlocks.push({ ...block });
+      } else {
+        const prev = mergedBlocks[mergedBlocks.length - 1];
+        if (block.start <= prev.end) {
+          prev.end = Math.max(prev.end, block.end);
+        } else {
+          mergedBlocks.push({ ...block });
+        }
+      }
+    }
+
+    // Search for the earliest candidate starting at or after earliestAllowedMin
+    let candidateStart = earliestAllowedMin;
+    let isAfter = false;
+
+    for (const block of mergedBlocks) {
+      if (candidateStart + params.durationMinutes <= block.start) {
+        // Fits before this block!
+        const candidateEnd = candidateStart + params.durationMinutes;
+        const startStr = formatMinutesTo12Hour(candidateStart % 1440);
+        const endStr = addMinutesToTime(startStr, params.durationMinutes);
+        const inSleep = candidateStart >= 1200 && isTimeInSleepWindow(startStr, endStr, sleepStartStr, sleepEndStr);
+
+        if (candidateEnd <= bedtimeMin && !inSleep) {
+          return { startMin: candidateStart, endMin: candidateEnd, isAfterExistingTask: isAfter };
+        }
+      }
+
+      // If candidateStart overlaps with block, move past it
+      if (candidateStart < block.end) {
+        candidateStart = Math.ceil(block.end / 5) * 5;
+        isAfter = true;
+      }
+    }
+
+    // Check after all blocks before bedtime
+    const candidateEnd = candidateStart + params.durationMinutes;
+    const startStr = formatMinutesTo12Hour(candidateStart % 1440);
+    const endStr = addMinutesToTime(startStr, params.durationMinutes);
+    const inSleep = candidateStart >= 1200 && isTimeInSleepWindow(startStr, endStr, sleepStartStr, sleepEndStr);
+
+    if (candidateEnd <= bedtimeMin && !inSleep) {
+      return { startMin: candidateStart, endMin: candidateEnd, isAfterExistingTask: isAfter };
+    }
+
+    return null;
+  };
+
+  // 1. Try selectedDate first:
+  const earliestMinForSelected = isToday ? minAllowedToday : dayStartMin;
+  const slotSelected = findSlotOnDate(params.selectedDate, earliestMinForSelected);
+
+  if (slotSelected) {
+    const candidateStartStr = formatMinutesTo12Hour(slotSelected.startMin % 1440);
+    const candidateEndStr = addMinutesToTime(candidateStartStr, params.durationMinutes);
+
+    if (slotSelected.startMin >= 1440) {
+      const [y, m, d] = params.selectedDate.split('-').map(Number);
+      const tomorrowDateObj = new Date(y, m - 1, d + 1);
+      const tomorrowStr = toISODateString(tomorrowDateObj);
+
+      return {
+        targetDate: tomorrowStr,
+        startTime: candidateStartStr,
+        endTime: candidateEndStr,
+        durationMinutes: params.durationMinutes,
+        crossesMidnight: false,
+        endDate: tomorrowStr,
+        isNextDay: true,
+        isAfterExistingTask: slotSelected.isAfterExistingTask
+      };
+    }
+
+    const crosses = taskCrossesMidnight(candidateStartStr, candidateEndStr);
+    const targetDate = params.selectedDate;
+    const endDate = crosses ? getTaskEndDate(targetDate, candidateStartStr, candidateEndStr) : targetDate;
 
     return {
-      targetDate: tomorrowStr,
-      startTime: tomorrowStartStr,
-      endTime: tomorrowEndStr,
-      durationMinutes: params.durationMinutes,
-      crossesMidnight: crosses,
-      endDate,
-      isNextDay: true,
-      isAfterExistingTask: isAfter
-    };
-  }
-
-  // Fits before bedtime on selectedDate:
-  // Check if startMin is on the next calendar day (startMin >= 1440):
-  if (startMin >= 1440) {
-    const [y, m, d] = params.selectedDate.split('-').map(Number);
-    const tomorrowDateObj = new Date(y, m - 1, d + 1);
-    const tomorrowStr = toISODateString(tomorrowDateObj);
-
-    return {
-      targetDate: tomorrowStr,
+      targetDate,
       startTime: candidateStartStr,
       endTime: candidateEndStr,
       durationMinutes: params.durationMinutes,
-      crossesMidnight: false,
-      endDate: tomorrowStr,
-      isNextDay: true,
-      isAfterExistingTask: isAfter
+      crossesMidnight: crosses,
+      endDate,
+      isNextDay: false,
+      isAfterExistingTask: slotSelected.isAfterExistingTask
     };
   }
 
-  // Starts today before midnight:
-  const crosses = taskCrossesMidnight(candidateStartStr, candidateEndStr);
-  const targetDate = params.selectedDate;
-  const endDate = crosses ? getTaskEndDate(targetDate, candidateStartStr, candidateEndStr) : targetDate;
+  // 2. Selected date is completely booked / past bedtime: advance to tomorrow!
+  const [y, m, d] = params.selectedDate.split('-').map(Number);
+  const tomorrowDateObj = new Date(y, m - 1, d + 1);
+  const tomorrowStr = toISODateString(tomorrowDateObj);
+
+  const slotTomorrow = findSlotOnDate(tomorrowStr, dayStartMin);
+  const tomStartMin = slotTomorrow ? slotTomorrow.startMin : dayStartMin;
+  const tomorrowStartStr = formatMinutesTo12Hour(tomStartMin % 1440);
+  const tomorrowEndStr = addMinutesToTime(tomorrowStartStr, params.durationMinutes);
+  const crosses = taskCrossesMidnight(tomorrowStartStr, tomorrowEndStr);
+  const endDate = crosses ? getTaskEndDate(tomorrowStr, tomorrowStartStr, tomorrowEndStr) : tomorrowStr;
 
   return {
-    targetDate,
-    startTime: candidateStartStr,
-    endTime: candidateEndStr,
+    targetDate: tomorrowStr,
+    startTime: tomorrowStartStr,
+    endTime: tomorrowEndStr,
     durationMinutes: params.durationMinutes,
     crossesMidnight: crosses,
     endDate,
-    isNextDay: false,
-    isAfterExistingTask: isAfter
+    isNextDay: true,
+    isAfterExistingTask: slotTomorrow ? slotTomorrow.isAfterExistingTask : true
   };
 }
 
