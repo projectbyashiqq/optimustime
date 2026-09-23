@@ -91,7 +91,10 @@ export const AdminSettingsView: React.FC = () => {
     updateDefaultTaskSettings,
     timePeriodSettings,
     updateTimePeriodSettings,
-    resetTimePeriodsToDefault
+    resetTimePeriodsToDefault,
+    googleSheetsConfig,
+    setIsGoogleSheetsModalOpen,
+    syncGoogleSheets
   } = useApp();
 
   // Name of Time (Day Zones) States
@@ -2280,6 +2283,62 @@ export const AdminSettingsView: React.FC = () => {
           </div>
         </div>
         )}
+
+        {/* Google Sheets Direct 2-Way Sync Integration */}
+        <div className="glass-panel p-5 rounded-2xl border border-theme-border space-y-4 shadow-xs">
+          <div className="flex items-center justify-between border-b border-theme-border pb-3 flex-wrap gap-2">
+            <h3 className="text-sm font-bold text-theme-text uppercase tracking-wider flex items-center gap-2">
+              <FileSpreadsheet className="w-4 h-4 text-emerald-500" />
+              <span>Google Sheets 2-Way Sync</span>
+            </h3>
+            <span className={`text-[10px] font-black uppercase px-2 py-0.5 rounded-full font-mono border ${
+              googleSheetsConfig.isEnabled && googleSheetsConfig.webAppUrl
+                ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 border-emerald-300 dark:border-emerald-800'
+                : 'bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-300 border-amber-300 dark:border-amber-800'
+            }`}>
+              {googleSheetsConfig.isEnabled && googleSheetsConfig.webAppUrl ? 'Live Connected' : 'Setup Required'}
+            </span>
+          </div>
+
+          <div className="space-y-3 text-xs">
+            <p className="text-theme-muted leading-relaxed">
+              Synchronize tasks directly between OptimusTime and your personal Google Spreadsheet. Edits made in Google Sheets automatically update inside the app, and app changes push to your sheet in real-time.
+            </p>
+
+            <div className="p-3.5 rounded-xl bg-theme-card-hover/50 border border-theme-border flex items-center justify-between gap-3 flex-wrap">
+              <div>
+                <div className="font-bold text-theme-text text-xs flex items-center gap-1.5">
+                  <span className={`w-2 h-2 rounded-full ${googleSheetsConfig.isEnabled && googleSheetsConfig.webAppUrl ? 'bg-emerald-500' : 'bg-amber-500'}`} />
+                  <span>{googleSheetsConfig.webAppUrl ? 'Webhook URL Connected' : 'No Webhook URL Configured'}</span>
+                </div>
+                <div className="text-[11px] text-theme-muted mt-0.5">
+                  {googleSheetsConfig.lastSyncedAt
+                    ? `Last synchronized: ${new Date(googleSheetsConfig.lastSyncedAt).toLocaleString()}`
+                    : 'Click Configure & Guide to link your Google Spreadsheet in 3 minutes.'}
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 flex-wrap">
+                {googleSheetsConfig.webAppUrl && (
+                  <button
+                    onClick={() => syncGoogleSheets('two-way')}
+                    className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-bold text-xs shadow-xs transition-colors flex items-center gap-1.5"
+                  >
+                    <RefreshCw className="w-3.5 h-3.5" />
+                    <span>Sync Now</span>
+                  </button>
+                )}
+                <button
+                  onClick={() => setIsGoogleSheetsModalOpen(true)}
+                  className="px-3.5 py-1.5 bg-theme-card-hover hover:bg-theme-border text-theme-text rounded-lg font-bold text-xs transition-colors flex items-center gap-1.5 border border-theme-border"
+                >
+                  <Settings2 className="w-3.5 h-3.5 text-emerald-500" />
+                  <span>Configure & Guide</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
 
         {/* Complete 100% Data Backup & Recovery Hub */}
         {isCardVisible('backupHub') && (

@@ -18,7 +18,8 @@ import {
   RefreshCw, 
   Repeat,
   Sun,
-  Moon
+  Moon,
+  FileSpreadsheet
 } from 'lucide-react';
 import { ThemeName } from '../types';
 
@@ -43,7 +44,9 @@ export const Header: React.FC<HeaderProps> = ({ onOpenNewTaskModal, onOpenBatchT
     cloudSyncStatus,
     syncNow,
     openRecurringHub,
-    setActiveTab
+    setActiveTab,
+    googleSheetsConfig,
+    setIsGoogleSheetsModalOpen
   } = useApp();
 
   const [currentTime, setCurrentTime] = useState<Date>(() => getBangladeshNow());
@@ -266,6 +269,26 @@ export const Header: React.FC<HeaderProps> = ({ onOpenNewTaskModal, onOpenBatchT
                   : cloudSyncStatus === 'error'
                   ? 'Error'
                   : 'Local'}
+              </span>
+            </button>
+
+            {/* Google Sheets Sync Quick Button */}
+            <button
+              onClick={() => setIsGoogleSheetsModalOpen(true)}
+              className={`flex items-center gap-1.5 px-2 sm:px-2.5 py-1.5 rounded-full border text-xs font-semibold transition-all cursor-pointer shrink-0 active:scale-95 shadow-2xs ${
+                googleSheetsConfig.isEnabled && googleSheetsConfig.webAppUrl
+                  ? 'bg-emerald-500/10 border-emerald-500/25 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/20'
+                  : 'bg-theme-card-hover border-theme-border/80 text-theme-muted hover:text-theme-text'
+              }`}
+              title={
+                googleSheetsConfig.isEnabled && googleSheetsConfig.webAppUrl
+                  ? `Google Sheets Connected (Last synced: ${googleSheetsConfig.lastSyncedAt ? new Date(googleSheetsConfig.lastSyncedAt).toLocaleTimeString() : 'Never'})`
+                  : 'Google Sheets (Click to configure 2-way sync)'
+              }
+            >
+              <FileSpreadsheet className={`w-3.5 h-3.5 ${googleSheetsConfig.isEnabled && googleSheetsConfig.webAppUrl ? 'text-emerald-500' : 'text-theme-muted'}`} />
+              <span className="hidden xl:inline text-[11px]">
+                {googleSheetsConfig.isEnabled && googleSheetsConfig.webAppUrl ? 'Sheets' : 'Sheets'}
               </span>
             </button>
 

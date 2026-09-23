@@ -7,6 +7,7 @@ import {
   Reminder, 
   SecuritySettings, 
   CloudSyncConfig, 
+  GoogleSheetsSyncConfig,
   BufferStatusNote, 
   BufferCategoryItem,
   PlanProjectFolder,
@@ -91,6 +92,15 @@ export const DEFAULT_CLOUD_SYNC: CloudSyncConfig = {
   tableName: 'optimustime_sync',
   autoRealtimeSync: true,
   autoSmartMerge: true
+};
+
+export const DEFAULT_GOOGLE_SHEETS_SYNC: GoogleSheetsSyncConfig = {
+  isEnabled: false,
+  webAppUrl: '',
+  sheetName: 'OptimusTime Tasks',
+  autoSyncOnChange: true,
+  syncDirection: 'two-way',
+  autoFormatSheet: true
 };
 
 export const DEFAULT_SECURITY: SecuritySettings = {

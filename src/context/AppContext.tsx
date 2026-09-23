@@ -13,6 +13,7 @@ import {
   SubTask,
   SecuritySettings,
   CloudSyncConfig,
+  GoogleSheetsSyncConfig,
   CloudSyncStatus,
   LifeEventLog,
   LifeEventType,
@@ -56,8 +57,15 @@ import {
   INITIAL_PLAN_PROJECTS,
   DEFAULT_TASK_PRESETS,
   DEFAULT_TIME_PERIOD_SETTINGS,
-  DEFAULT_NAMED_TIME_PERIODS
+  DEFAULT_NAMED_TIME_PERIODS,
+  DEFAULT_GOOGLE_SHEETS_SYNC
 } from './initialData';
+import { 
+  testGoogleSheetsConnection, 
+  pushTasksToGoogleSheets, 
+  pullTasksFromGoogleSheets, 
+  twoWaySyncGoogleSheets 
+} from '../services/googleSheets';
 import { 
   generateProjectCode, 
   parse12HourToMinutes, 
@@ -253,6 +261,14 @@ interface AppContextType {
   resolveConflictWithCloud: () => Promise<void>;
   resolveConflictWithLocalForce: () => Promise<void>;
   resolveConflictWithMerge: () => Promise<void>;
+  
+  // Direct Google Sheets 2-Way Sync Engine
+  googleSheetsConfig: GoogleSheetsSyncConfig;
+  updateGoogleSheetsConfig: (partial: Partial<GoogleSheetsSyncConfig>) => void;
+  syncGoogleSheets: (direction?: 'two-way' | 'push' | 'pull') => Promise<{ ok: boolean; message: string }>;
+  testGoogleSheets: () => Promise<{ ok: boolean; message: string }>;
+  isGoogleSheetsModalOpen: boolean;
+  setIsGoogleSheetsModalOpen: (open: boolean) => void;
   
   // Backup / Restore & 100% System Data Hub
   exportStateJson: () => string;
@@ -707,6 +723,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   });
 
+  const [googleSheetsConfig, setGoogleSheetsConfig] = useState<GoogleSheetsSyncConfig>(() => {
+    try {
+      const saved = localStorage.getItem('optimustime_google_sheets_config');
+      return saved ? { ...DEFAULT_GOOGLE_SHEETS_SYNC, ...JSON.parse(saved) } : DEFAULT_GOOGLE_SHEETS_SYNC;
+    } catch {
+      return DEFAULT_GOOGLE_SHEETS_SYNC;
+    }
+  });
+
+  const [isGoogleSheetsModalOpen, setIsGoogleSheetsModalOpen] = useState(false);
+
   const [cloudSyncStatus, setCloudSyncStatus] = useState<CloudSyncStatus>(() => {
     return cloudSyncConfig.isEnabled ? 'connecting' : 'offline';
   });
@@ -779,6 +806,148 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setCloudSyncStatus('connecting');
     }
   }, []);
+
+  const updateGoogleSheetsConfig = useCallback((partial: Partial<GoogleSheetsSyncConfig>) => {
+    setGoogleSheetsConfig(prev => {
+      const updated = { ...prev, ...partial };
+      try {
+        localStorage.setItem('optimustime_google_sheets_config', JSON.stringify(updated));
+      } catch (e) {
+        console.error('Failed to save Google Sheets config:', e);
+      }
+      return updated;
+    });
+  }, []);
+
+  const testGoogleSheets = useCallback(async () => {
+    return await testGoogleSheetsConnection(googleSheetsConfig.webAppUrl);
+  }, [googleSheetsConfig.webAppUrl]);
+
+  const syncGoogleSheets = useCallback(async (direction: 'two-way' | 'push' | 'pull' = googleSheetsConfig.syncDirection || 'two-way') => {
+    if (!googleSheetsConfig.webAppUrl) {
+      return { ok: false, message: 'Google Apps Script Web App URL is not configured.' };
+    }
+
+    setGoogleSheetsConfig(prev => ({ ...prev, lastSyncStatus: 'syncing' }));
+
+    try {
+      if (direction === 'push') {
+        const res = await pushTasksToGoogleSheets(googleSheetsConfig.webAppUrl, tasks);
+        setGoogleSheetsConfig(prev => {
+          const updated: GoogleSheetsSyncConfig = {
+            ...prev,
+            lastSyncedAt: res.timestamp || new Date().toISOString(),
+            lastSyncStatus: res.ok ? 'success' : 'error',
+            lastSyncMessage: res.message
+          };
+          try { localStorage.setItem('optimustime_google_sheets_config', JSON.stringify(updated)); } catch {}
+          return updated;
+        });
+        return res;
+      }
+
+      if (direction === 'pull') {
+        const res = await pullTasksFromGoogleSheets(googleSheetsConfig.webAppUrl);
+        if (res.ok && res.tasks) {
+          setTasks(res.tasks);
+          setGoogleSheetsConfig(prev => {
+            const updated: GoogleSheetsSyncConfig = {
+              ...prev,
+              lastSyncedAt: res.timestamp || new Date().toISOString(),
+              lastSyncStatus: 'success',
+              lastSyncMessage: res.message
+            };
+            try { localStorage.setItem('optimustime_google_sheets_config', JSON.stringify(updated)); } catch {}
+            return updated;
+          });
+        } else {
+          setGoogleSheetsConfig(prev => {
+            const updated: GoogleSheetsSyncConfig = {
+              ...prev,
+              lastSyncStatus: 'error',
+              lastSyncMessage: res.message
+            };
+            try { localStorage.setItem('optimustime_google_sheets_config', JSON.stringify(updated)); } catch {}
+            return updated;
+          });
+        }
+        return res;
+      }
+
+      // Default: two-way
+      const res = await twoWaySyncGoogleSheets(googleSheetsConfig.webAppUrl, tasks);
+      if (res.ok && res.mergedTasks) {
+        setTasks(res.mergedTasks);
+        setGoogleSheetsConfig(prev => {
+          const updated: GoogleSheetsSyncConfig = {
+            ...prev,
+            lastSyncedAt: res.timestamp || new Date().toISOString(),
+            lastSyncStatus: 'success',
+            lastSyncMessage: res.message
+          };
+          try { localStorage.setItem('optimustime_google_sheets_config', JSON.stringify(updated)); } catch {}
+          return updated;
+        });
+      } else {
+        setGoogleSheetsConfig(prev => {
+          const updated: GoogleSheetsSyncConfig = {
+            ...prev,
+            lastSyncStatus: 'error',
+            lastSyncMessage: res.message
+          };
+          try { localStorage.setItem('optimustime_google_sheets_config', JSON.stringify(updated)); } catch {}
+          return updated;
+        });
+      }
+      return res;
+    } catch (err: any) {
+      const errMsg = err.message || 'Sync failed.';
+      setGoogleSheetsConfig(prev => {
+        const updated: GoogleSheetsSyncConfig = {
+          ...prev,
+          lastSyncStatus: 'error',
+          lastSyncMessage: errMsg
+        };
+        try { localStorage.setItem('optimustime_google_sheets_config', JSON.stringify(updated)); } catch {}
+        return updated;
+      });
+      return { ok: false, message: errMsg };
+    }
+  }, [googleSheetsConfig, tasks]);
+
+  // Debounced auto-sync to Google Sheets on task changes (if enabled)
+  const isInitialSheetsMount = useRef(true);
+  useEffect(() => {
+    if (isInitialSheetsMount.current) {
+      isInitialSheetsMount.current = false;
+      return;
+    }
+
+    if (!googleSheetsConfig.isEnabled || !googleSheetsConfig.webAppUrl || !googleSheetsConfig.autoSyncOnChange) {
+      return;
+    }
+
+    const timer = setTimeout(() => {
+      pushTasksToGoogleSheets(googleSheetsConfig.webAppUrl, tasks).then(res => {
+        if (res.ok) {
+          setGoogleSheetsConfig(prev => {
+            const updated: GoogleSheetsSyncConfig = {
+              ...prev,
+              lastSyncedAt: res.timestamp || new Date().toISOString(),
+              lastSyncStatus: 'success',
+              lastSyncMessage: 'Auto-synced to Google Sheets'
+            };
+            try { localStorage.setItem('optimustime_google_sheets_config', JSON.stringify(updated)); } catch {}
+            return updated;
+          });
+        }
+      }).catch(err => {
+        console.warn('Google Sheets auto-sync notice:', err);
+      });
+    }, 3500);
+
+    return () => clearTimeout(timer);
+  }, [tasks, googleSheetsConfig.isEnabled, googleSheetsConfig.webAppUrl, googleSheetsConfig.autoSyncOnChange]);
 
   const stateRef = useRef({
     tasks,
@@ -3599,6 +3768,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         resolveConflictWithCloud,
         resolveConflictWithLocalForce,
         resolveConflictWithMerge,
+        googleSheetsConfig,
+        updateGoogleSheetsConfig,
+        syncGoogleSheets,
+        testGoogleSheets,
+        isGoogleSheetsModalOpen,
+        setIsGoogleSheetsModalOpen,
         exportStateJson,
         exportSettingsOnlyJson,
         importStateJson,

@@ -326,6 +326,18 @@ export interface CloudSyncConfig {
   autoSmartMerge?: boolean; // When true (default), automatically merges concurrent changes without modal banner
 }
 
+export interface GoogleSheetsSyncConfig {
+  isEnabled: boolean;
+  webAppUrl: string; // The deployed Google Apps Script Web App URL
+  sheetName: string; // Default: 'OptimusTime Tasks'
+  lastSyncedAt?: string;
+  lastSyncStatus?: 'success' | 'error' | 'syncing' | 'idle';
+  lastSyncMessage?: string;
+  autoSyncOnChange: boolean;
+  syncDirection: 'two-way' | 'push' | 'pull';
+  autoFormatSheet: boolean;
+}
+
 export type BufferActivityTag = string;
 
 export interface BufferCategoryItem {

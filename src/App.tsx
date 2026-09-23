@@ -9,6 +9,7 @@ import { BufferNoteModal } from './components/BufferNoteModal';
 import { RecurringDeleteModal } from './components/RecurringDeleteModal';
 import { RecurringManagerModal } from './components/RecurringManagerModal';
 import { BackupRestoreModal } from './components/BackupRestoreModal';
+import { GoogleSheetsSyncModal } from './components/GoogleSheetsSyncModal';
 import { BatchTaskModal } from './components/BatchTaskModal';
 import { DashboardView } from './views/DashboardView';
 import { TimeTracker24View } from './views/TimeTracker24View';
@@ -181,6 +182,9 @@ export const AppContent: React.FC = () => {
 
       {/* 100% System Backup & Data Recovery Hub Modal */}
       <BackupRestoreModal />
+
+      {/* Official Google Sheets 2-Way Sync Modal */}
+      <GoogleSheetsSyncModal />
 
       {/* Batch Task Importer Modal (Text, Excel, CSV) */}
       <BatchTaskModal
