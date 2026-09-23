@@ -39,6 +39,7 @@ import {
   CheckCircle2, 
   Clock, 
   AlertTriangle, 
+  AlertCircle,
   Plus, 
   Layers, 
   Calendar, 
@@ -416,38 +417,127 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
       if (!matchTitle && !matchCode && !matchDesc) return false;
     }
     return true;
-  }).sort((a, b) => {
+  });
+
+  const isSelectedToday = selectedDate === toISODateString(nowTime);
+
+  // Industry Gold-Standard Hierarchy:
+  // Tier 1: Due & Active Now (Working, in running slot, or past due pending)
+  // Tier 2: Imminent Scheduled Tasks (starting within next 2 hours from current time)
+  // Tier 3: Flexible Buffer Mode Tasks (tasks with no fixed time slot, priority-ordered)
+  // Tier 4: Later Scheduled Tasks (starting > 2 hours away)
+  // Tier 5: Incomplete Tasks (sunk to Incomplete Queue)
+  const getTaskScheduleTier = (task: Task): number => {
+    if (task.status === 'Incomplete') {
+      return 5;
+    }
+    if (task.status === 'Done' || task.status === 'Terminated') {
+      return 6;
+    }
+
+    if (!isSelectedToday) {
+      if (isNoTimeTask(task)) return 3;
+      return 4;
+    }
+
+    const isWorking = task.status === 'Working';
+    const isNoTime = isNoTimeTask(task);
+
+    if (isWorking) {
+      return 1;
+    }
+
+    if (!isNoTime) {
+      const isPastDue = isTaskPastDue(task.taskDate, task.startTime, task.endTime, nowTime);
+      const isRunningSlot = isTaskInRunningSlot(task.taskDate, task.startTime, task.endTime, nowTime);
+
+      if (task.status === 'Pending' && (isPastDue || isRunningSlot)) {
+        return 1;
+      }
+
+      const curMin = nowTime.getHours() * 60 + nowTime.getMinutes();
+      const startMin = parse12HourToMinutes(task.startTime);
+      const diffMin = startMin - curMin;
+
+      // Starts within the next 2 hours (0 to 120 minutes from now)
+      if (diffMin >= 0 && diffMin <= 120) {
+        return 2;
+      }
+
+      return 4;
+    }
+
+    // Flexible Buffer Task (no fixed time slot)
+    return 3;
+  };
+
+  const pWeight: Record<PriorityLevel, number> = { P1: 1, P2: 2, P3: 3, P4: 4, P5: 5 };
+
+  dateTasks.sort((a, b) => {
+    // Priority-Based Mode: Strictly order by Priority (P1 -> P5), then tiers, then time
+    if (dashboardMode === 'priority') {
+      if (pWeight[a.priority] !== pWeight[b.priority]) {
+        return pWeight[a.priority] - pWeight[b.priority];
+      }
+      const aTier = getTaskScheduleTier(a);
+      const bTier = getTaskScheduleTier(b);
+      if (aTier !== bTier) {
+        return aTier - bTier;
+      }
+      return parse12HourToMinutes(a.startTime) - parse12HourToMinutes(b.startTime);
+    }
+
+    // Time-Based Mode (Default Industry Gold-Standard):
+    // 1. Incompleted tasks automatically sink down to the bottom
     const aIncomplete = a.status === 'Incomplete';
     const bIncomplete = b.status === 'Incomplete';
-
-    // 1. Incompleted tasks automatically sink down to the bottom
     if (aIncomplete !== bIncomplete) {
       return aIncomplete ? 1 : -1;
     }
 
-    // 2. Free Time / Anytime tasks (P5 Noise with no fixed time) sink to the end of active tasks
-    const aNoTime = isNoTimeTask(a);
-    const bNoTime = isNoTimeTask(b);
-    if (aNoTime !== bNoTime) {
-      return aNoTime ? 1 : -1;
+    // 2. Schedule Tiers: Tier 1 (Due) -> Tier 2 (Next 2 Hours) -> Tier 3 (Flexible Buffer) -> Tier 4 (Later)
+    const aTier = getTaskScheduleTier(a);
+    const bTier = getTaskScheduleTier(b);
+    if (aTier !== bTier) {
+      return aTier - bTier;
     }
 
-    // 3. Priority-Based Mode: Strictly order by Priority (P1 -> P2 -> P3 -> P4 -> P5), then by time
-    if (dashboardMode === 'priority') {
-      const pWeight: Record<PriorityLevel, number> = { P1: 1, P2: 2, P3: 3, P4: 4, P5: 5 };
+    // Within Tier 1 (Due & In-Progress): Order by Priority (P1 -> P5), then startTime
+    if (aTier === 1) {
       if (pWeight[a.priority] !== pWeight[b.priority]) {
         return pWeight[a.priority] - pWeight[b.priority];
       }
       return parse12HourToMinutes(a.startTime) - parse12HourToMinutes(b.startTime);
     }
 
-    // 4. Time-Based Mode (Default): Strictly order chronologically by startTime
-    return parse12HourToMinutes(a.startTime) - parse12HourToMinutes(b.startTime);
+    // Within Tier 2 (Next 2 Hours): Order chronologically by startTime, then Priority
+    if (aTier === 2) {
+      const timeDiff = parse12HourToMinutes(a.startTime) - parse12HourToMinutes(b.startTime);
+      if (timeDiff !== 0) return timeDiff;
+      return pWeight[a.priority] - pWeight[b.priority];
+    }
+
+    // Within Tier 3 (Flexible Buffer Mode): Order strictly by Priority (P1 -> P5)
+    if (aTier === 3) {
+      if (pWeight[a.priority] !== pWeight[b.priority]) {
+        return pWeight[a.priority] - pWeight[b.priority];
+      }
+      return a.title.localeCompare(b.title);
+    }
+
+    // Within Tier 4 (Later Scheduled): Order chronologically by startTime, then Priority
+    if (aTier === 4) {
+      const timeDiff = parse12HourToMinutes(a.startTime) - parse12HourToMinutes(b.startTime);
+      if (timeDiff !== 0) return timeDiff;
+      return pWeight[a.priority] - pWeight[b.priority];
+    }
+
+    return pWeight[a.priority] - pWeight[b.priority];
   });
 
-  // Separate timed tasks from tasks without fixed times (flexible buffer tasks)
-  const timedDateTasks = dateTasks.filter(t => !isReminderCategory(t.category) && !isNoteCategory(t.category) && !isNoTimeTask(t));
-  const noTimeDateTasks = dateTasks.filter(t => !isReminderCategory(t.category) && !isNoteCategory(t.category) && isNoTimeTask(t));
+  // Timeline tasks include timed tasks and flexible buffer tasks (Reminders & Notes have their own widgets)
+  const timedDateTasks = dateTasks.filter(t => !isReminderCategory(t.category) && !isNoteCategory(t.category));
+  const noTimeDateTasks: Task[] = [];
 
   // Find Gaps in today's schedule (strictly bounded to working hours, protecting sleep window)
   const wakingStart = capacitySettings.dayStartTime || '06:00 AM';
@@ -1078,9 +1168,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
               <div className="w-10 h-10 rounded-xl bg-blue-50 dark:bg-blue-950/40 text-blue-500 mx-auto flex items-center justify-center">
                 <Clock className="w-5 h-5" />
               </div>
-              <h4 className="text-xs sm:text-sm font-bold text-theme-text">No Timed Tasks Scheduled For This Day</h4>
+              <h4 className="text-xs sm:text-sm font-bold text-theme-text">No Active Tasks Scheduled For This Day</h4>
               <p className="text-xs text-theme-muted max-w-sm mx-auto">
-                Schedule a specific time-box slot or work from your Available Buffer Zone above.
+                Schedule a specific time-box slot or create a task in Flexible Buffer Mode.
               </p>
               <button
                 onClick={() => onOpenTaskModal(undefined, selectedDate)}
@@ -1112,10 +1202,65 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
                     const isInSleep = isTaskInSleepWindow(task, capacitySettings);
 
                     const isFirstIncomplete = isIncomplete && (idx === 0 || arr[idx - 1].status !== 'Incomplete');
-                    const isNoTime = false;
+                    const isNoTime = isNoTimeTask(task);
+
+                    // Gold-Standard Tier Transitions (When viewing Today in time mode, or across priority)
+                    const currentTier = getTaskScheduleTier(task);
+                    const prevTier = idx > 0 ? getTaskScheduleTier(arr[idx - 1]) : null;
+                    const isFirstOfTier = (idx === 0 || currentTier !== prevTier);
+                    const showTierDivider = dashboardMode === 'time' && isFirstOfTier;
 
                     return (
                       <React.Fragment key={task.id}>
+                        {/* Tier 1 Header: Due & In-Progress */}
+                        {showTierDivider && currentTier === 1 && isSelectedToday && isDue && (
+                          <div className="pt-2 pb-1.5 flex items-center gap-2">
+                            <div className="h-px bg-amber-400/60 dark:bg-amber-800/60 flex-1" />
+                            <span className="text-[11px] font-black uppercase tracking-wider text-amber-800 dark:text-amber-300 font-display flex items-center gap-1.5 px-3.5 py-1 bg-amber-100/70 dark:bg-amber-950/70 rounded-full border border-amber-300 dark:border-amber-800 shadow-2xs">
+                              <AlertTriangle className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 animate-pulse" />
+                              <span>Due & In-Progress</span>
+                            </span>
+                            <div className="h-px bg-amber-400/60 dark:bg-amber-800/60 flex-1" />
+                          </div>
+                        )}
+
+                        {/* Tier 2 Header: Upcoming Next 2 Hours */}
+                        {showTierDivider && currentTier === 2 && isSelectedToday && idx > 0 && (
+                          <div className="pt-3 pb-1.5 flex items-center gap-2">
+                            <div className="h-px bg-blue-300/60 dark:bg-blue-900/60 flex-1" />
+                            <span className="text-[11px] font-black uppercase tracking-wider text-blue-700 dark:text-blue-300 font-display flex items-center gap-1.5 px-3.5 py-1 bg-blue-50 dark:bg-blue-950/60 rounded-full border border-blue-200 dark:border-blue-900/60 shadow-2xs">
+                              <Timer className="w-3.5 h-3.5 text-blue-500" />
+                              <span>Upcoming • Next 2 Hours</span>
+                            </span>
+                            <div className="h-px bg-blue-300/60 dark:bg-blue-900/60 flex-1" />
+                          </div>
+                        )}
+
+                        {/* Tier 3 Header: Flexible Buffer Tasks (Mid Position) */}
+                        {showTierDivider && currentTier === 3 && (
+                          <div className="pt-3 pb-1.5 flex items-center gap-2">
+                            <div className="h-px bg-emerald-400/60 dark:bg-emerald-800/60 flex-1" />
+                            <span className="text-[11px] font-black uppercase tracking-wider text-emerald-800 dark:text-emerald-300 font-display flex items-center gap-1.5 px-3.5 py-1 bg-emerald-100/80 dark:bg-emerald-950/80 rounded-full border border-emerald-300 dark:border-emerald-800 shadow-2xs">
+                              <Coffee className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 stroke-[2.5]" />
+                              <span>Flexible Buffer Tasks (Priority-Ordered: P1 → P5)</span>
+                            </span>
+                            <div className="h-px bg-emerald-400/60 dark:bg-emerald-800/60 flex-1" />
+                          </div>
+                        )}
+
+                        {/* Tier 4 Header: Scheduled Later Today (> 2 Hours away) */}
+                        {showTierDivider && currentTier === 4 && idx > 0 && (
+                          <div className="pt-3 pb-1.5 flex items-center gap-2">
+                            <div className="h-px bg-theme-border flex-1" />
+                            <span className="text-[11px] font-bold uppercase tracking-wider text-theme-muted font-display flex items-center gap-1.5 px-3.5 py-1 bg-theme-card rounded-full border border-theme-border shadow-2xs">
+                              <Clock className="w-3.5 h-3.5 text-theme-muted" />
+                              <span>Scheduled Later Today</span>
+                            </span>
+                            <div className="h-px bg-theme-border flex-1" />
+                          </div>
+                        )}
+
+                        {/* Tier 5 Header: Incomplete Queue */}
                         {isFirstIncomplete && (
                           <div className="pt-4 pb-1.5 flex items-center gap-2">
                             <div className="h-px bg-red-300/60 dark:bg-red-900/60 flex-1" />
@@ -1141,9 +1286,11 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
                                     ? 'bg-theme-card border-blue-500/80 shadow-lg shadow-blue-500/15 ring-1 ring-blue-500/40 card-working-ambient'
                                     : isRunning
                                       ? 'bg-theme-card border-blue-400/60 shadow-md ring-1 ring-blue-400/30'
-                                      : isSimultaneous
-                                        ? 'bg-theme-card border-purple-300 dark:border-purple-800 hover:shadow-md'
-                                        : 'bg-theme-card border-theme-border hover:border-blue-300 dark:hover:border-blue-700 hover:shadow-md'
+                                      : isNoTime
+                                        ? 'bg-gradient-to-r from-emerald-500/[0.04] via-theme-card to-teal-500/[0.03] border-emerald-400/50 dark:border-emerald-700/50 hover:border-emerald-500 shadow-2xs'
+                                        : isSimultaneous
+                                          ? 'bg-theme-card border-purple-300 dark:border-purple-800 hover:shadow-md'
+                                          : 'bg-theme-card border-theme-border hover:border-blue-300 dark:hover:border-blue-700 hover:shadow-md'
                             }`}
                           >
                             {/* Seamless Card Border State: Pulsing Left Accent Bar when Working */}
@@ -1394,6 +1541,15 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
                                         }`}>
                                           <Hourglass className="w-3 h-3 animate-spin" />
                                           <span>{isOvertime ? `Overtime: +${timeFormatted}` : `Countdown: ${timeFormatted} left`}</span>
+                                        </span>
+                                      );
+                                    }
+
+                                    if (isNoTime && task.status === 'Pending') {
+                                      return (
+                                        <span className="text-[11px] font-mono font-bold px-2 py-0.5 rounded-lg border flex items-center gap-1 text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/60 border-emerald-200 dark:border-emerald-800 shadow-2xs">
+                                          <Coffee className="w-3 h-3 text-emerald-600 dark:text-emerald-400" />
+                                          <span>Flexible Buffer</span>
                                         </span>
                                       );
                                     }
