@@ -650,7 +650,7 @@ export const AllTasksView: React.FC<AllTasksViewProps> = ({ onOpenTaskModal, onO
     return (
       <div
         key={task.id}
-        className={`px-3.5 py-2.5 sm:py-3 rounded-xl border transition-all duration-200 relative overflow-hidden ${
+        className={`px-3.5 py-2 sm:py-2.5 rounded-xl border transition-all duration-200 relative overflow-hidden ${
           isInSleep
             ? isDue
               ? 'card-night-due'
@@ -694,13 +694,13 @@ export const AllTasksView: React.FC<AllTasksViewProps> = ({ onOpenTaskModal, onO
                   className={`cursor-pointer hover:text-blue-600 transition-colors ${
                     isInSleep
                       ? isWorking
-                        ? 'card-night-working-title text-sm sm:text-base font-bold font-display leading-tight truncate'
-                        : 'card-night-title text-sm sm:text-base font-bold font-display leading-tight truncate'
+                        ? 'card-night-working-title text-base sm:text-lg font-bold font-display leading-tight truncate'
+                        : 'card-night-title text-base sm:text-lg font-bold font-display leading-tight truncate'
                       : task.status === 'Done'
-                        ? 'text-sm sm:text-base font-bold line-through text-theme-muted opacity-75 truncate'
+                        ? 'text-base sm:text-lg font-bold line-through text-theme-muted opacity-75 truncate'
                         : isWorking
-                          ? 'text-sm sm:text-base font-bold text-blue-600 dark:text-blue-400 font-display leading-tight truncate'
-                          : 'text-sm sm:text-base font-bold text-theme-text font-display leading-tight truncate'
+                          ? 'text-base sm:text-lg font-bold text-blue-600 dark:text-blue-400 font-display leading-tight truncate'
+                          : 'text-base sm:text-lg font-bold text-theme-text font-display leading-tight truncate'
                   }`}
                   title={task.title}
                 >
@@ -826,25 +826,8 @@ export const AllTasksView: React.FC<AllTasksViewProps> = ({ onOpenTaskModal, onO
                     <span>{isWorking ? (isInSleep ? '⚡ NIGHT WORKING' : '⚡ WORKING NOW') : '⚡ RUNNING TIME'}</span>
                   </span>
                 ) : null}
-              </div>
 
-              {/* Simultaneous Co-Running Twin Details */}
-              {isSimultaneous && simultaneousList.length > 0 && (
-                <div className="text-[11px] font-semibold text-purple-700 dark:text-purple-300 bg-purple-50/80 dark:bg-purple-950/40 px-2.5 py-1 rounded-lg border border-purple-200/80 dark:border-purple-800/80 flex items-center gap-1.5 flex-wrap">
-                  <span className="font-bold flex items-center gap-1">
-                    <Zap className="w-3 h-3 text-purple-600 dark:text-purple-400" />
-                    Co-Running Twin:
-                  </span>
-                  {simultaneousList.map(st => (
-                    <span key={st.id} className="font-mono font-bold text-blue-600 dark:text-blue-400">
-                      {st.projectCode}: {st.title} ({st.startTime}-{st.endTime})
-                    </span>
-                  ))}
-                </div>
-              )}
-
-              {/* Live Status Badge + Countdown Pill */}
-              <div className="flex items-center gap-1.5 flex-wrap py-0.5">
+                {/* Live Status Badge + Countdown Pill (inline in metadata row) */}
                 <select
                   value={task.status}
                   onChange={(e) => handleStatusChange(task, e.target.value as TaskStatus)}
@@ -938,6 +921,21 @@ export const AllTasksView: React.FC<AllTasksViewProps> = ({ onOpenTaskModal, onO
                   return null;
                 })()}
               </div>
+
+              {/* Simultaneous Co-Running Twin Details */}
+              {isSimultaneous && simultaneousList.length > 0 && (
+                <div className="text-[11px] font-semibold text-purple-700 dark:text-purple-300 bg-purple-50/80 dark:bg-purple-950/40 px-2.5 py-1 rounded-lg border border-purple-200/80 dark:border-purple-800/80 flex items-center gap-1.5 flex-wrap">
+                  <span className="font-bold flex items-center gap-1">
+                    <Zap className="w-3 h-3 text-purple-600 dark:text-purple-400" />
+                    Co-Running Twin:
+                  </span>
+                  {simultaneousList.map(st => (
+                    <span key={st.id} className="font-mono font-bold text-blue-600 dark:text-blue-400">
+                      {st.projectCode}: {st.title} ({st.startTime}-{st.endTime})
+                    </span>
+                  ))}
+                </div>
+              )}
 
               {task.description && (
                 <p className={`text-xs sm:text-sm line-clamp-1 font-normal ${

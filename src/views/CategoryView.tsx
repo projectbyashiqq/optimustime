@@ -791,7 +791,7 @@ export const CategoryView: React.FC<CategoryViewProps> = ({ onOpenTaskModal }) =
                       return (
                         <div
                           key={task.id}
-                          className={`p-4 rounded-2xl border transition-all duration-200 relative overflow-hidden ${
+                          className={`px-3.5 py-2 sm:py-2.5 rounded-xl border transition-all duration-200 relative overflow-hidden ${
                             isDue
                               ? 'bg-red-50/30 dark:bg-red-950/20 border-red-300 dark:border-red-900/60 shadow-sm'
                               : isWorking
@@ -831,7 +831,11 @@ export const CategoryView: React.FC<CategoryViewProps> = ({ onOpenTaskModal }) =
                                 
                                 {/* Title + Duration */}
                                 <div className="flex items-baseline gap-2 flex-wrap">
-                                  <h4 className={getTaskTitleClasses(task.title, task.status === 'Done', false, isWorking)}>
+                                  <h4 className={`text-base sm:text-lg font-bold font-display leading-tight truncate ${
+    task.status === 'Done' ? 'line-through text-theme-muted opacity-75' :
+    isWorking ? 'text-blue-600 dark:text-blue-400' :
+    'text-theme-text'
+  }`}>
                                     {task.title}
                                   </h4>
                                   <span className="font-mono text-xs font-bold px-2 py-0.5 rounded-md border text-theme-muted bg-theme-card-hover/80 border-theme-border shadow-2xs">
@@ -888,10 +892,8 @@ export const CategoryView: React.FC<CategoryViewProps> = ({ onOpenTaskModal }) =
                                       <span>{isIncomplete ? 'INCOMPLETE' : 'OVERDUE'}</span>
                                     </span>
                                   )}
-                                </div>
 
-                                {/* Live Status Badge */}
-                                <div className="flex items-center gap-1.5 flex-wrap py-0.5">
+                                  {/* Live Status Badge (inline in metadata row) */}
                                   <select
                                     value={task.status}
                                     onChange={(e) => handleStatusChange(task, e.target.value as TaskStatus)}

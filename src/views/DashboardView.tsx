@@ -1272,7 +1272,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
                           </div>
                         )}
                           <div
-                            className={`px-3.5 py-2.5 sm:py-3 rounded-xl border transition-all duration-200 relative overflow-hidden ${
+                            className={`px-3.5 py-2 sm:py-2.5 rounded-xl border transition-all duration-200 relative overflow-hidden ${
                               isInSleep && !isNoTime
                                 ? isDue
                                   ? 'card-night-due'
@@ -1477,26 +1477,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
                                         <span>{isWorking ? (isInSleep && !isNoTime ? '⚡ NIGHT WORKING' : '⚡ WORKING NOW') : '⚡ RUNNING TIME'}</span>
                                       </span>
                                     ) : null}
-                                  </div>
 
-                                {/* Simultaneous Co-Running Twin Details */}
-                                {isSimultaneous && (
-                                  <div className="text-[11px] font-semibold text-purple-700 dark:text-purple-300 bg-purple-50/80 dark:bg-purple-950/40 px-2.5 py-1 rounded-lg border border-purple-200/80 dark:border-purple-800/80 flex items-center gap-1.5 flex-wrap">
-                                    <span className="font-bold flex items-center gap-1">
-                                      <Zap className="w-3 h-3 text-purple-600 dark:text-purple-400" />
-                                      Co-Running Twin:
-                                    </span>
-                                    {simultaneousList.map(st => (
-                                      <span key={st.id} className="font-mono font-bold text-blue-600 dark:text-blue-400">
-                                        {st.projectCode}: {st.title} ({st.startTime}-{st.endTime})
-                                      </span>
-                                    ))}
-                                  </div>
-                                )}
-
-                                {/* Live Status Badge + Countdown Pill */}
-                                <div className="flex items-center gap-1.5 flex-wrap py-0.5">
-                                  <select
+                                    {/* Live Status Badge + Countdown Pill (inline in metadata row) */}
+                                    <select
                                     value={task.status}
                                     onChange={(e) => handleStatusChange(task, e.target.value as TaskStatus)}
                                     className={`text-[10px] sm:text-[11px] font-bold px-2 py-0.5 rounded-lg border cursor-pointer focus:outline-none transition-colors ${
@@ -1622,6 +1605,21 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
                                     )
                                   ) : null}
                                 </div>
+
+                                {/* Simultaneous Co-Running Twin Details */}
+                                {isSimultaneous && (
+                                  <div className="text-[11px] font-semibold text-purple-700 dark:text-purple-300 bg-purple-50/80 dark:bg-purple-950/40 px-2.5 py-1 rounded-lg border border-purple-200/80 dark:border-purple-800/80 flex items-center gap-1.5 flex-wrap">
+                                    <span className="font-bold flex items-center gap-1">
+                                      <Zap className="w-3 h-3 text-purple-600 dark:text-purple-400" />
+                                      Co-Running Twin:
+                                    </span>
+                                    {simultaneousList.map(st => (
+                                      <span key={st.id} className="font-mono font-bold text-blue-600 dark:text-blue-400">
+                                        {st.projectCode}: {st.title} ({st.startTime}-{st.endTime})
+                                      </span>
+                                    ))}
+                                  </div>
+                                )}
 
                                 {task.description && (
                                   <p className={`text-xs sm:text-sm line-clamp-1 font-normal ${
@@ -1780,7 +1778,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
                               <div className="flex items-center gap-2 flex-wrap">
                                 <h4
                                   onClick={() => onOpenTaskModal(task)}
-                                  className={`cursor-pointer hover:text-blue-600 transition-colors text-sm sm:text-base font-bold font-display leading-tight truncate ${
+                                  className={`cursor-pointer hover:text-blue-600 transition-colors text-base sm:text-lg font-bold font-display leading-tight truncate ${
                                     task.status === 'Done' ? 'line-through text-theme-muted opacity-75' :
                                     task.status === 'Working' ? 'text-blue-600 dark:text-blue-400' :
                                     'text-theme-text'
@@ -1789,18 +1787,6 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
                                 >
                                   {task.title}
                                 </h4>
-                                {task.appointedMinutes > 0 && (
-                                  <span className="font-mono text-[10px] sm:text-[11px] font-semibold px-1.5 py-0.2 rounded border shadow-2xs text-theme-muted bg-theme-card-hover/80 border-theme-border">
-                                    ~{task.appointedMinutes}m
-                                  </span>
-                                )}
-                              </div>
-
-                              {/* Context: Project Code, Category, Buffer pill, Assign Slot button - WITHOUT TIMES */}
-                              <div className="flex items-center gap-2 flex-wrap text-xs">
-                                <span className="text-[11px] font-mono font-bold text-theme-muted hover:text-blue-500">
-                                  {task.projectCode}
-                                </span>
 
                                 <CategoryBadge 
                                   categoryName={task.category} 
@@ -1815,6 +1801,19 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
                                   size="sm"
                                 />
 
+                                {task.appointedMinutes > 0 && (
+                                  <span className="font-mono text-[10px] sm:text-[11px] font-semibold px-1.5 py-0.2 rounded border shadow-2xs text-theme-muted bg-theme-card-hover/80 border-theme-border">
+                                    ~{task.appointedMinutes}m
+                                  </span>
+                                )}
+                              </div>
+
+                              {/* Context: Project Code, Buffer pill, Assign Slot button, Status Dropdown & Live Timer */}
+                              <div className="flex items-center gap-2 flex-wrap text-xs">
+                                <span className="text-[11px] font-mono font-bold text-theme-muted hover:text-blue-500">
+                                  {task.projectCode}
+                                </span>
+
                                 <span className="text-[10px] font-mono font-semibold px-2 py-0.5 rounded-full bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 flex items-center gap-1">
                                   <span>🌿 In Buffer Zone</span>
                                 </span>
@@ -1827,10 +1826,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
                                   <Clock className="w-3 h-3" />
                                   <span>Assign Slot</span>
                                 </button>
-                              </div>
 
-                              {/* Status Dropdown & Live Timer */}
-                              <div className="flex items-center gap-1.5 flex-wrap py-0.5">
                                 <select
                                   value={task.status}
                                   onChange={(e) => handleStatusChange(task, e.target.value as TaskStatus)}
