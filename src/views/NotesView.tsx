@@ -10,7 +10,8 @@ import {
   shouldRolloverToNextDay,
   formatDisplayDate,
   isNoteCategory,
-  isReminderCategory
+  isReminderCategory,
+  getBangladeshNow
 } from '../utils/timeUtils';
 import { 
   StickyNote, 
@@ -133,8 +134,10 @@ export const NotesView: React.FC<NotesViewProps> = ({ onOpenTaskModal }) => {
     return tasks.filter(t => isReminderCategory(t.category));
   }, [tasks]);
 
-  // Filter Notes by search and status - Sorted Recent First
+  // Filter Notes by search and status - Sorted Upcoming & Recently Created/Updated First
   const filteredNotes = useMemo(() => {
+    const todayIso = toISODateString(getBangladeshNow());
+
     return allNotes
       .filter(t => {
         if (statusFilter === 'ACTIVE' && (t.status === 'Done' || t.status === 'Terminated')) return false;
@@ -148,22 +151,46 @@ export const NotesView: React.FC<NotesViewProps> = ({ onOpenTaskModal }) => {
         return true;
       })
       .sort((a, b) => {
-        const mul = sortOrder === 'recent' ? 1 : -1;
-        // 1. Primary: Task Date (most recent event/note date first)
-        const dateComp = (b.taskDate || '').localeCompare(a.taskDate || '');
-        if (dateComp !== 0) return dateComp * mul;
+        if (sortOrder === 'recent') {
+          const isUpcomingA = (a.taskDate || '') >= todayIso;
+          const isUpcomingB = (b.taskDate || '') >= todayIso;
 
-        // 2. Secondary: Creation / Added timestamp descending
-        const addedA = a.dateAdded ? new Date(a.dateAdded).getTime() : 0;
-        const addedB = b.dateAdded ? new Date(b.dateAdded).getTime() : 0;
-        if (addedA !== addedB) return (addedB - addedA) * mul;
+          // 1. Upcoming & Today notes come BEFORE past notes
+          if (isUpcomingA && !isUpcomingB) return -1;
+          if (!isUpcomingA && isUpcomingB) return 1;
 
-        // 3. Tertiary: Start time descending
-        return (b.startTime || '').localeCompare(a.startTime || '') * mul;
+          // 2. Among upcoming notes: closest date to today first (ascending)
+          if (isUpcomingA && isUpcomingB) {
+            const dateComp = (a.taskDate || '').localeCompare(b.taskDate || '');
+            if (dateComp !== 0) return dateComp;
+
+            // On the same date: most recently added/created first!
+            const addedA = a.dateAdded ? new Date(a.dateAdded).getTime() : 0;
+            const addedB = b.dateAdded ? new Date(b.dateAdded).getTime() : 0;
+            if (addedA !== addedB) return addedB - addedA;
+
+            return (a.startTime || '').localeCompare(b.startTime || '');
+          }
+
+          // 3. Among past notes: most recent past first (descending date)
+          const pastDateComp = (b.taskDate || '').localeCompare(a.taskDate || '');
+          if (pastDateComp !== 0) return pastDateComp;
+
+          const addedA = a.dateAdded ? new Date(a.dateAdded).getTime() : 0;
+          const addedB = b.dateAdded ? new Date(b.dateAdded).getTime() : 0;
+          return addedB - addedA;
+        } else {
+          // Oldest first
+          const dateComp = (a.taskDate || '').localeCompare(b.taskDate || '');
+          if (dateComp !== 0) return dateComp;
+          const addedA = a.dateAdded ? new Date(a.dateAdded).getTime() : 0;
+          const addedB = b.dateAdded ? new Date(b.dateAdded).getTime() : 0;
+          return addedA - addedB;
+        }
       });
   }, [allNotes, statusFilter, effectiveQuery, sortOrder]);
 
-  // Filter Reminders by search and status - Sorted Recent Event First
+  // Filter Reminders by search and status - Sorted Upcoming Imminent First (Today, Tomorrow, Soon...)
   const filteredReminders = useMemo(() => {
     return allReminders
       .filter(t => {
@@ -178,20 +205,56 @@ export const NotesView: React.FC<NotesViewProps> = ({ onOpenTaskModal }) => {
         return true;
       })
       .sort((a, b) => {
-        const mul = sortOrder === 'recent' ? 1 : -1;
-        // 1. Primary: Task Date (most recent event date first)
-        const dateComp = (b.taskDate || '').localeCompare(a.taskDate || '');
-        if (dateComp !== 0) return dateComp * mul;
+        const isYearlyA = a.recurrence === 'Yearly';
+        const isYearlyB = b.recurrence === 'Yearly';
+        const countA = getDaysUntilDate(a.taskDate, isYearlyA);
+        const countB = getDaysUntilDate(b.taskDate, isYearlyB);
 
-        // 2. Secondary: Creation / Added timestamp descending
-        const addedA = a.dateAdded ? new Date(a.dateAdded).getTime() : 0;
-        const addedB = b.dateAdded ? new Date(b.dateAdded).getTime() : 0;
-        if (addedA !== addedB) return (addedB - addedA) * mul;
+        const isUpcomingA = countA.days >= 0;
+        const isUpcomingB = countB.days >= 0;
 
-        // 3. Tertiary: Start time descending
-        return (b.startTime || '').localeCompare(a.startTime || '') * mul;
+        if (sortOrder === 'recent') {
+          // 1. Upcoming events (days >= 0) come BEFORE past events (days < 0)
+          if (isUpcomingA && !isUpcomingB) return -1;
+          if (!isUpcomingA && isUpcomingB) return 1;
+
+          // 2. Among upcoming events: smallest days first (0 days = Today, 1 day = Tomorrow, etc.)
+          if (isUpcomingA && isUpcomingB) {
+            if (countA.days !== countB.days) return countA.days - countB.days;
+            // Same day: earlier start time first
+            if (a.startTime && b.startTime) {
+              const timeComp = a.startTime.localeCompare(b.startTime);
+              if (timeComp !== 0) return timeComp;
+            }
+            // Same time: newest created first
+            const addedA = a.dateAdded ? new Date(a.dateAdded).getTime() : 0;
+            const addedB = b.dateAdded ? new Date(b.dateAdded).getTime() : 0;
+            return addedB - addedA;
+          }
+
+          // 3. Among past events: most recent past event first (e.g. -1d before -10d)
+          if (countA.days !== countB.days) return countB.days - countA.days;
+          return (b.taskDate || '').localeCompare(a.taskDate || '');
+        } else {
+          // Oldest first
+          if (countA.days !== countB.days) return countB.days - countA.days;
+          return (a.taskDate || '').localeCompare(b.taskDate || '');
+        }
       });
   }, [allReminders, statusFilter, effectiveQuery, sortOrder]);
+
+  // Top Spotlight items: Active notes & reminders within the next 7 days or today
+  const upcomingHighlights = useMemo(() => {
+    return tasks
+      .filter(t => (isNoteCategory(t.category) || isReminderCategory(t.category)) && t.status !== 'Done' && t.status !== 'Terminated')
+      .map(t => {
+        const isYearly = t.recurrence === 'Yearly';
+        const cd = getDaysUntilDate(t.taskDate, isYearly);
+        return { task: t, days: cd.days, isToday: cd.isToday, isSoon: cd.isSoon, text: cd.text };
+      })
+      .filter(item => item.days >= 0 && item.days <= 7)
+      .sort((a, b) => a.days - b.days);
+  }, [tasks]);
 
   const openCreateNote = () => {
     setEditingId(null);
@@ -466,11 +529,71 @@ export const NotesView: React.FC<NotesViewProps> = ({ onOpenTaskModal }) => {
             title={`Currently sorted: ${sortOrder === 'recent' ? 'Most Recent Events & Notes First' : 'Oldest First'}. Click to toggle.`}
           >
             <Clock className="w-3.5 h-3.5 text-amber-500" />
-            <span>{sortOrder === 'recent' ? 'Recent First ↓' : 'Oldest First ↑'}</span>
+            <span>{sortOrder === 'recent' ? 'Upcoming & Recent First ↓' : 'Oldest First ↑'}</span>
           </button>
         </div>
 
       </div>
+
+      {/* ========================================================================= */}
+      {/* UPCOMING SPOTLIGHT BANNER: TODAY & NEXT 7 DAYS HIGHLIGHTS                */}
+      {/* ========================================================================= */}
+      {upcomingHighlights.length > 0 && (
+        <div className="glass-panel p-4 rounded-2xl border-2 border-rose-400/60 dark:border-rose-700/80 bg-gradient-to-r from-rose-500/10 via-amber-500/10 to-purple-500/10 shadow-sm space-y-2.5 animate-slide-up">
+          <div className="flex items-center justify-between gap-2 flex-wrap">
+            <div className="flex items-center gap-2">
+              <span className="w-2.5 h-2.5 rounded-full bg-rose-500 animate-ping" />
+              <h3 className="text-xs font-black uppercase tracking-wider text-theme-text font-display flex items-center gap-1.5">
+                <span>🔥 Imminent Upcoming Reminders & Notes (Next 7 Days)</span>
+              </h3>
+            </div>
+            <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-full bg-rose-600 text-white shadow-2xs">
+              {upcomingHighlights.length} Upcoming Event{upcomingHighlights.length > 1 ? 's' : ''}
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2.5">
+            {upcomingHighlights.map(({ task: item, text, isToday, days }) => {
+              const isRem = isReminderCategory(item.category);
+              
+              return (
+                <div
+                  key={item.id}
+                  onClick={() => onOpenTaskModal ? onOpenTaskModal(item) : openEdit(item)}
+                  className={`p-2.5 rounded-xl border flex items-center justify-between gap-2 cursor-pointer transition-all hover:scale-[1.02] shadow-2xs ${
+                    isToday
+                      ? 'bg-rose-500/15 border-rose-500 dark:border-rose-600 text-rose-950 dark:text-rose-100 ring-1 ring-rose-500/40'
+                      : 'bg-theme-card border-theme-border hover:border-amber-400'
+                  }`}
+                >
+                  <div className="min-w-0 flex-1 space-y-0.5">
+                    <div className="flex items-center gap-1">
+                      <span className="text-xs">{isRem ? '🔔' : '📝'}</span>
+                      <span className="text-xs font-bold truncate text-theme-text font-display">
+                        {item.title}
+                      </span>
+                    </div>
+                    <div className="text-[10px] text-theme-muted font-mono flex items-center gap-1">
+                      <span>{formatDisplayDate(item.taskDate)}</span>
+                      {item.startTime && <span>• {item.startTime}</span>}
+                    </div>
+                  </div>
+
+                  <span className={`text-[10px] font-black px-2 py-0.5 rounded-full font-mono shrink-0 shadow-2xs ${
+                    isToday
+                      ? 'bg-rose-600 text-white animate-pulse'
+                      : days === 1
+                      ? 'bg-amber-500 text-white'
+                      : 'bg-theme-card-hover border border-theme-border text-theme-text'
+                  }`}>
+                    {text}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* ========================================================================= */}
       {/* MAIN DUAL-PANE VIEW: 📝 NOTE (LEFT)  |  🔔 REMINDER (RIGHT)               */}
