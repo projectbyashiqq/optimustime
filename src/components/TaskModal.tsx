@@ -1105,9 +1105,9 @@ export const TaskModal: React.FC<TaskModalProps> = ({
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-3.5 items-start">
               
               {/* =================================================================
-                  LEFT COLUMN: THE CORE SCIENTIFIC TIME-BOX ENGINE (7 cols)
+                  LEFT COLUMN: IDENTITY, PROTOCOL & WRITING (6 cols)
               ================================================================= */}
-              <div className="lg:col-span-7 space-y-2.5">
+              <div className="lg:col-span-6 space-y-2.5">
                 
                 {/* 1. Task Title & Category Identity */}
                 <div className="p-3 sm:p-3.5 rounded-xl bg-theme-card border border-theme-border space-y-2 shadow-xs">
@@ -1403,7 +1403,28 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                   </div>
                 </div>
 
-                {/* 4. Scheduled Date, Time & Smart Free Slots */}
+                {/* 4. Description & Custom Writing */}
+                <div className="p-3 rounded-xl bg-theme-card border border-theme-border space-y-1.5 shadow-xs">
+                  <label className="text-[11px] font-bold text-theme-text uppercase tracking-wider">
+                    Description & Custom Writing
+                  </label>
+                  <textarea
+                    rows={2}
+                    placeholder="Detailed objectives, expected deliverables or context..."
+                    value={description}
+                    onChange={(e) => setDescription(e.target.value)}
+                    className="w-full text-xs px-3 py-1.5 rounded-xl bg-theme-card-hover border border-theme-border text-theme-text placeholder-theme-muted focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  />
+                </div>
+
+              </div>
+
+              {/* =================================================================
+                  RIGHT COLUMN: SCHEDULING, DRAWER & GOVERNANCE (6 cols)
+              ================================================================= */}
+              <div className="lg:col-span-6 space-y-2.5">
+                
+                {/* 1. Execution Scheduling (Date, Time, GAP Finder & Safety) */}
                 <div className="p-3 sm:p-3.5 rounded-xl bg-theme-card border border-theme-border space-y-2.5 shadow-xs">
                   
                   {/* Contextual Alert: Past Time Warning */}
@@ -2344,13 +2365,6 @@ export const TaskModal: React.FC<TaskModalProps> = ({
 
                 </div>
 
-              </div>
-
-              {/* =================================================================
-                  RIGHT COLUMN: CONTEXT & PAYLOAD DRAWER (5 cols)
-              ================================================================= */}
-              <div className="lg:col-span-5 space-y-2.5">
-                
                 {/* Segmented Control Drawer Tabs */}
                 <div className="p-1 bg-theme-card-hover rounded-2xl border border-theme-border flex items-center gap-1 text-xs font-bold shadow-inner">
                   <button
@@ -2887,39 +2901,25 @@ export const TaskModal: React.FC<TaskModalProps> = ({
 
                 </div>
 
-                {/* Description & Lifecycle Status Block */}
-                <div className="p-3 rounded-xl bg-theme-card border border-theme-border space-y-2 shadow-xs">
-                  <div className="space-y-1">
-                    <label className="text-[11px] font-bold text-theme-text uppercase tracking-wider">
-                      Description & Custom Writing
-                    </label>
-                    <textarea
-                      rows={2}
-                      placeholder="Detailed objectives, expected deliverables or context..."
-                      value={description}
-                      onChange={(e) => setDescription(e.target.value)}
-                      className="w-full text-xs px-3 py-1.5 rounded-xl bg-theme-card-hover border border-theme-border text-theme-text placeholder-theme-muted focus:outline-none focus:ring-1 focus:ring-blue-500"
-                    />
-                  </div>
 
-                  <div className="space-y-1">
-                    <label className="text-[11px] font-bold text-theme-text uppercase tracking-wider">
-                      Lifecycle Execution Status
-                    </label>
-                    <select
-                      value={status}
-                      onChange={(e) => setStatus(e.target.value as TaskStatus)}
-                      className="w-full text-xs px-3 py-2 rounded-xl bg-theme-card-hover border border-theme-border text-theme-text focus:outline-none focus:ring-1 focus:ring-blue-500 font-bold"
-                    >
-                      <option value="Pending">Pending</option>
-                      <option value="Working">Working</option>
-                      <option value="Done">Done</option>
-                      <option value="Hold">Hold</option>
-                      <option value="Terminated">Terminated</option>
-                      <option value="Reschedule">Reschedule</option>
-                      <option value="Incomplete">Incomplete</option>
-                    </select>
-                  </div>
+                {/* Lifecycle Execution Status */}
+                <div className="p-3 rounded-xl bg-theme-card border border-theme-border space-y-1.5 shadow-xs">
+                  <label className="text-[11px] font-bold text-theme-text uppercase tracking-wider">
+                    Lifecycle Execution Status
+                  </label>
+                  <select
+                    value={status}
+                    onChange={(e) => setStatus(e.target.value as TaskStatus)}
+                    className="w-full text-xs px-3 py-2 rounded-xl bg-theme-card-hover border border-theme-border text-theme-text focus:outline-none focus:ring-1 focus:ring-blue-500 font-bold"
+                  >
+                    <option value="Pending">Pending</option>
+                    <option value="Working">Working</option>
+                    <option value="Done">Done</option>
+                    <option value="Hold">Hold</option>
+                    <option value="Terminated">Terminated</option>
+                    <option value="Reschedule">Reschedule</option>
+                    <option value="Incomplete">Incomplete</option>
+                  </select>
                 </div>
 
               </div>
