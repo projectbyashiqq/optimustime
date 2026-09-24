@@ -79,6 +79,7 @@ import { ListTodo, CalendarDays, Grid3X3, Table as TableIcon } from 'lucide-reac
 import { QuickTaskEntryBar } from '../components/QuickTaskEntryBar';
 import { QuickPrioritySelector } from '../components/QuickPrioritySelector';
 import { QuickTimeSelector } from '../components/QuickTimeSelector';
+import { CategoryBadge, RecurrenceBadge } from '../components/TaskCategoryBadge';
 
 interface DashboardViewProps {
   onOpenTaskModal: (task?: Task, date?: string, startTime?: string) => void;
@@ -1365,13 +1366,19 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
                                       {task.projectCode}
                                     </span>
 
-                                    {/* Tertiary Tier: Category / SubCategory */}
-                                    <span className={`text-[11px] font-medium ${
-                                      isInSleep && !isNoTime ? 'text-slate-300' : 'text-theme-muted'
-                                    }`}>
-                                       {task.category}
-                                       {task.subCategory ? ` / ${task.subCategory}` : ''}
-                                     </span>
+                                    {/* Tertiary Tier: Category / SubCategory Badge */}
+                                    <CategoryBadge 
+                                      categoryName={task.category} 
+                                      subCategory={task.subCategory} 
+                                      categories={categories}
+                                      onClick={() => setSelectedCategoryFilter(task.category === selectedCategoryFilter ? '' : task.category)}
+                                    />
+
+                                    {/* Routine Recurrence Badge */}
+                                    <RecurrenceBadge 
+                                      recurrence={task.recurrence} 
+                                      selectedDays={task.selectedDays} 
+                                    />
 
                                     {/* Rescheduled Tracker Badge */}
                                     {Boolean(task.rescheduleCount && task.rescheduleCount > 0) && (
@@ -1795,10 +1802,18 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
                                   {task.projectCode}
                                 </span>
 
-                                <span className="text-[11px] font-medium text-theme-muted">
-                                  {task.category}
-                                  {task.subCategory ? ` / ${task.subCategory}` : ''}
-                                </span>
+                                <CategoryBadge 
+                                  categoryName={task.category} 
+                                  subCategory={task.subCategory} 
+                                  categories={categories}
+                                  size="sm"
+                                />
+
+                                <RecurrenceBadge 
+                                  recurrence={task.recurrence} 
+                                  selectedDays={task.selectedDays} 
+                                  size="sm"
+                                />
 
                                 <span className="text-[10px] font-mono font-semibold px-2 py-0.5 rounded-full bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 flex items-center gap-1">
                                   <span>🌿 In Buffer Zone</span>
@@ -1981,9 +1996,17 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
                                       <span className="text-[10px] sm:text-[11px] font-mono text-theme-muted font-bold">
                                         {task.projectCode}
                                       </span>
-                                      <span className="text-[10px] sm:text-[11px] font-semibold text-theme-muted">
-                                        {task.category}
-                                      </span>
+                                      <CategoryBadge 
+                                        categoryName={task.category} 
+                                        subCategory={task.subCategory} 
+                                        categories={categories}
+                                        size="sm"
+                                      />
+                                      <RecurrenceBadge 
+                                        recurrence={task.recurrence} 
+                                        selectedDays={task.selectedDays} 
+                                        size="sm"
+                                      />
                                       <span className={`text-[10px] font-black px-2 py-0.2 rounded-full flex items-center gap-1 shadow-2xs ${
                                         isDone 
                                           ? 'bg-emerald-600 text-white' 

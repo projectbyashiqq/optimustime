@@ -67,6 +67,7 @@ import {
   BarChart3
 } from 'lucide-react';
 import { RescheduleModal } from '../components/RescheduleModal';
+import { CategoryBadge, RecurrenceBadge } from '../components/TaskCategoryBadge';
 
 interface CategoryViewProps {
   onOpenTaskModal: (task?: Task, date?: string, startTime?: string, projectCode?: string, category?: string) => void;
@@ -659,10 +660,23 @@ export const CategoryView: React.FC<CategoryViewProps> = ({ onOpenTaskModal }) =
                 key={t.id}
                 className="p-3.5 rounded-xl border bg-theme-card shadow-2xs space-y-2 border-red-300 dark:border-red-900/60"
               >
-                <div className="flex items-center justify-between gap-2">
-                  <span className="font-mono text-xs font-bold text-blue-600 dark:text-blue-400">
-                    {t.projectCode}
-                  </span>
+                <div className="flex items-center justify-between gap-2 flex-wrap">
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <span className="font-mono text-xs font-bold text-blue-600 dark:text-blue-400">
+                      {t.projectCode}
+                    </span>
+                    <CategoryBadge 
+                      categoryName={t.category || currentCategory.name} 
+                      subCategory={t.subCategory} 
+                      categories={categories}
+                      size="sm"
+                    />
+                    <RecurrenceBadge 
+                      recurrence={t.recurrence} 
+                      selectedDays={t.selectedDays} 
+                      size="sm" 
+                    />
+                  </div>
                   <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-red-600 text-white">
                     {t.status}
                   </span>
@@ -842,11 +856,18 @@ export const CategoryView: React.FC<CategoryViewProps> = ({ onOpenTaskModal }) =
                                     {task.projectCode}
                                   </span>
 
-                                  {task.subCategory && (
-                                    <span className="text-[10px] font-semibold px-2 py-0.5 rounded-md bg-blue-500/10 text-blue-700 dark:text-blue-300 border border-blue-500/20 shrink-0">
-                                      {task.subCategory}
-                                    </span>
-                                  )}
+                                  <CategoryBadge 
+                                    categoryName={task.category || currentCategory.name} 
+                                    subCategory={task.subCategory} 
+                                    categories={categories}
+                                    size="sm"
+                                  />
+
+                                  <RecurrenceBadge 
+                                    recurrence={task.recurrence} 
+                                    selectedDays={task.selectedDays} 
+                                    size="sm" 
+                                  />
 
                                   {task.isMandatorySchedule && (
                                     <span className="text-[9px] font-black px-1.5 py-0.2 bg-amber-500/15 text-amber-700 dark:text-amber-400 rounded border border-amber-500/30 flex items-center gap-0.5">
@@ -1022,8 +1043,19 @@ export const CategoryView: React.FC<CategoryViewProps> = ({ onOpenTaskModal }) =
                             key={task.id}
                             className="p-3 rounded-xl bg-theme-card border border-theme-border flex items-center justify-between gap-2"
                           >
-                            <div className="flex items-center gap-2 min-w-0">
+                            <div className="flex items-center gap-2 min-w-0 flex-wrap">
                               <span className="font-mono text-xs text-theme-muted">{task.startTime}</span>
+                              <CategoryBadge 
+                                categoryName={task.category || currentCategory.name} 
+                                subCategory={task.subCategory} 
+                                categories={categories}
+                                size="sm"
+                              />
+                              <RecurrenceBadge 
+                                recurrence={task.recurrence} 
+                                selectedDays={task.selectedDays} 
+                                size="sm" 
+                              />
                               <span className="text-xs font-bold text-theme-text line-through truncate">{task.title}</span>
                             </div>
                             <div className="flex items-center gap-2 shrink-0 text-xs">
