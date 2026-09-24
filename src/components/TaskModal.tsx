@@ -40,6 +40,7 @@ import {
   isTaskScheduledForDate
 } from '../utils/timeUtils';
 import { ConflictModal } from './ConflictModal';
+import { hexToRgba, getCategoryIconComponent } from './TaskCategoryBadge';
 import { TimePicker } from './TimePicker';
 import { 
   X, 
@@ -1044,7 +1045,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
           {/* =========================================================================
               MODAL BODY (Two-Column Layout with Smooth Scroll)
           ========================================================================= */}
-          <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4">
+          <div className="flex-1 overflow-y-auto p-3 sm:p-4 space-y-2.5">
             
             {/* Validation Error Banner */}
             {validationError && (
@@ -1101,27 +1102,27 @@ export const TaskModal: React.FC<TaskModalProps> = ({
             )}
 
             {/* Main 2-Column Command Grid */}
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-3.5 items-start">
               
               {/* =================================================================
                   LEFT COLUMN: THE CORE SCIENTIFIC TIME-BOX ENGINE (7 cols)
               ================================================================= */}
-              <div className="lg:col-span-7 space-y-4">
+              <div className="lg:col-span-7 space-y-2.5">
                 
                 {/* 1. Task Title & Category Identity */}
-                <div className="p-4 rounded-2xl bg-theme-card border border-theme-border space-y-2.5 shadow-xs">
+                <div className="p-3 sm:p-3.5 rounded-xl bg-theme-card border border-theme-border space-y-2 shadow-xs">
                   <div className="flex items-center justify-between gap-2 flex-wrap">
-                    <label className="text-xs font-black text-theme-text uppercase tracking-wider flex items-center gap-1 font-display">
+                    <label className="text-[11px] font-black text-theme-text uppercase tracking-wider flex items-center gap-1 font-display">
                       <span>Task Title</span>
                       <span className="text-red-500 font-black">*</span>
                     </label>
-                    <div className="flex items-center gap-2">
-                      <div className="flex items-center gap-1 px-2.5 py-0.5 rounded-lg bg-blue-100/90 dark:bg-blue-950/80 border border-blue-300 dark:border-blue-800 text-blue-800 dark:text-blue-300 font-bold text-xs shadow-2xs">
-                        <Folder className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400 shrink-0" />
-                        <span className="text-[10px] text-theme-muted uppercase font-semibold">Domain:</span>
-                        <span className="font-black text-theme-text font-mono text-xs">{category || 'VRTX'}</span>
+                    <div className="flex items-center gap-1.5">
+                      <div className="flex items-center gap-1 px-2 py-0.5 rounded-md bg-blue-100/90 dark:bg-blue-950/80 border border-blue-300 dark:border-blue-800 text-blue-800 dark:text-blue-300 font-bold text-[11px] shadow-2xs">
+                        <Folder className="w-3 h-3 text-blue-600 dark:text-blue-400 shrink-0" />
+                        <span className="text-[9px] text-theme-muted uppercase font-semibold">Domain:</span>
+                        <span className="font-black text-theme-text font-mono text-[11px]">{category || 'VRTX'}</span>
                       </div>
-                      <span className="text-[11px] font-mono text-theme-muted font-bold">
+                      <span className="text-[10px] font-mono text-theme-muted font-bold">
                         ({startTime} → {endTime})
                       </span>
                     </div>
@@ -1135,31 +1136,63 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                       setTitle(e.target.value);
                       if (validationError) setValidationError(null);
                     }}
-                    className={`w-full text-sm px-4 py-2.5 rounded-xl bg-theme-card-hover border text-theme-text placeholder-theme-muted focus:outline-none focus:ring-2 focus:ring-blue-500 font-semibold shadow-2xs ${
+                    className={`w-full text-sm px-3.5 py-2 rounded-xl bg-theme-card-hover border text-theme-text placeholder-theme-muted focus:outline-none focus:ring-2 focus:ring-blue-500 font-semibold shadow-2xs ${
                       validationError && !title.trim() ? 'border-red-500 ring-1 ring-red-500' : 'border-theme-border'
                     }`}
                     autoFocus
                   />
 
                   {/* Category Selection & SubCategory */}
-                  <div className="pt-2 border-t border-theme-border/50 space-y-2">
+                  <div className="pt-1.5 border-t border-theme-border/50 space-y-1.5">
                     <div className="flex items-center justify-between">
-                      <span className="text-[11px] font-bold text-theme-muted uppercase tracking-wider flex items-center gap-1.5">
-                        <Folder className="w-3.5 h-3.5 text-blue-500" />
-                        <span>Category</span>
-                      </span>
-                      <span className={`text-[9px] px-2 py-0.5 rounded-full font-black ${
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] font-black text-theme-muted uppercase tracking-wider flex items-center gap-1 font-display">
+                          <Folder className="w-3 h-3 text-blue-500" />
+                          <span>Category</span>
+                        </span>
+                        {currentCategoryObj && currentCategoryObj.subCategories.length > 0 && (
+                          <div className="flex items-center gap-1">
+                            <span className="text-[9px] text-theme-muted font-bold">• Sub:</span>
+                            <div className="flex items-center gap-1 flex-wrap">
+                              {currentCategoryObj.subCategories.map((sub, idx) => {
+                                const isSubSelected = subCategory === sub;
+                                return (
+                                  <button
+                                    key={idx}
+                                    type="button"
+                                    onClick={() => setSubCategory(sub)}
+                                    className={`px-1.5 py-0.2 rounded text-[9px] font-bold transition-all border ${
+                                      isSubSelected
+                                        ? 'bg-blue-600 text-white border-blue-600 shadow-2xs'
+                                        : 'bg-theme-card text-theme-muted border-theme-border hover:text-theme-text'
+                                    }`}
+                                  >
+                                    {sub}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                      <span className={`text-[9px] px-2 py-0.2 rounded-full font-black ${
                         hasConfirmedCategory
                           ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300'
                           : 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300'
                       }`}>
-                        {hasConfirmedCategory ? '✓ Confirmed' : '* Click Category to Confirm'}
+                        {hasConfirmedCategory ? '✓ Confirmed' : '* Select to Confirm'}
                       </span>
                     </div>
 
                     <div className="flex flex-wrap gap-1.5">
                       {categories.map((c) => {
                         const isCatSelected = category === c.name && hasConfirmedCategory;
+                        const IconComp = getCategoryIconComponent(c.iconName);
+                        const catColor = c.color || '#3B82F6';
+                        const bg = isCatSelected ? catColor : hexToRgba(catColor, 0.09);
+                        const textCol = isCatSelected ? '#FFFFFF' : catColor;
+                        const borderCol = isCatSelected ? catColor : hexToRgba(catColor, 0.3);
+
                         return (
                           <button
                             key={c.id}
@@ -1171,13 +1204,16 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                               const catObj = categories.find(cat => cat.name === c.name);
                               setSubCategory(catObj?.subCategories[0] || '');
                             }}
-                            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all border flex items-center gap-1.5 transform active:scale-95 cursor-pointer shadow-2xs ${
-                              isCatSelected
-                                ? 'bg-blue-600 text-white border-blue-600 shadow-sm ring-2 ring-blue-500/20'
-                                : 'bg-theme-card-hover text-theme-muted hover:text-theme-text border-theme-border hover:border-blue-400'
+                            style={{
+                              backgroundColor: bg,
+                              color: textCol,
+                              borderColor: borderCol
+                            }}
+                            className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all border flex items-center gap-1.5 active:scale-95 cursor-pointer shadow-2xs ${
+                              isCatSelected ? 'shadow-xs ring-2 ring-white/30' : 'hover:opacity-90'
                             }`}
                           >
-                            <Tag className="w-3 h-3" />
+                            <IconComp className="w-3 h-3 shrink-0" style={{ stroke: textCol }} />
                             <span>{c.name}</span>
                           </button>
                         );
@@ -1192,9 +1228,9 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                           setSubCategory('');
                           if (validationError) setValidationError(null);
                         }}
-                        className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all border flex items-center gap-1.5 transform active:scale-95 cursor-pointer shadow-2xs ${
-                          category === 'Unknown'
-                            ? 'bg-slate-700 text-white border-slate-700 shadow-sm ring-2 ring-slate-500/30'
+                        className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all border flex items-center gap-1.5 active:scale-95 cursor-pointer shadow-2xs ${
+                          category === 'Unknown' && hasConfirmedCategory
+                            ? 'bg-slate-700 text-white border-slate-700 shadow-xs ring-2 ring-slate-500/30'
                             : 'bg-theme-card-hover text-theme-muted hover:text-theme-text border-theme-border hover:border-slate-400'
                         }`}
                       >
@@ -1202,50 +1238,26 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                         <span>Unknown</span>
                       </button>
                     </div>
-
-                    {/* SubCategory Selection */}
-                    {currentCategoryObj && currentCategoryObj.subCategories.length > 0 && (
-                      <div className="pt-1.5 border-t border-theme-border/40 flex items-center gap-1.5 flex-wrap">
-                        <span className="text-[10px] font-bold text-theme-muted shrink-0">Sub:</span>
-                        {currentCategoryObj.subCategories.map((sub, idx) => {
-                          const isSubSelected = subCategory === sub;
-                          return (
-                            <button
-                              key={idx}
-                              type="button"
-                              onClick={() => setSubCategory(sub)}
-                              className={`px-2 py-0.5 rounded-md text-[10px] font-semibold transition-all border ${
-                                isSubSelected
-                                  ? 'bg-theme-card-hover border-blue-500 text-blue-600 dark:text-blue-400 font-bold shadow-2xs'
-                                  : 'bg-theme-card text-theme-muted border-theme-border hover:text-theme-text'
-                              }`}
-                            >
-                              {sub}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    )}
                   </div>
                 </div>
 
                 {/* 2. Priority Protocol (P1-P5) */}
-                <div className="p-4 rounded-2xl bg-theme-card border border-theme-border space-y-2.5 shadow-xs">
+                <div className="p-3 rounded-xl bg-theme-card border border-theme-border space-y-1.5 shadow-xs">
                   <div className="flex items-center justify-between">
-                    <label className="text-xs font-black text-theme-text uppercase tracking-wider flex items-center gap-1.5 font-display">
+                    <label className="text-[11px] font-black text-theme-text uppercase tracking-wider flex items-center gap-1.5 font-display">
                       <Flame className="w-3.5 h-3.5 text-orange-500" />
-                      <span>Priority Protocol (P1–P5)</span>
+                      <span>Priority Protocol</span>
                     </label>
-                    <span className={`text-[9px] px-2 py-0.5 rounded-full font-black ${
+                    <span className={`text-[9px] px-2 py-0.2 rounded-full font-black ${
                       hasConfirmedPriority
                         ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300'
                         : 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300'
                     }`}>
-                      {hasConfirmedPriority ? '✓ Confirmed Preset' : '* Click Priority to Confirm'}
+                      {hasConfirmedPriority ? '✓ Confirmed' : '* Select to Confirm'}
                     </span>
                   </div>
 
-                  <div className="grid grid-cols-5 gap-2">
+                  <div className="grid grid-cols-5 gap-1.5 p-1 bg-theme-card-hover/80 rounded-xl border border-theme-border/60">
                     {[
                       { p: 'P1' as PriorityLevel, shortLabel: 'Must Do' },
                       { p: 'P2' as PriorityLevel, shortLabel: 'High ROI' },
@@ -1261,29 +1273,26 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                           key={p}
                           type="button"
                           onClick={() => handlePriorityChange(p)}
-                          className={`py-2 px-1.5 rounded-xl border text-center transition-all flex flex-col items-center justify-center gap-0.5 transform active:scale-95 shadow-2xs cursor-pointer ${
+                          className={`py-1 px-1 rounded-lg border text-center transition-all flex items-center justify-center gap-1 active:scale-95 cursor-pointer ${
                             isSelected
-                              ? 'border-blue-500 shadow-md ring-2 ring-blue-500/30 font-black scale-[1.02]'
-                              : !hasConfirmedPriority
-                                ? 'border-dashed border-theme-border hover:border-blue-400 hover:bg-theme-card-hover'
-                                : 'border-theme-border hover:bg-theme-card-hover opacity-85 hover:opacity-100'
+                              ? 'border-blue-500 shadow-sm ring-1 ring-blue-500/30 font-black'
+                              : 'border-transparent hover:bg-theme-card text-theme-muted hover:text-theme-text'
                           }`}
                           style={{
                             backgroundColor: isSelected ? meta.bgColor : undefined,
                             borderColor: isSelected ? meta.color : undefined
                           }}
+                          title={`${p}: ${shortLabel}`}
                         >
-                          <div className="flex items-center gap-1">
-                            <span className="text-xs font-black tracking-tight" style={{ color: meta.color }}>
-                              {p}
-                            </span>
-                            {isDefault && (
-                              <span className="text-[8px] text-amber-500 font-bold" title="Admin Default Preset">★</span>
-                            )}
-                          </div>
-                          <span className="text-[10px] font-bold text-theme-text leading-tight truncate w-full">
+                          <span className="text-xs font-black tracking-tight" style={{ color: meta.color }}>
+                            {p}
+                          </span>
+                          <span className="text-[10px] font-bold text-theme-text hidden sm:inline truncate">
                             {shortLabel}
                           </span>
+                          {isDefault && (
+                            <span className="text-[8px] text-amber-500 font-bold" title="Admin Default Preset">★</span>
+                          )}
                         </button>
                       );
                     })}
@@ -1291,33 +1300,33 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                 </div>
 
                 {/* 3. Duration & Automated Break Buffer (Unified Time-Box Math) */}
-                <div className="p-4 rounded-2xl bg-theme-card border border-theme-border space-y-3.5 shadow-xs">
-                  <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 items-center">
+                <div className="p-3 rounded-xl bg-theme-card border border-theme-border space-y-2 shadow-xs">
+                  <div className="grid grid-cols-1 sm:grid-cols-12 gap-2.5 items-center">
                     
                     {/* Duration Input & Preset Chips */}
-                    <div className="sm:col-span-7 space-y-1.5">
+                    <div className="sm:col-span-7 space-y-1">
                       <div className="flex items-center justify-between">
-                        <label className="text-xs font-black text-theme-text uppercase tracking-wider flex items-center gap-1.5 font-display">
+                        <label className="text-[11px] font-black text-theme-text uppercase tracking-wider flex items-center gap-1.5 font-display">
                           <Clock className="w-3.5 h-3.5 text-amber-500" />
-                          <span>Appointed Duration</span>
+                          <span>Duration</span>
                         </label>
                         <span className="text-[10px] font-mono font-bold text-theme-muted">
                           End: {endTime}
                         </span>
                       </div>
 
-                      <div className="flex items-center gap-2">
-                        <div className="relative w-24 shrink-0">
+                      <div className="flex items-center gap-1.5">
+                        <div className="relative w-20 shrink-0">
                           <input
                             type="number"
                             min="5"
                             step="5"
                             value={appointedMinutes}
                             onChange={(e) => handleMinutesChange(parseInt(e.target.value, 10) || 0)}
-                            className="w-full text-xs pr-6 pl-2.5 py-1.5 rounded-xl bg-theme-card-hover border border-theme-border text-theme-text font-mono font-black text-center focus:outline-none focus:ring-2 focus:ring-blue-500 shadow-2xs"
+                            className="w-full text-xs pr-5 pl-2 py-1 rounded-lg bg-theme-card-hover border border-theme-border text-theme-text font-mono font-black text-center focus:outline-none focus:ring-1 focus:ring-blue-500 shadow-2xs"
                             placeholder="60"
                           />
-                          <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-theme-muted font-bold pointer-events-none">
+                          <span className="absolute right-1.5 top-1/2 -translate-y-1/2 text-[10px] text-theme-muted font-bold pointer-events-none">
                             m
                           </span>
                         </div>
@@ -1328,9 +1337,9 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                               key={m}
                               type="button"
                               onClick={() => handleMinutesChange(m)}
-                              className={`px-2 py-1 rounded-lg text-[10px] font-mono font-bold transition-all border shadow-2xs cursor-pointer ${
+                              className={`px-2 py-0.5 rounded-md text-[10px] font-mono font-bold transition-all border shadow-2xs cursor-pointer ${
                                 appointedMinutes === m
-                                  ? 'bg-blue-600 text-white border-blue-600 shadow-xs ring-1 ring-blue-400'
+                                  ? 'bg-blue-600 text-white border-blue-600 shadow-xs'
                                   : 'bg-theme-card-hover text-theme-muted hover:text-theme-text border-theme-border hover:border-blue-400'
                               }`}
                             >
@@ -1342,10 +1351,10 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                     </div>
 
                     {/* Automated Break Buffer Selection */}
-                    <div className="sm:col-span-5 space-y-1.5 sm:pl-3 sm:border-l border-theme-border/60">
+                    <div className="sm:col-span-5 space-y-1 sm:pl-2.5 sm:border-l border-theme-border/60">
                       <div className="flex items-center justify-between text-xs">
                         <span className="font-bold text-purple-700 dark:text-purple-300 uppercase tracking-wider text-[10px] flex items-center gap-1 font-display">
-                          <span>🟣 Break Buffer</span>
+                          <span>🟣 Buffer</span>
                         </span>
                         <span className="font-mono text-[10px] font-bold text-purple-700 dark:text-purple-300">
                           +{bufferMinutes}m
@@ -1361,7 +1370,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                               key={bMin}
                               type="button"
                               onClick={() => setBufferMinutes(bMin)}
-                              className={`px-2 py-1 rounded-lg text-[10px] font-mono font-bold transition-all border flex items-center gap-0.5 cursor-pointer ${
+                              className={`px-1.5 py-0.5 rounded-md text-[10px] font-mono font-bold transition-all border flex items-center gap-0.5 cursor-pointer ${
                                 isSelected
                                   ? 'bg-purple-600 text-white border-purple-600 shadow-xs'
                                   : 'bg-theme-card-hover text-theme-muted hover:text-theme-text border-theme-border hover:border-purple-400'
@@ -1378,16 +1387,16 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                   </div>
 
                   {/* Contiguous Block Footprint Pill */}
-                  <div className="pt-2 border-t border-theme-border/40 flex items-center justify-between text-[11px] font-mono text-theme-muted flex-wrap gap-1">
-                    <span>Contiguous Time-Box Block:</span>
-                    <div className="flex items-center gap-2 flex-wrap">
+                  <div className="pt-1.5 border-t border-theme-border/40 flex items-center justify-between text-[10px] font-mono text-theme-muted flex-wrap gap-1">
+                    <span>Time-Box:</span>
+                    <div className="flex items-center gap-1.5 flex-wrap">
                       <span className="font-bold text-theme-text">
-                        {startTime} → {addMinutesToTime(startTime, appointedMinutes + bufferMinutes)} ({appointedMinutes}m work + {bufferMinutes}m buffer = {appointedMinutes + bufferMinutes}m)
+                        {startTime} → {addMinutesToTime(startTime, appointedMinutes + bufferMinutes)} ({appointedMinutes}m + {bufferMinutes}m = {appointedMinutes + bufferMinutes}m)
                       </span>
                       {taskCrossesMidnight(startTime, endTime) && (
-                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-purple-100 dark:bg-purple-950/80 text-purple-700 dark:text-purple-300 border border-purple-300 dark:border-purple-800 flex items-center gap-1 font-mono">
-                          <Moon className="w-3 h-3" />
-                          <span>Spans into {formatDisplayDate(getTaskEndDate(taskDate, startTime, endTime))}</span>
+                        <span className="text-[9px] font-bold px-1.5 py-0.2 rounded-full bg-purple-100 dark:bg-purple-950/80 text-purple-700 dark:text-purple-300 border border-purple-300 dark:border-purple-800 flex items-center gap-1 font-mono">
+                          <Moon className="w-2.5 h-2.5" />
+                          <span>Next Day</span>
                         </span>
                       )}
                     </div>
@@ -1395,7 +1404,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                 </div>
 
                 {/* 4. Scheduled Date, Time & Smart Free Slots */}
-                <div className="p-4 rounded-2xl bg-theme-card border border-theme-border space-y-3 shadow-xs">
+                <div className="p-3 sm:p-3.5 rounded-xl bg-theme-card border border-theme-border space-y-2.5 shadow-xs">
                   
                   {/* Contextual Alert: Past Time Warning */}
                   {pastTimeCheck.isPast && (
@@ -1525,7 +1534,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                   )}
 
                   {/* Date & Start Time Container (Apple Master Level Precision) */}
-                  <div className="p-3 sm:p-4 rounded-2xl bg-theme-card-hover/80 dark:bg-theme-card/50 border border-theme-border shadow-2xs space-y-3">
+                  <div className="p-2.5 sm:p-3 rounded-xl bg-theme-card-hover/60 dark:bg-theme-card/50 border border-theme-border shadow-2xs space-y-2">
                     
                     {/* Header: Mode Selector (Fixed Clock vs Free Time / Anytime) */}
                     <div className="flex items-center justify-between pb-2 border-b border-theme-border/50">
@@ -2340,7 +2349,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
               {/* =================================================================
                   RIGHT COLUMN: CONTEXT & PAYLOAD DRAWER (5 cols)
               ================================================================= */}
-              <div className="lg:col-span-5 space-y-4">
+              <div className="lg:col-span-5 space-y-2.5">
                 
                 {/* Segmented Control Drawer Tabs */}
                 <div className="p-1 bg-theme-card-hover rounded-2xl border border-theme-border flex items-center gap-1 text-xs font-bold shadow-inner">
@@ -2398,7 +2407,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                 </div>
 
                 {/* Tab Content Panels */}
-                <div className="p-4 rounded-2xl bg-theme-card border border-theme-border space-y-3 min-h-[280px] shadow-xs">
+                <div className="p-3 rounded-xl bg-theme-card border border-theme-border space-y-2 min-h-[160px] sm:min-h-[175px] shadow-xs">
                   
                   {/* TAB A: SUBTASKS & CHECKLIST */}
                   {detailsTab === 'subtasks' && (
@@ -2448,7 +2457,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
 
                       {/* Subtasks List */}
                       {subtasks.length === 0 ? (
-                        <div className="p-8 text-center text-xs text-theme-muted border border-dashed border-theme-border rounded-xl">
+                        <div className="py-4 px-3 text-center text-xs text-theme-muted border border-dashed border-theme-border rounded-xl">
                           No subtasks added yet. Break down this task into time-boxed steps.
                         </div>
                       ) : (
@@ -2879,7 +2888,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                 </div>
 
                 {/* Description & Lifecycle Status Block */}
-                <div className="p-4 rounded-2xl bg-theme-card border border-theme-border space-y-3 shadow-xs">
+                <div className="p-3 rounded-xl bg-theme-card border border-theme-border space-y-2 shadow-xs">
                   <div className="space-y-1">
                     <label className="text-[11px] font-bold text-theme-text uppercase tracking-wider">
                       Description & Custom Writing
