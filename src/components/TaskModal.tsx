@@ -2365,12 +2365,15 @@ export const TaskModal: React.FC<TaskModalProps> = ({
 
                 </div>
 
-                {/* Segmented Control Drawer Tabs */}
-                <div className="p-1 bg-theme-card-hover rounded-2xl border border-theme-border flex items-center gap-1 text-xs font-bold shadow-inner">
+                {/* 2. Payload Drawer Card (Integrated Header Tabs & Content) */}
+                <div className="rounded-xl bg-theme-card border border-theme-border shadow-xs overflow-hidden flex flex-col">
+                  
+                  {/* Segmented Control Drawer Tabs */}
+                  <div className="p-1 bg-theme-card-hover/80 border-b border-theme-border flex items-center gap-1 text-xs font-bold">
                   <button
                     type="button"
                     onClick={() => setDetailsTab('subtasks')}
-                    className={`flex-1 py-1.5 px-2 rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                    className={`flex-1 py-1.5 px-2 rounded-lg transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
                       detailsTab === 'subtasks'
                         ? 'bg-blue-600 text-white shadow-xs font-black'
                         : 'text-theme-muted hover:text-theme-text'
@@ -2383,7 +2386,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                   <button
                     type="button"
                     onClick={() => setDetailsTab('recurrence')}
-                    className={`flex-1 py-1.5 px-2 rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                    className={`flex-1 py-1.5 px-2 rounded-lg transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
                       detailsTab === 'recurrence'
                         ? 'bg-blue-600 text-white shadow-xs font-black'
                         : 'text-theme-muted hover:text-theme-text'
@@ -2396,7 +2399,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                   <button
                     type="button"
                     onClick={() => setDetailsTab('knowledge')}
-                    className={`flex-1 py-1.5 px-2 rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                    className={`flex-1 py-1.5 px-2 rounded-lg transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
                       detailsTab === 'knowledge'
                         ? 'bg-blue-600 text-white shadow-xs font-black'
                         : 'text-theme-muted hover:text-theme-text'
@@ -2409,7 +2412,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                   <button
                     type="button"
                     onClick={() => setDetailsTab('buffer_diary')}
-                    className={`flex-1 py-1.5 px-2 rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                    className={`flex-1 py-1.5 px-2 rounded-lg transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
                       detailsTab === 'buffer_diary'
                         ? 'bg-amber-500 text-white shadow-xs font-black'
                         : 'text-theme-muted hover:text-theme-text'
@@ -2421,22 +2424,18 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                 </div>
 
                 {/* Tab Content Panels */}
-                <div className="p-3 rounded-xl bg-theme-card border border-theme-border space-y-2 min-h-[160px] sm:min-h-[175px] shadow-xs">
+                  <div className="p-3 space-y-2 min-h-[160px] sm:min-h-[175px]">
                   
                   {/* TAB A: SUBTASKS & CHECKLIST */}
                   {detailsTab === 'subtasks' && (
                     <div className="space-y-3 animate-fade-in">
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs font-black text-theme-text uppercase tracking-wider flex items-center gap-1.5 font-display">
-                          <Layers className="w-3.5 h-3.5 text-blue-500" />
-                          <span>Sub-tasks & Checklist Breakdown</span>
-                        </span>
-                        {subtasks.length > 0 && (
+                      {subtasks.length > 0 && (
+                        <div className="flex items-center justify-end">
                           <span className="text-[10px] font-bold px-2 py-0.5 bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-300 rounded-full font-mono">
                             {subtasks.length} {subtasks.length === 1 ? 'item' : 'items'}
                           </span>
-                        )}
-                      </div>
+                        </div>
+                      )}
 
                       {/* Add subtask bar */}
                       <div className="flex gap-1.5">
@@ -2899,8 +2898,8 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                     </div>
                   )}
 
+                  </div>
                 </div>
-
 
                 {/* Lifecycle Execution Status */}
                 <div className="p-3 rounded-xl bg-theme-card border border-theme-border space-y-1.5 shadow-xs">
