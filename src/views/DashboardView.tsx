@@ -1489,102 +1489,33 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
 
                                 {/* Live Status Badge + Countdown Pill */}
                                 <div className="flex items-center gap-1.5 flex-wrap py-0.5">
-                                  {task.status === 'Pending' ? (
-                                    <div className={`inline-flex items-center rounded-lg shadow-2xs overflow-hidden border ${
-                                      isInSleep && !isNoTime 
-                                        ? 'border-indigo-400/50 bg-indigo-900/60' 
-                                        : 'border-blue-600 dark:border-blue-500 bg-blue-600'
-                                    }`}>
-                                      <button
-                                        type="button"
-                                        onClick={() => startTask(task.id)}
-                                        className={`flex items-center gap-1.5 px-2.5 py-0.5 text-[10px] sm:text-[11px] font-bold text-white cursor-pointer transition-all active:scale-95 ${
-                                          isInSleep && !isNoTime ? 'hover:bg-indigo-800' : 'hover:bg-blue-700'
-                                        }`}
-                                        title="Start Task Now"
-                                      >
-                                        <Play className="w-2.5 h-2.5 fill-white stroke-[2]" />
-                                        <span>Start</span>
-                                      </button>
-                                      <div className={`relative border-l flex items-center justify-center px-1 py-0.5 cursor-pointer ${
-                                        isInSleep && !isNoTime
-                                          ? 'border-indigo-400/40 hover:bg-indigo-800 text-white'
-                                          : 'border-blue-500/50 hover:bg-blue-700 text-white'
-                                      }`}>
-                                        <select
-                                          value={task.status}
-                                          onChange={(e) => handleStatusChange(task, e.target.value as TaskStatus)}
-                                          className="opacity-0 absolute inset-0 w-full h-full cursor-pointer"
-                                          title="Change Status"
-                                        >
-                                          <option value="Pending" className="bg-slate-900 text-white">● Pending</option>
-                                          <option value="Working" className="bg-slate-900 text-white">⚡ Working</option>
-                                          <option value="Done" className="bg-slate-900 text-white">✓ Done</option>
-                                          <option value="Hold" className="bg-slate-900 text-white">⏸ Hold</option>
-                                          <option value="Incomplete" className="bg-slate-900 text-white">⚠️ Incomplete</option>
-                                          <option value="Reschedule" className="bg-slate-900 text-white">↻ Reschedule</option>
-                                          <option value="Terminated" className="bg-slate-900 text-white">✕ Terminated</option>
-                                        </select>
-                                        <ChevronDown className="w-3 h-3 text-white pointer-events-none" />
-                                      </div>
-                                    </div>
-                                  ) : task.status === 'Hold' ? (
-                                    <div className="inline-flex items-center rounded-lg shadow-2xs overflow-hidden border border-amber-400 dark:border-amber-600 bg-amber-500 text-white">
-                                      <button
-                                        type="button"
-                                        onClick={() => startTask(task.id)}
-                                        className="flex items-center gap-1.5 px-2.5 py-0.5 text-[10px] sm:text-[11px] font-bold text-white hover:bg-amber-600 cursor-pointer transition-all active:scale-95"
-                                        title="Resume Task"
-                                      >
-                                        <Play className="w-2.5 h-2.5 fill-white stroke-[2]" />
-                                        <span>Resume</span>
-                                      </button>
-                                      <div className="relative border-l border-amber-400/60 hover:bg-amber-600 flex items-center justify-center px-1 py-0.5 cursor-pointer">
-                                        <select
-                                          value={task.status}
-                                          onChange={(e) => handleStatusChange(task, e.target.value as TaskStatus)}
-                                          className="opacity-0 absolute inset-0 w-full h-full cursor-pointer"
-                                          title="Change Status"
-                                        >
-                                          <option value="Hold" className="bg-slate-900 text-white">⏸ Hold</option>
-                                          <option value="Working" className="bg-slate-900 text-white">⚡ Working</option>
-                                          <option value="Done" className="bg-slate-900 text-white">✓ Done</option>
-                                          <option value="Pending" className="bg-slate-900 text-white">● Pending</option>
-                                          <option value="Incomplete" className="bg-slate-900 text-white">⚠️ Incomplete</option>
-                                          <option value="Reschedule" className="bg-slate-900 text-white">↻ Reschedule</option>
-                                          <option value="Terminated" className="bg-slate-900 text-white">✕ Terminated</option>
-                                        </select>
-                                        <ChevronDown className="w-3 h-3 text-white pointer-events-none" />
-                                      </div>
-                                    </div>
-                                  ) : (
-                                    <select
-                                      value={task.status}
-                                      onChange={(e) => handleStatusChange(task, e.target.value as TaskStatus)}
-                                      className={`text-[10px] sm:text-[11px] font-bold px-2 py-0.5 rounded-lg border cursor-pointer focus:outline-none transition-colors ${
-                                        task.status === 'Done' ? 'bg-emerald-600 text-white border-emerald-600 shadow-xs' :
-                                        task.status === 'Terminated' ? 'bg-red-600 text-white border-red-600 shadow-xs' :
-                                        task.status === 'Working' ? (
-                                          isInSleep && !isNoTime 
-                                            ? 'bg-gradient-to-r from-cyan-600 to-blue-600 text-white border-cyan-400 shadow-xs animate-pulse'
-                                            : 'bg-blue-600 text-white border-blue-600 shadow-xs animate-pulse'
-                                        ) :
-                                        task.status === 'Incomplete' ? 'bg-red-600 text-white border-red-600 shadow-xs' :
-                                        task.status === 'Reschedule' ? 'bg-purple-100 text-purple-800 border-purple-300' :
-                                        isInSleep && !isNoTime
-                                          ? 'bg-slate-900 text-white border-slate-700'
-                                          : 'bg-slate-100 text-slate-700 border-slate-300 dark:bg-slate-800 dark:text-slate-300'
-                                      }`}
-                                    >
-                                      <option value="Working" className="bg-slate-900 text-white">⚡ Working</option>
-                                      <option value="Done" className="bg-slate-900 text-white">✓ Done</option>
-                                      <option value="Hold" className="bg-slate-900 text-white">⏸ Hold</option>
-                                      <option value="Incomplete" className="bg-slate-900 text-white">⚠️ Incomplete</option>
-                                      <option value="Reschedule" className="bg-slate-900 text-white">↻ Reschedule</option>
-                                      <option value="Terminated" className="bg-slate-900 text-white">✕ Terminated</option>
-                                      <option value="Pending" className="bg-slate-900 text-white">● Pending</option>
-                                    </select>
-                                  )}
+                                  <select
+                                    value={task.status}
+                                    onChange={(e) => handleStatusChange(task, e.target.value as TaskStatus)}
+                                    className={`text-[10px] sm:text-[11px] font-bold px-2 py-0.5 rounded-lg border cursor-pointer focus:outline-none transition-colors ${
+                                      task.status === 'Done' ? 'bg-emerald-600 text-white border-emerald-600 shadow-xs' :
+                                      task.status === 'Terminated' ? 'bg-red-600 text-white border-red-600 shadow-xs' :
+                                      task.status === 'Working' ? (
+                                        isInSleep && !isNoTime 
+                                          ? 'bg-gradient-to-r from-cyan-600 to-blue-600 text-white border-cyan-400 shadow-xs animate-pulse'
+                                          : 'bg-blue-600 text-white border-blue-600 shadow-xs animate-pulse'
+                                      ) :
+                                      task.status === 'Hold' ? 'bg-amber-100 text-amber-800 border-amber-300 dark:bg-amber-950' :
+                                      task.status === 'Incomplete' ? 'bg-red-600 text-white border-red-600 shadow-xs' :
+                                      task.status === 'Reschedule' ? 'bg-purple-100 text-purple-800 border-purple-300' :
+                                      isInSleep && !isNoTime
+                                        ? 'bg-slate-900 text-white border-slate-700'
+                                        : 'bg-slate-100 text-slate-700 border-slate-300 dark:bg-slate-800 dark:text-slate-300'
+                                    }`}
+                                  >
+                                    <option value="Pending" className="bg-slate-900 text-white">● Pending</option>
+                                    <option value="Working" className="bg-slate-900 text-white">⚡ Working</option>
+                                    <option value="Done" className="bg-slate-900 text-white">✓ Done</option>
+                                    <option value="Hold" className="bg-slate-900 text-white">⏸ Hold</option>
+                                    <option value="Incomplete" className="bg-slate-900 text-white">⚠️ Incomplete</option>
+                                    <option value="Reschedule" className="bg-slate-900 text-white">↻ Reschedule</option>
+                                    <option value="Terminated" className="bg-slate-900 text-white">✕ Terminated</option>
+                                  </select>
 
                                   {/* Live Countdown */}
                                   {(() => {
@@ -1709,7 +1640,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
                             <div className={`flex items-center gap-1.5 w-full sm:w-auto justify-end pt-1.5 sm:pt-0 border-t sm:border-t-0 relative z-10 ${
                               isInSleep && !isNoTime ? 'border-white/10' : 'border-theme-border'
                             }`}>
-                              {isWorking && (
+                              {isWorking ? (
                                 <div className="flex items-center gap-1">
                                   <button
                                     onClick={() => pauseTask(task.id)}
@@ -1725,11 +1656,25 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
                                         ? 'bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-white shadow-emerald-500/30 ring-1 ring-white/20'
                                         : 'btn-pro btn-pro-success'
                                     }`}
+                                    title="Mark Task as Done"
                                   >
                                     <CheckCircle2 className="w-3.5 h-3.5 stroke-[2.5]" />
                                     <span>Done</span>
                                   </button>
                                 </div>
+                              ) : task.status !== 'Done' && (
+                                <button
+                                  onClick={() => completeTask(task.id)}
+                                  className={`flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-bold shadow-2xs active:scale-95 transition-all cursor-pointer ${
+                                    isInSleep && !isNoTime
+                                      ? 'bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-white shadow-emerald-500/30 ring-1 ring-white/20'
+                                      : 'btn-pro btn-pro-success'
+                                  }`}
+                                  title="Mark Task as Done"
+                                >
+                                  <CheckCircle2 className="w-3.5 h-3.5 stroke-[2.5]" />
+                                  <span>Done</span>
+                                </button>
                               )}
 
                               {task.isMandatorySchedule ? (
@@ -1871,81 +1816,24 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
 
                               {/* Status Dropdown & Live Timer */}
                               <div className="flex items-center gap-1.5 flex-wrap py-0.5">
-                                {task.status === 'Pending' ? (
-                                  <div className="inline-flex items-center rounded-lg shadow-2xs overflow-hidden border border-blue-600/40 bg-blue-600 text-white">
-                                    <button
-                                      type="button"
-                                      onClick={() => startTask(task.id)}
-                                      className="flex items-center gap-1.5 px-2.5 py-0.5 text-[10px] sm:text-[11px] font-bold text-white hover:bg-blue-700 cursor-pointer transition-all active:scale-95"
-                                      title="Start Task Now"
-                                    >
-                                      <Play className="w-2.5 h-2.5 fill-white stroke-[2]" />
-                                      <span>Start</span>
-                                    </button>
-                                    <div className="relative border-l border-blue-500/50 hover:bg-blue-700 flex items-center justify-center px-1 py-0.5 cursor-pointer">
-                                      <select
-                                        value={task.status}
-                                        onChange={(e) => handleStatusChange(task, e.target.value as TaskStatus)}
-                                        className="opacity-0 absolute inset-0 w-full h-full cursor-pointer"
-                                        title="Change Status"
-                                      >
-                                        <option value="Pending" className="bg-slate-900 text-white">● Pending</option>
-                                        <option value="Working" className="bg-slate-900 text-white">⚡ Working</option>
-                                        <option value="Done" className="bg-slate-900 text-white">✓ Done</option>
-                                        <option value="Hold" className="bg-slate-900 text-white">⏸ Hold</option>
-                                        <option value="Reschedule" className="bg-slate-900 text-white">↻ Reschedule</option>
-                                        <option value="Terminated" className="bg-slate-900 text-white">✕ Terminated</option>
-                                      </select>
-                                      <ChevronDown className="w-3 h-3 text-white pointer-events-none" />
-                                    </div>
-                                  </div>
-                                ) : task.status === 'Hold' ? (
-                                  <div className="inline-flex items-center rounded-lg shadow-2xs overflow-hidden border border-amber-400 dark:border-amber-600 bg-amber-500 text-white">
-                                    <button
-                                      type="button"
-                                      onClick={() => startTask(task.id)}
-                                      className="flex items-center gap-1.5 px-2.5 py-0.5 text-[10px] sm:text-[11px] font-bold text-white hover:bg-amber-600 cursor-pointer transition-all active:scale-95"
-                                      title="Resume Task"
-                                    >
-                                      <Play className="w-2.5 h-2.5 fill-white stroke-[2]" />
-                                      <span>Resume</span>
-                                    </button>
-                                    <div className="relative border-l border-amber-400/60 hover:bg-amber-600 flex items-center justify-center px-1 py-0.5 cursor-pointer">
-                                      <select
-                                        value={task.status}
-                                        onChange={(e) => handleStatusChange(task, e.target.value as TaskStatus)}
-                                        className="opacity-0 absolute inset-0 w-full h-full cursor-pointer"
-                                        title="Change Status"
-                                      >
-                                        <option value="Hold" className="bg-slate-900 text-white">⏸ Hold</option>
-                                        <option value="Working" className="bg-slate-900 text-white">⚡ Working</option>
-                                        <option value="Done" className="bg-slate-900 text-white">✓ Done</option>
-                                        <option value="Pending" className="bg-slate-900 text-white">● Pending</option>
-                                        <option value="Reschedule" className="bg-slate-900 text-white">↻ Reschedule</option>
-                                        <option value="Terminated" className="bg-slate-900 text-white">✕ Terminated</option>
-                                      </select>
-                                      <ChevronDown className="w-3 h-3 text-white pointer-events-none" />
-                                    </div>
-                                  </div>
-                                ) : (
-                                  <select
-                                    value={task.status}
-                                    onChange={(e) => handleStatusChange(task, e.target.value as TaskStatus)}
-                                    className={`text-[10px] sm:text-[11px] font-bold px-2 py-0.5 rounded-lg border cursor-pointer focus:outline-none transition-colors ${
-                                      task.status === 'Done' ? 'bg-emerald-600 text-white border-emerald-600 shadow-xs' :
-                                      task.status === 'Terminated' ? 'bg-red-600 text-white border-red-600 shadow-xs' :
-                                      task.status === 'Working' ? 'bg-blue-600 text-white border-blue-600 shadow-xs animate-pulse' :
-                                      'bg-slate-100 text-slate-700 border-slate-300 dark:bg-slate-800 dark:text-slate-300'
-                                    }`}
-                                  >
-                                    <option value="Working">⚡ Working</option>
-                                    <option value="Done">✓ Done</option>
-                                    <option value="Hold">⏸ Hold</option>
-                                    <option value="Reschedule">↻ Reschedule</option>
-                                    <option value="Terminated">✕ Terminated</option>
-                                    <option value="Pending">● Pending</option>
-                                  </select>
-                                )}
+                                <select
+                                  value={task.status}
+                                  onChange={(e) => handleStatusChange(task, e.target.value as TaskStatus)}
+                                  className={`text-[10px] sm:text-[11px] font-bold px-2 py-0.5 rounded-lg border cursor-pointer focus:outline-none transition-colors ${
+                                    task.status === 'Done' ? 'bg-emerald-600 text-white border-emerald-600 shadow-xs' :
+                                    task.status === 'Terminated' ? 'bg-red-600 text-white border-red-600 shadow-xs' :
+                                    task.status === 'Working' ? 'bg-blue-600 text-white border-blue-600 shadow-xs animate-pulse' :
+                                    task.status === 'Hold' ? 'bg-amber-100 text-amber-800 border-amber-300 dark:bg-amber-950' :
+                                    'bg-slate-100 text-slate-700 border-slate-300 dark:bg-slate-800 dark:text-slate-300'
+                                  }`}
+                                >
+                                  <option value="Pending">● Pending</option>
+                                  <option value="Working">⚡ Working</option>
+                                  <option value="Done">✓ Done</option>
+                                  <option value="Hold">⏸ Hold</option>
+                                  <option value="Reschedule">↻ Reschedule</option>
+                                  <option value="Terminated">✕ Terminated</option>
+                                </select>
 
                                 {task.status === 'Working' && (() => {
                                   const lastLog = task.executionLogs[task.executionLogs.length - 1];
@@ -1973,7 +1861,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
 
                           {/* Right: Actions */}
                           <div className="flex items-center gap-1.5 w-full sm:w-auto justify-end pt-1.5 sm:pt-0 border-t sm:border-t-0 border-theme-border relative z-10">
-                            {task.status === 'Working' && (
+                            {task.status === 'Working' ? (
                               <div className="flex items-center gap-1">
                                 <button
                                   onClick={() => pauseTask(task.id)}
@@ -1990,6 +1878,15 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenTaskModal })
                                   <span>Done</span>
                                 </button>
                               </div>
+                            ) : task.status !== 'Done' && (
+                              <button
+                                onClick={() => completeTask(task.id)}
+                                className="btn-pro btn-pro-success flex items-center gap-1 px-3 py-1 rounded-lg text-xs font-bold shadow-2xs cursor-pointer"
+                                title="Mark Task as Done"
+                              >
+                                <CheckCircle2 className="w-3.5 h-3.5 stroke-[2.5]" />
+                                <span>Done</span>
+                              </button>
                             )}
 
                             <button
