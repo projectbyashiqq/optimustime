@@ -109,6 +109,18 @@ export const AllTasksView: React.FC<AllTasksViewProps> = ({ onOpenTaskModal, onO
       setReschedulingTask(task);
       return;
     }
+    if (newStatus === 'Working') {
+      startTask(task.id);
+      return;
+    }
+    if (newStatus === 'Done') {
+      completeTask(task.id);
+      return;
+    }
+    if (newStatus === 'Hold') {
+      pauseTask(task.id);
+      return;
+    }
     updateTask({ ...task, status: newStatus });
   };
 
@@ -563,14 +575,14 @@ export const AllTasksView: React.FC<AllTasksViewProps> = ({ onOpenTaskModal, onO
                 <span className="hidden sm:inline">Done</span>
               </button>
             </div>
-          ) : (
+          ) : task.status !== 'Done' && (
             <button
-              onClick={() => startTask(task.id)}
-              className="btn-pro btn-pro-primary flex items-center gap-1 px-2.5 py-0.5 rounded-lg text-[10px] font-bold shadow-2xs"
-              title="Start Task Now"
+              onClick={() => completeTask(task.id)}
+              className="btn-pro btn-pro-success flex items-center gap-1 px-2.5 py-0.5 rounded-lg text-[10px] font-bold shadow-2xs cursor-pointer"
+              title="Mark as Done"
             >
-              <Play className="w-2.5 h-2.5 fill-white" />
-              <span>Start</span>
+              <Check className="w-2.5 h-2.5 stroke-[2.5]" />
+              <span>Done</span>
             </button>
           )}
 
@@ -954,22 +966,24 @@ export const AllTasksView: React.FC<AllTasksViewProps> = ({ onOpenTaskModal, onO
                       ? 'bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-white shadow-emerald-500/30 ring-1 ring-white/20'
                       : 'btn-pro btn-pro-success'
                   }`}
+                  title="Mark Task as Done"
                 >
                   <CheckCircle2 className="w-3.5 h-3.5 stroke-[2.5]" />
                   <span>Done</span>
                 </button>
               </div>
-            ) : (
+            ) : task.status !== 'Done' && (
               <button
-                onClick={() => startTask(task.id)}
+                onClick={() => completeTask(task.id)}
                 className={`flex items-center gap-1 px-3 py-1 rounded-lg text-xs font-bold shadow-2xs active:scale-95 transition-all cursor-pointer ${
                   isInSleep
-                    ? 'night-btn-start'
-                    : 'btn-pro btn-pro-primary'
+                    ? 'bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-white shadow-emerald-500/30 ring-1 ring-white/20'
+                    : 'btn-pro btn-pro-success'
                 }`}
+                title="Mark Task as Done"
               >
-                <Play className="w-3 h-3 fill-white stroke-[2]" />
-                <span>Start</span>
+                <CheckCircle2 className="w-3.5 h-3.5 stroke-[2.5]" />
+                <span>Done</span>
               </button>
             )}
 

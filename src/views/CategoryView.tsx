@@ -353,6 +353,18 @@ export const CategoryView: React.FC<CategoryViewProps> = ({ onOpenTaskModal }) =
       setReschedulingTask(task);
       return;
     }
+    if (newStatus === 'Working') {
+      startTask(task.id);
+      return;
+    }
+    if (newStatus === 'Done') {
+      completeTask(task.id);
+      return;
+    }
+    if (newStatus === 'Hold') {
+      pauseTask(task.id);
+      return;
+    }
     updateTask({ ...task, status: newStatus });
   };
 
@@ -662,10 +674,12 @@ export const CategoryView: React.FC<CategoryViewProps> = ({ onOpenTaskModal }) =
                   </span>
                   <div className="flex items-center gap-1.5">
                     <button
-                      onClick={() => startTask(t.id)}
-                      className="px-2.5 py-1 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-[11px] font-bold shadow-sm"
+                      onClick={() => completeTask(t.id)}
+                      className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-bold shadow-sm flex items-center gap-1 cursor-pointer"
+                      title="Mark as Done"
                     >
-                      Start
+                      <CheckCircle2 className="w-3 h-3 stroke-[2.5]" />
+                      <span>Done</span>
                     </button>
                     <button
                       onClick={() => onOpenTaskModal(t)}
@@ -855,6 +869,31 @@ export const CategoryView: React.FC<CategoryViewProps> = ({ onOpenTaskModal }) =
                                   )}
                                 </div>
 
+                                {/* Live Status Badge */}
+                                <div className="flex items-center gap-1.5 flex-wrap py-0.5">
+                                  <select
+                                    value={task.status}
+                                    onChange={(e) => handleStatusChange(task, e.target.value as TaskStatus)}
+                                    className={`text-[10px] sm:text-[11px] font-bold px-2 py-0.5 rounded-lg border cursor-pointer focus:outline-none transition-colors ${
+                                      task.status === 'Done' ? 'bg-emerald-600 text-white border-emerald-600 shadow-xs' :
+                                      task.status === 'Terminated' ? 'bg-red-600 text-white border-red-600 shadow-xs' :
+                                      task.status === 'Working' ? 'bg-blue-600 text-white border-blue-600 shadow-xs animate-pulse' :
+                                      task.status === 'Hold' ? 'bg-amber-100 text-amber-800 border-amber-300 dark:bg-amber-950' :
+                                      task.status === 'Incomplete' ? 'bg-red-600 text-white border-red-600 shadow-xs' :
+                                      task.status === 'Reschedule' ? 'bg-purple-100 text-purple-800 border-purple-300' :
+                                      'bg-slate-100 text-slate-700 border-slate-300 dark:bg-slate-800 dark:text-slate-300'
+                                    }`}
+                                  >
+                                    <option value="Pending" className="bg-slate-900 text-white">● Pending</option>
+                                    <option value="Working" className="bg-slate-900 text-white">⚡ Working</option>
+                                    <option value="Done" className="bg-slate-900 text-white">✓ Done</option>
+                                    <option value="Hold" className="bg-slate-900 text-white">⏸ Hold</option>
+                                    <option value="Incomplete" className="bg-slate-900 text-white">⚠️ Incomplete</option>
+                                    <option value="Reschedule" className="bg-slate-900 text-white">↻ Reschedule</option>
+                                    <option value="Terminated" className="bg-slate-900 text-white">✕ Terminated</option>
+                                  </select>
+                                </div>
+
                                 {task.description && (
                                   <p className="text-xs text-theme-muted line-clamp-1">
                                     {task.description}
@@ -907,13 +946,14 @@ export const CategoryView: React.FC<CategoryViewProps> = ({ onOpenTaskModal }) =
                                     <span>Done</span>
                                   </button>
                                 </div>
-                              ) : (
+                              ) : task.status !== 'Done' && (
                                 <button
-                                  onClick={() => startTask(task.id)}
-                                  className="flex items-center gap-1.5 px-4 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold shadow-sm active:scale-95 transition-all cursor-pointer"
+                                  onClick={() => completeTask(task.id)}
+                                  className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-sm transition-all active:scale-95 cursor-pointer"
+                                  title="Mark Task as Done"
                                 >
-                                  <Play className="w-3.5 h-3.5 fill-white stroke-[2]" />
-                                  <span>Start</span>
+                                  <CheckCircle2 className="w-4 h-4 stroke-[2.5]" />
+                                  <span>Done</span>
                                 </button>
                               )}
 
