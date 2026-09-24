@@ -28,7 +28,12 @@ import {
   SlidersHorizontal,
   ChevronDown,
   ChevronUp,
-  Tag
+  Tag,
+  CheckSquare,
+  Square,
+  Copy,
+  CalendarPlus,
+  Check
 } from 'lucide-react';
 import { PriorityLevel, TaskStatus, RecurrenceType } from '../types';
 import { 
@@ -37,6 +42,8 @@ import {
   downloadBatchTemplate, 
   BatchTaskItem, 
   BatchDefaults, 
+  BatchDateMode,
+  getDatesBetween,
   addDaysToDate 
 } from '../utils/batchTaskParser';
 import { 
@@ -92,10 +99,23 @@ Evening Workout & Recharge | P5 | 45m | Personal / Health & Fitness | | Anytime 
   const [fileError, setFileError] = useState<string | null>(null);
   const [isParsingFile, setIsParsingFile] = useState<boolean>(false);
 
-  // Batch Defaults: Date Options
+  // Batch Defaults: Date & Multi-Date Scheduling Options
   const [defaultDate, setDefaultDate] = useState<string>(() => initialDate || toISODateString(new Date()));
-  const [dateMode, setDateMode] = useState<'same' | 'spread'>('same');
+  const [selectedDates, setSelectedDates] = useState<string[]>(() => [initialDate || toISODateString(new Date())]);
+  const [batchDateMode, setBatchDateMode] = useState<BatchDateMode>('same');
   const [tasksPerDay, setTasksPerDay] = useState<number>(1);
+  const [rangeEndDate, setRangeEndDate] = useState<string>(() => addDaysToDate(initialDate || toISODateString(new Date()), 3));
+  const [rangeSkipWeekends, setRangeSkipWeekends] = useState<boolean>(false);
+  const [newDateInput, setNewDateInput] = useState<string>(() => toISODateString(new Date()));
+
+  // Batch Selection & Bulk Update Toolbar State
+  const [selectedRowIndices, setSelectedRowIndices] = useState<number[]>([]);
+  const [batchUpdateDate, setBatchUpdateDate] = useState<string>(() => defaultDate);
+  const [batchUpdateCategory, setBatchUpdateCategory] = useState<string>(() => initialCategory || (categories[0]?.name || 'General'));
+  const [batchUpdateSubCategory, setBatchUpdateSubCategory] = useState<string>('');
+  const [batchUpdatePriority, setBatchUpdatePriority] = useState<PriorityLevel>('P3');
+  const [batchUpdateBuffer, setBatchUpdateBuffer] = useState<number>(10);
+  const [batchUpdateRecurrence, setBatchUpdateRecurrence] = useState<RecurrenceType>('None');
 
   // Batch Defaults: Plan / Project Option
   const [defaultPlanProjectId, setDefaultPlanProjectId] = useState<string>(() => initialPlanProjectId || '');
@@ -142,9 +162,14 @@ Evening Workout & Recharge | P5 | 45m | Personal / Health & Fitness | | Anytime 
 
   // Update initial defaults if props change
   useEffect(() => {
-    if (initialDate) setDefaultDate(initialDate);
+    if (initialDate) {
+      setDefaultDate(initialDate);
+      setSelectedDates([initialDate]);
+      setBatchUpdateDate(initialDate);
+    }
     if (initialCategory) {
       handleSelectDefaultCategory(initialCategory);
+      setBatchUpdateCategory(initialCategory);
     }
     if (initialPlanProjectId) setDefaultPlanProjectId(initialPlanProjectId);
   }, [initialDate, initialCategory, initialPlanProjectId, isOpen]);
@@ -152,8 +177,11 @@ Evening Workout & Recharge | P5 | 45m | Personal / Health & Fitness | | Anytime 
   // Combine defaults
   const currentDefaults: BatchDefaults = useMemo(() => ({
     taskDate: defaultDate,
-    dateMode,
+    dateMode: batchDateMode,
     tasksPerDay,
+    selectedDates,
+    rangeEndDate,
+    rangeSkipWeekends,
     priority: defaultPriority,
     category: defaultCategory,
     subCategory: defaultSubCategory || undefined,
@@ -168,8 +196,11 @@ Evening Workout & Recharge | P5 | 45m | Personal / Health & Fitness | | Anytime 
     planProjects
   }), [
     defaultDate, 
-    dateMode, 
+    batchDateMode, 
     tasksPerDay, 
+    selectedDates,
+    rangeEndDate,
+    rangeSkipWeekends,
     defaultPriority, 
     defaultCategory, 
     defaultSubCategory, 
@@ -188,6 +219,7 @@ Evening Workout & Recharge | P5 | 45m | Personal / Health & Fitness | | Anytime 
     if (activeTab === 'text') {
       const tasks = parseMultiLineText(rawText, currentDefaults);
       setParsedTasks(tasks);
+      setSelectedRowIndices([]);
     }
   }, [rawText, currentDefaults, activeTab]);
 
@@ -208,6 +240,7 @@ Evening Workout & Recharge | P5 | 45m | Personal / Health & Fitness | | Anytime 
         setFileError('No valid task rows could be found in the file. Ensure column headers include "Title" or "Task".');
       } else {
         setParsedTasks(tasks);
+        setSelectedRowIndices([]);
       }
     } catch (err: any) {
       console.error('File parsing error:', err);
@@ -226,34 +259,256 @@ Evening Workout & Recharge | P5 | 45m | Personal / Health & Fitness | | Anytime 
     }
   };
 
-  // Quick Date Presets
-  const setQuickDate = (type: 'today' | 'tomorrow' | 'nextMon') => {
+  // Add / Remove from Selected Dates array
+  const handleAddSelectedDate = (dateVal: string) => {
+    if (!dateVal) return;
+    if (!selectedDates.includes(dateVal)) {
+      const updated = [...selectedDates, dateVal].sort();
+      setSelectedDates(updated);
+    }
+  };
+
+  const handleRemoveSelectedDate = (dateVal: string) => {
+    if (selectedDates.length <= 1) return; // Keep at least one date
+    setSelectedDates(prev => prev.filter(d => d !== dateVal));
+  };
+
+  // Quick Date & Multi-Date Presets
+  const setQuickDate = (type: 'today' | 'tomorrow' | 'nextMon' | 'next3Days' | 'next7Days' | 'weekend' | 'monWedFri') => {
     const now = new Date();
+    const todayStr = toISODateString(now);
+
     if (type === 'today') {
-      setDefaultDate(toISODateString(now));
+      setDefaultDate(todayStr);
+      setSelectedDates([todayStr]);
+      setBatchDateMode('same');
+      setBatchUpdateDate(todayStr);
     } else if (type === 'tomorrow') {
       const d = new Date(now);
       d.setDate(d.getDate() + 1);
-      setDefaultDate(toISODateString(d));
+      const tomStr = toISODateString(d);
+      setDefaultDate(tomStr);
+      setSelectedDates([tomStr]);
+      setBatchDateMode('same');
+      setBatchUpdateDate(tomStr);
     } else if (type === 'nextMon') {
       const d = new Date(now);
       const day = d.getDay();
       const diff = day === 0 ? 1 : 8 - day;
       d.setDate(d.getDate() + diff);
-      setDefaultDate(toISODateString(d));
+      const nextMonStr = toISODateString(d);
+      setDefaultDate(nextMonStr);
+      setSelectedDates([nextMonStr]);
+      setBatchDateMode('same');
+      setBatchUpdateDate(nextMonStr);
+    } else if (type === 'next3Days') {
+      const d0 = todayStr;
+      const d1 = addDaysToDate(todayStr, 1);
+      const d2 = addDaysToDate(todayStr, 2);
+      setDefaultDate(d0);
+      setSelectedDates([d0, d1, d2]);
+      setBatchDateMode('multi_replicate');
+    } else if (type === 'next7Days') {
+      const dates = Array.from({ length: 7 }, (_, i) => addDaysToDate(todayStr, i));
+      setDefaultDate(dates[0]);
+      setSelectedDates(dates);
+      setRangeEndDate(dates[6]);
+      setBatchDateMode('multi_replicate');
+    } else if (type === 'weekend') {
+      const d = new Date(now);
+      const day = d.getDay();
+      const daysUntilSat = (6 - day + 7) % 7;
+      const sat = new Date(d);
+      sat.setDate(sat.getDate() + (daysUntilSat === 0 ? 7 : daysUntilSat));
+      const sun = new Date(sat);
+      sun.setDate(sun.getDate() + 1);
+      const satStr = toISODateString(sat);
+      const sunStr = toISODateString(sun);
+      setDefaultDate(satStr);
+      setSelectedDates([satStr, sunStr]);
+      setBatchDateMode('multi_replicate');
+    } else if (type === 'monWedFri') {
+      const d = new Date(now);
+      const day = d.getDay();
+      const daysUntilMon = day === 0 ? 1 : (8 - day);
+      const mon = new Date(d);
+      mon.setDate(mon.getDate() + daysUntilMon);
+      const wed = new Date(mon);
+      wed.setDate(wed.getDate() + 2);
+      const fri = new Date(mon);
+      fri.setDate(fri.getDate() + 4);
+      const monStr = toISODateString(mon);
+      const wedStr = toISODateString(wed);
+      const friStr = toISODateString(fri);
+      setDefaultDate(monStr);
+      setSelectedDates([monStr, wedStr, friStr]);
+      setBatchDateMode('multi_replicate');
     }
   };
 
-  // Bulk Apply Helpers
+  // Bulk Apply Date Helpers
   const applyDateToAllRows = () => {
-    setParsedTasks(prev => prev.map((t, idx) => {
-      let taskDate = defaultDate;
-      if (dateMode === 'spread') {
+    if (batchDateMode === 'same') {
+      setParsedTasks(prev => prev.map(t => ({ ...t, taskDate: defaultDate })));
+    } else if (batchDateMode === 'spread') {
+      setParsedTasks(prev => prev.map((t, idx) => {
         const offset = Math.floor(idx / Math.max(1, tasksPerDay));
-        taskDate = addDaysToDate(defaultDate, offset);
+        return { ...t, taskDate: addDaysToDate(defaultDate, offset) };
+      }));
+    } else if (batchDateMode === 'multi_distribute') {
+      const dates = selectedDates.length > 0 ? selectedDates : [defaultDate];
+      setParsedTasks(prev => prev.map((t, idx) => ({
+        ...t,
+        taskDate: dates[idx % dates.length]
+      })));
+    } else if (batchDateMode === 'range_distribute') {
+      const dates = getDatesBetween(defaultDate, rangeEndDate, rangeSkipWeekends);
+      const validDates = dates.length > 0 ? dates : [defaultDate];
+      setParsedTasks(prev => prev.map((t, idx) => ({
+        ...t,
+        taskDate: validDates[idx % validDates.length]
+      })));
+    } else if (batchDateMode === 'multi_replicate' || batchDateMode === 'range_replicate') {
+      const dates = batchDateMode === 'multi_replicate'
+        ? (selectedDates.length > 0 ? selectedDates : [defaultDate])
+        : getDatesBetween(defaultDate, rangeEndDate, rangeSkipWeekends);
+
+      if (activeTab === 'text') {
+        const tasks = parseMultiLineText(rawText, { ...currentDefaults, selectedDates: dates });
+        setParsedTasks(tasks);
+      } else {
+        const baseTasks = parsedTasks.length > 0 ? parsedTasks : [];
+        const replicated: BatchTaskItem[] = [];
+        dates.forEach(d => {
+          baseTasks.forEach(t => {
+            replicated.push({ ...t, taskDate: d });
+          });
+        });
+        setParsedTasks(replicated);
       }
-      return { ...t, taskDate };
-    }));
+    }
+  };
+
+  // Selection Checkbox Helpers
+  const isAllSelected = parsedTasks.length > 0 && selectedRowIndices.length === parsedTasks.length;
+  const isSomeSelected = selectedRowIndices.length > 0 && !isAllSelected;
+
+  const toggleSelectAll = () => {
+    if (isAllSelected) {
+      setSelectedRowIndices([]);
+    } else {
+      setSelectedRowIndices(parsedTasks.map((_, i) => i));
+    }
+  };
+
+  const toggleSelectRow = (idx: number) => {
+    setSelectedRowIndices(prev => 
+      prev.includes(idx) ? prev.filter(i => i !== idx) : [...prev, idx]
+    );
+  };
+
+  // Batch Update Toolbar Actions on Selected Rows
+  const handleBatchSetDate = (targetDate: string) => {
+    if (!targetDate || selectedRowIndices.length === 0) return;
+    setParsedTasks(prev => prev.map((t, idx) => 
+      selectedRowIndices.includes(idx) ? { ...t, taskDate: targetDate } : t
+    ));
+    setStatusBanner({
+      type: 'success',
+      message: `Updated date to ${targetDate} on ${selectedRowIndices.length} selected tasks.`
+    });
+  };
+
+  const handleBatchShiftDate = (dayOffset: number) => {
+    if (selectedRowIndices.length === 0) return;
+    setParsedTasks(prev => prev.map((t, idx) => 
+      selectedRowIndices.includes(idx) ? { ...t, taskDate: addDaysToDate(t.taskDate, dayOffset) } : t
+    ));
+    setStatusBanner({
+      type: 'success',
+      message: `Shifted date by ${dayOffset > 0 ? `+${dayOffset}` : dayOffset} days on ${selectedRowIndices.length} tasks.`
+    });
+  };
+
+  const handleBatchReplicateSelectedToDates = () => {
+    if (selectedRowIndices.length === 0 || selectedDates.length === 0) return;
+    const targetTasks = selectedRowIndices.map(i => parsedTasks[i]);
+    const newTasks: BatchTaskItem[] = [];
+
+    selectedDates.forEach(date => {
+      targetTasks.forEach(task => {
+        if (task.taskDate !== date) {
+          newTasks.push({
+            ...task,
+            taskDate: date
+          });
+        }
+      });
+    });
+
+    if (newTasks.length > 0) {
+      setParsedTasks(prev => [...prev, ...newTasks]);
+      setStatusBanner({
+        type: 'success',
+        message: `Replicated ${targetTasks.length} tasks across ${selectedDates.length} dates (+${newTasks.length} tasks added).`
+      });
+    }
+  };
+
+  const handleBatchSetCategory = (cat: string, sub?: string) => {
+    if (selectedRowIndices.length === 0) return;
+    setParsedTasks(prev => prev.map((t, idx) => 
+      selectedRowIndices.includes(idx) ? { ...t, category: cat, subCategory: sub || undefined } : t
+    ));
+    setStatusBanner({
+      type: 'success',
+      message: `Updated category to ${cat}${sub ? ` / ${sub}` : ''} on ${selectedRowIndices.length} tasks.`
+    });
+  };
+
+  const handleBatchSetPriority = (priority: PriorityLevel) => {
+    if (selectedRowIndices.length === 0) return;
+    setParsedTasks(prev => prev.map((t, idx) => 
+      selectedRowIndices.includes(idx) ? { ...t, priority } : t
+    ));
+    setStatusBanner({
+      type: 'success',
+      message: `Updated priority to ${priority} on ${selectedRowIndices.length} tasks.`
+    });
+  };
+
+  const handleBatchSetBuffer = (bufferMinutes: number) => {
+    if (selectedRowIndices.length === 0) return;
+    setParsedTasks(prev => prev.map((t, idx) => 
+      selectedRowIndices.includes(idx) ? { ...t, bufferMinutes } : t
+    ));
+  };
+
+  const handleBatchSetRecurrence = (recurrence: RecurrenceType) => {
+    if (selectedRowIndices.length === 0) return;
+    setParsedTasks(prev => prev.map((t, idx) => 
+      selectedRowIndices.includes(idx) ? { ...t, recurrence } : t
+    ));
+  };
+
+  const handleBatchToggleLock = () => {
+    if (selectedRowIndices.length === 0) return;
+    const anyUnlocked = selectedRowIndices.some(idx => !parsedTasks[idx]?.isMandatorySchedule);
+    setParsedTasks(prev => prev.map((t, idx) => 
+      selectedRowIndices.includes(idx) ? { ...t, isMandatorySchedule: anyUnlocked } : t
+    ));
+  };
+
+  const handleBatchDeleteSelected = () => {
+    if (selectedRowIndices.length === 0) return;
+    const count = selectedRowIndices.length;
+    setParsedTasks(prev => prev.filter((_, idx) => !selectedRowIndices.includes(idx)));
+    setSelectedRowIndices([]);
+    setExpandedNotesRowIndex(null);
+    setStatusBanner({
+      type: 'success',
+      message: `Removed ${count} tasks.`
+    });
   };
 
   const handleSelectDefaultProject = (projId: string) => {
@@ -308,9 +563,16 @@ Evening Workout & Recharge | P5 | 45m | Personal / Health & Fitness | | Anytime 
 
     setParsedTasks(prev => prev.map((t, idx) => {
       let taskDate = defaultDate;
-      if (dateMode === 'spread') {
+      if (batchDateMode === 'spread') {
         const offset = Math.floor(idx / Math.max(1, tasksPerDay));
         taskDate = addDaysToDate(defaultDate, offset);
+      } else if (batchDateMode === 'multi_distribute') {
+        const dates = selectedDates.length > 0 ? selectedDates : [defaultDate];
+        taskDate = dates[idx % dates.length];
+      } else if (batchDateMode === 'range_distribute') {
+        const dates = getDatesBetween(defaultDate, rangeEndDate, rangeSkipWeekends);
+        const validDates = dates.length > 0 ? dates : [defaultDate];
+        taskDate = validDates[idx % validDates.length];
       }
 
       if (taskDate !== lastCalculatedDate) {
@@ -575,82 +837,221 @@ Evening Workout & Recharge | P5 | 45m | Personal / Health & Fitness | | Anytime 
           {/* Row 1: Date Scheduling & Plan/Project/Category Hierarchy */}
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-2 sm:gap-2.5 items-stretch">
             
-            {/* Date Configuration Block */}
-            <div className="lg:col-span-5 bg-theme-card p-2 sm:p-2.5 rounded-2xl border border-theme-border/80 shadow-2xs space-y-1.5 flex flex-col justify-between">
-              <div className="flex items-center justify-between">
+            {/* Date & Multi-Date Configuration Block */}
+            <div className="lg:col-span-6 bg-theme-card p-2 sm:p-2.5 rounded-2xl border border-theme-border/80 shadow-2xs space-y-2 flex flex-col justify-between">
+              <div className="flex items-center justify-between flex-wrap gap-1">
                 <label className="text-[10px] font-black text-theme-muted uppercase tracking-wider flex items-center gap-1 font-display">
                   <Calendar className="w-3 h-3 text-blue-500" />
-                  <span>Date Scheduling</span>
+                  <span>Date Scheduling & Multi-Date</span>
                 </label>
 
                 {/* Quick Date Pills */}
-                <div className="flex items-center gap-1">
+                <div className="flex items-center flex-wrap gap-1">
                   <button
                     type="button"
                     onClick={() => setQuickDate('today')}
-                    className="px-2 py-0.5 rounded-lg bg-theme-card-hover hover:bg-blue-500/10 hover:text-blue-500 text-[10px] font-bold transition-colors cursor-pointer"
+                    className="px-1.5 py-0.5 rounded-md bg-theme-card-hover hover:bg-blue-500/10 hover:text-blue-500 text-[10px] font-bold transition-colors cursor-pointer"
                   >
                     Today
                   </button>
                   <button
                     type="button"
                     onClick={() => setQuickDate('tomorrow')}
-                    className="px-2 py-0.5 rounded-lg bg-theme-card-hover hover:bg-blue-500/10 hover:text-blue-500 text-[10px] font-bold transition-colors cursor-pointer"
+                    className="px-1.5 py-0.5 rounded-md bg-theme-card-hover hover:bg-blue-500/10 hover:text-blue-500 text-[10px] font-bold transition-colors cursor-pointer"
                   >
                     Tomorrow
                   </button>
                   <button
                     type="button"
-                    onClick={() => setQuickDate('nextMon')}
-                    className="px-2 py-0.5 rounded-lg bg-theme-card-hover hover:bg-blue-500/10 hover:text-blue-500 text-[10px] font-bold transition-colors cursor-pointer"
+                    onClick={() => setQuickDate('next3Days')}
+                    className="px-1.5 py-0.5 rounded-md bg-theme-card-hover hover:bg-blue-500/10 hover:text-blue-500 text-[10px] font-bold transition-colors cursor-pointer"
+                    title="Select today and next 2 days (Replicate)"
                   >
-                    Next Mon
+                    Next 3d
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setQuickDate('next7Days')}
+                    className="px-1.5 py-0.5 rounded-md bg-theme-card-hover hover:bg-blue-500/10 hover:text-blue-500 text-[10px] font-bold transition-colors cursor-pointer"
+                    title="Select next 7 days (Replicate)"
+                  >
+                    Next 7d
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setQuickDate('weekend')}
+                    className="px-1.5 py-0.5 rounded-md bg-theme-card-hover hover:bg-blue-500/10 hover:text-blue-500 text-[10px] font-bold transition-colors cursor-pointer"
+                    title="Select upcoming Saturday & Sunday"
+                  >
+                    Weekend
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setQuickDate('monWedFri')}
+                    className="px-1.5 py-0.5 rounded-md bg-theme-card-hover hover:bg-blue-500/10 hover:text-blue-500 text-[10px] font-bold transition-colors cursor-pointer"
+                    title="Select Mon, Wed, Fri"
+                  >
+                    M/W/F
                   </button>
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 items-center">
+              {/* Date Mode Selector & Sync Action */}
+              <div className="flex items-center gap-1.5">
+                <select
+                  value={batchDateMode}
+                  onChange={(e) => setBatchDateMode(e.target.value as BatchDateMode)}
+                  className="flex-1 px-2.5 py-1.5 rounded-xl bg-theme-bg border border-theme-border text-theme-text text-xs focus:ring-1 focus:ring-blue-500 font-bold"
+                >
+                  <option value="same">Single Date (All tasks on same date)</option>
+                  <option value="multi_replicate">Multi-Date Replicate (Repeat all on each date)</option>
+                  <option value="multi_distribute">Multi-Date Distribute (Distribute across dates)</option>
+                  <option value="range_replicate">Date Range Replicate (Every day in range)</option>
+                  <option value="range_distribute">Date Range Distribute (Spread over range)</option>
+                  <option value="spread">Daily Spread (N tasks per day)</option>
+                </select>
+
+                <button
+                  type="button"
+                  onClick={applyDateToAllRows}
+                  title="Apply date settings to preview tasks"
+                  className="flex items-center gap-1 px-2 py-1.5 rounded-xl border border-blue-500/30 bg-blue-500/10 hover:bg-blue-500/20 text-blue-600 dark:text-blue-400 font-bold text-xs transition-colors shrink-0 cursor-pointer"
+                >
+                  <RefreshCw className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">Apply</span>
+                </button>
+              </div>
+
+              {/* Dynamic Mode Controls */}
+              {batchDateMode === 'same' && (
                 <input
                   type="date"
                   value={defaultDate}
-                  onChange={(e) => setDefaultDate(e.target.value)}
+                  onChange={(e) => {
+                    setDefaultDate(e.target.value);
+                    setSelectedDates([e.target.value]);
+                    setBatchUpdateDate(e.target.value);
+                  }}
                   className="w-full px-2.5 py-1.5 rounded-xl bg-theme-bg border border-theme-border text-theme-text text-xs focus:ring-1 focus:ring-blue-500 font-medium"
                 />
+              )}
 
-                <div className="flex items-center gap-1">
+              {batchDateMode === 'spread' && (
+                <div className="grid grid-cols-2 gap-1.5 items-center">
+                  <input
+                    type="date"
+                    value={defaultDate}
+                    onChange={(e) => setDefaultDate(e.target.value)}
+                    className="w-full px-2.5 py-1.5 rounded-xl bg-theme-bg border border-theme-border text-theme-text text-xs focus:ring-1 focus:ring-blue-500 font-medium"
+                  />
                   <select
-                    value={dateMode === 'same' ? 'same' : `spread-${tasksPerDay}`}
-                    onChange={(e) => {
-                      const val = e.target.value;
-                      if (val === 'same') {
-                        setDateMode('same');
-                      } else {
-                        setDateMode('spread');
-                        setTasksPerDay(parseInt(val.replace('spread-', ''), 10) || 1);
-                      }
-                    }}
-                    className="flex-1 px-2.5 py-1.5 rounded-xl bg-theme-bg border border-theme-border text-theme-text text-xs focus:ring-1 focus:ring-blue-500 font-semibold"
+                    value={tasksPerDay}
+                    onChange={(e) => setTasksPerDay(parseInt(e.target.value, 10) || 1)}
+                    className="w-full px-2.5 py-1.5 rounded-xl bg-theme-bg border border-theme-border text-theme-text text-xs focus:ring-1 focus:ring-blue-500 font-semibold"
                   >
-                    <option value="same">All on Same Date</option>
-                    <option value="spread-1">Daily (1 task / day)</option>
-                    <option value="spread-2">Daily (2 tasks / day)</option>
-                    <option value="spread-3">Daily (3 tasks / day)</option>
+                    <option value={1}>1 task / day</option>
+                    <option value={2}>2 tasks / day</option>
+                    <option value={3}>3 tasks / day</option>
+                    <option value={4}>4 tasks / day</option>
+                    <option value={5}>5 tasks / day</option>
                   </select>
-
-                  <button
-                    type="button"
-                    onClick={applyDateToAllRows}
-                    title="Apply current date settings to all preview rows"
-                    className="p-1.5 rounded-xl border border-theme-border bg-theme-card-hover hover:bg-theme-border text-theme-muted hover:text-theme-text transition-colors shrink-0 cursor-pointer"
-                  >
-                    <RefreshCw className="w-3.5 h-3.5" />
-                  </button>
                 </div>
-              </div>
+              )}
+
+              {(batchDateMode === 'multi_replicate' || batchDateMode === 'multi_distribute') && (
+                <div className="space-y-1.5 bg-theme-bg/60 p-2 rounded-xl border border-theme-border">
+                  <div className="flex items-center justify-between text-[10px] text-theme-muted font-bold">
+                    <span>Selected Dates ({selectedDates.length}):</span>
+                    <span className="text-blue-500 font-semibold">
+                      {batchDateMode === 'multi_replicate' ? 'Replicating on each date' : 'Distributing across dates'}
+                    </span>
+                  </div>
+
+                  {/* Date Chips */}
+                  <div className="flex flex-wrap items-center gap-1 max-h-16 overflow-y-auto no-scrollbar">
+                    {selectedDates.map(d => (
+                      <span
+                        key={d}
+                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-blue-500/10 border border-blue-500/25 text-blue-600 dark:text-blue-400 text-[11px] font-mono font-bold"
+                      >
+                        <span>{d}</span>
+                        {selectedDates.length > 1 && (
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveSelectedDate(d)}
+                            className="hover:text-red-500 p-0.5 rounded transition-colors cursor-pointer"
+                            title={`Remove ${d}`}
+                          >
+                            <X className="w-2.5 h-2.5" />
+                          </button>
+                        )}
+                      </span>
+                    ))}
+                  </div>
+
+                  {/* Add Date Control */}
+                  <div className="flex items-center gap-1.5 pt-1 border-t border-theme-border/60">
+                    <input
+                      type="date"
+                      value={newDateInput}
+                      onChange={(e) => setNewDateInput(e.target.value)}
+                      className="flex-1 px-2 py-1 rounded-lg bg-theme-card border border-theme-border text-xs text-theme-text font-medium"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => handleAddSelectedDate(newDateInput)}
+                      className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold transition-all cursor-pointer shadow-2xs shrink-0"
+                    >
+                      <Plus className="w-3 h-3" />
+                      <span>Add Date</span>
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {(batchDateMode === 'range_replicate' || batchDateMode === 'range_distribute') && (
+                <div className="space-y-1.5 bg-theme-bg/60 p-2 rounded-xl border border-theme-border">
+                  <div className="grid grid-cols-2 gap-1.5">
+                    <div>
+                      <label className="text-[10px] font-bold text-theme-muted block mb-0.5">Start Date</label>
+                      <input
+                        type="date"
+                        value={defaultDate}
+                        onChange={(e) => setDefaultDate(e.target.value)}
+                        className="w-full px-2 py-1 rounded-lg bg-theme-card border border-theme-border text-xs text-theme-text font-medium"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-bold text-theme-muted block mb-0.5">End Date</label>
+                      <input
+                        type="date"
+                        value={rangeEndDate}
+                        onChange={(e) => setRangeEndDate(e.target.value)}
+                        className="w-full px-2 py-1 rounded-lg bg-theme-card border border-theme-border text-xs text-theme-text font-medium"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-between pt-1">
+                    <label className="flex items-center gap-1.5 text-[11px] text-theme-text font-semibold cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={rangeSkipWeekends}
+                        onChange={(e) => setRangeSkipWeekends(e.target.checked)}
+                        className="rounded text-blue-600 focus:ring-blue-500 border-theme-border"
+                      />
+                      <span>Skip Weekends (Mon-Fri)</span>
+                    </label>
+                    <span className="text-[10px] text-blue-500 font-bold font-mono">
+                      {getDatesBetween(defaultDate, rangeEndDate, rangeSkipWeekends).length} days
+                    </span>
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Plan / Project & Category Hierarchy Block */}
-            <div className="lg:col-span-7 bg-theme-card p-2 sm:p-2.5 rounded-2xl border border-theme-border/80 shadow-2xs space-y-1.5">
+            <div className="lg:col-span-6 bg-theme-card p-2 sm:p-2.5 rounded-2xl border border-theme-border/80 shadow-2xs space-y-1.5">
               <div className="flex items-center justify-between">
                 <label className="text-[10px] font-black text-theme-muted uppercase tracking-wider flex items-center gap-1 font-display">
                   <Folder className="w-3 h-3 text-indigo-500" />
@@ -1110,6 +1511,165 @@ Evening Workout & Recharge | P5 | 45m | Personal / Health & Fitness | | Anytime 
               </div>
             </div>
 
+            {/* Industry Standard Batch Update Action Bar (Sticky / Floating) */}
+            {selectedRowIndices.length > 0 && (
+              <div className="p-2 sm:p-2.5 rounded-2xl bg-gradient-to-r from-blue-700 via-indigo-700 to-blue-600 text-white shadow-lg ring-1 ring-white/20 flex flex-wrap items-center justify-between gap-2 animate-slide-down">
+                <div className="flex items-center gap-2">
+                  <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-white/20 text-xs font-black tracking-wide">
+                    <CheckSquare className="w-3.5 h-3.5" />
+                    <span>{selectedRowIndices.length} of {parsedTasks.length} Selected</span>
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedRowIndices([])}
+                    className="text-[11px] text-white/80 hover:text-white underline font-semibold cursor-pointer"
+                  >
+                    Clear
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedRowIndices(parsedTasks.map((_, i) => i))}
+                    className="text-[11px] text-white/80 hover:text-white underline font-semibold cursor-pointer"
+                  >
+                    Select All
+                  </button>
+                </div>
+
+                {/* Batch Update Actions Group */}
+                <div className="flex items-center flex-wrap gap-1.5 text-xs">
+                  {/* Date Mass Change */}
+                  <div className="flex items-center gap-1 bg-white/15 p-1 rounded-xl">
+                    <Calendar className="w-3.5 h-3.5 ml-1 text-white/80" />
+                    <input
+                      type="date"
+                      value={batchUpdateDate}
+                      onChange={(e) => setBatchUpdateDate(e.target.value)}
+                      className="px-1.5 py-0.5 rounded-lg bg-black/25 text-white text-[11px] border border-white/20 focus:outline-none"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => handleBatchSetDate(batchUpdateDate)}
+                      className="px-2 py-0.5 rounded-lg bg-white/20 hover:bg-white/30 text-[11px] font-bold transition-colors cursor-pointer"
+                      title="Apply date to selected tasks"
+                    >
+                      Set Date
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleBatchShiftDate(1)}
+                      className="px-1.5 py-0.5 rounded-lg bg-white/20 hover:bg-white/30 text-[11px] font-bold transition-colors cursor-pointer"
+                      title="Shift selected forward +1 day"
+                    >
+                      +1d
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleBatchShiftDate(7)}
+                      className="px-1.5 py-0.5 rounded-lg bg-white/20 hover:bg-white/30 text-[11px] font-bold transition-colors cursor-pointer"
+                      title="Shift selected forward +7 days"
+                    >
+                      +7d
+                    </button>
+                    {selectedDates.length > 1 && (
+                      <button
+                        type="button"
+                        onClick={handleBatchReplicateSelectedToDates}
+                        className="flex items-center gap-1 px-2 py-0.5 rounded-lg bg-amber-400 text-slate-900 text-[11px] font-black hover:bg-amber-300 transition-colors cursor-pointer shadow-2xs"
+                        title="Replicate these selected tasks across all currently selected dates"
+                      >
+                        <Copy className="w-3 h-3" />
+                        <span>Replicate to {selectedDates.length} Dates</span>
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Category Mass Change */}
+                  <div className="flex items-center gap-1 bg-white/15 p-1 rounded-xl">
+                    <select
+                      value={batchUpdateCategory}
+                      onChange={(e) => {
+                        const cat = e.target.value;
+                        setBatchUpdateCategory(cat);
+                        const catObj = categories.find(c => c.name.toLowerCase() === cat.toLowerCase());
+                        if (catObj && catObj.subCategories && catObj.subCategories.length > 0) {
+                          setBatchUpdateSubCategory(catObj.subCategories[0]);
+                        } else {
+                          setBatchUpdateSubCategory('');
+                        }
+                      }}
+                      className="px-1.5 py-0.5 rounded-lg bg-black/25 text-white text-[11px] border border-white/20 focus:outline-none"
+                    >
+                      {categories.map(c => (
+                        <option key={c.id} value={c.name} className="text-slate-900">{c.name}</option>
+                      ))}
+                      <option value="General" className="text-slate-900">General</option>
+                    </select>
+                    <button
+                      type="button"
+                      onClick={() => handleBatchSetCategory(batchUpdateCategory, batchUpdateSubCategory)}
+                      className="px-2 py-0.5 rounded-lg bg-white/20 hover:bg-white/30 text-[11px] font-bold transition-colors cursor-pointer"
+                    >
+                      Set Cat
+                    </button>
+                  </div>
+
+                  {/* Priority Quick Pills */}
+                  <div className="flex items-center gap-0.5 bg-white/15 p-1 rounded-xl">
+                    {(['P1', 'P2', 'P3', 'P4', 'P5'] as PriorityLevel[]).map(p => (
+                      <button
+                        key={p}
+                        type="button"
+                        onClick={() => handleBatchSetPriority(p)}
+                        className="px-1.5 py-0.5 rounded-lg text-[10px] font-black bg-black/25 hover:bg-white hover:text-blue-700 transition-all cursor-pointer"
+                        title={`Set priority to ${p}`}
+                      >
+                        {p}
+                      </button>
+                    ))}
+                  </div>
+
+                  {/* Recurrence Mass Change */}
+                  <select
+                    value={batchUpdateRecurrence}
+                    onChange={(e) => {
+                      const val = e.target.value as RecurrenceType;
+                      setBatchUpdateRecurrence(val);
+                      handleBatchSetRecurrence(val);
+                    }}
+                    className="px-2 py-1 rounded-xl bg-white/15 text-white text-[11px] border border-white/20 focus:outline-none"
+                    title="Set recurrence for selected tasks"
+                  >
+                    <option value="None" className="text-slate-900">No Repeat</option>
+                    <option value="Daily" className="text-slate-900">Daily</option>
+                    <option value="Selected Days" className="text-slate-900">Weekdays</option>
+                    <option value="Weekly" className="text-slate-900">Weekly</option>
+                    <option value="Monthly" className="text-slate-900">Monthly</option>
+                  </select>
+
+                  {/* Lock Schedule Toggle */}
+                  <button
+                    type="button"
+                    onClick={handleBatchToggleLock}
+                    className="p-1.5 rounded-xl bg-white/15 hover:bg-white/25 text-white transition-colors cursor-pointer"
+                    title="Toggle schedule lock on selected tasks"
+                  >
+                    <Lock className="w-3.5 h-3.5" />
+                  </button>
+
+                  {/* Delete Selected */}
+                  <button
+                    type="button"
+                    onClick={handleBatchDeleteSelected}
+                    className="flex items-center gap-1 px-2.5 py-1 rounded-xl bg-red-500/80 hover:bg-red-500 text-white text-[11px] font-bold transition-colors cursor-pointer shadow-xs ml-auto"
+                    title="Delete selected tasks"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Delete ({selectedRowIndices.length})</span>
+                  </button>
+                </div>
+              </div>
+            )}
+
             {/* Empty State */}
             {parsedTasks.length === 0 ? (
               <div className="p-8 text-center rounded-2xl border border-theme-border bg-theme-card-hover/20 text-xs text-theme-muted">
@@ -1123,15 +1683,27 @@ Evening Workout & Recharge | P5 | 45m | Personal / Health & Fitness | | Anytime 
                   const cardCatObj = categories.find(c => c.name.toLowerCase() === (t.category || '').toLowerCase());
                   const cardSubCats = cardCatObj?.subCategories || [];
                   const isExpanded = expandedNotesRowIndex === idx;
+                  const isRowSelected = selectedRowIndices.includes(idx);
 
                   return (
                     <div 
                       key={idx}
-                      className="p-3 rounded-2xl bg-theme-card border border-theme-border shadow-2xs space-y-2 hover:border-blue-500/40 transition-all"
+                      className={`p-3 rounded-2xl bg-theme-card border shadow-2xs space-y-2 transition-all ${
+                        isRowSelected
+                          ? 'border-blue-500 ring-1 ring-blue-500/30 bg-blue-500/[0.03]'
+                          : 'border-theme-border hover:border-blue-500/40'
+                      }`}
                     >
-                      {/* Card Top: Index, Priority, Schedule Lock, Delete */}
+                      {/* Card Top: Checkbox, Index, Priority, Schedule Lock, Delete */}
                       <div className="flex items-center justify-between gap-2">
                         <div className="flex items-center gap-2">
+                          <input
+                            type="checkbox"
+                            checked={isRowSelected}
+                            onChange={() => toggleSelectRow(idx)}
+                            className="w-4 h-4 rounded text-blue-600 focus:ring-blue-500 border-theme-border cursor-pointer shrink-0"
+                          />
+
                           <span className="w-5 h-5 rounded-full bg-theme-card-hover text-theme-muted font-mono font-bold text-[10px] flex items-center justify-center">
                             {idx + 1}
                           </span>
@@ -1367,7 +1939,19 @@ Evening Workout & Recharge | P5 | 45m | Personal / Health & Fitness | | Anytime 
                   <table className="w-full text-left text-xs border-collapse">
                     <thead className="sticky top-0 bg-theme-card-hover/95 backdrop-blur-xs text-theme-muted uppercase text-[10px] font-black tracking-wider border-b border-theme-border z-10 font-display">
                       <tr>
-                        <th className="py-2.5 px-2.5 w-8">#</th>
+                        <th className="py-2.5 px-2.5 w-10 text-center">
+                          <input
+                            type="checkbox"
+                            checked={isAllSelected}
+                            ref={el => {
+                              if (el) el.indeterminate = isSomeSelected;
+                            }}
+                            onChange={toggleSelectAll}
+                            className="w-4 h-4 rounded text-blue-600 focus:ring-blue-500 border-theme-border cursor-pointer"
+                            title={isAllSelected ? "Deselect All" : "Select All"}
+                          />
+                        </th>
+                        <th className="py-2.5 px-2 w-8">#</th>
                         <th className="py-2.5 px-2.5 min-w-[180px]">Task Title & Notes</th>
                         <th className="py-2.5 px-2 w-20">Priority</th>
                         <th className="py-2.5 px-2 min-w-[130px]">Plan / Project</th>
@@ -1387,11 +1971,20 @@ Evening Workout & Recharge | P5 | 45m | Personal / Health & Fitness | | Anytime 
                         const rowCatObj = categories.find(c => c.name.toLowerCase() === (t.category || '').toLowerCase());
                         const rowSubCats = rowCatObj?.subCategories || [];
                         const isExpanded = expandedNotesRowIndex === idx;
+                        const isRowSelected = selectedRowIndices.includes(idx);
 
                         return (
                           <React.Fragment key={idx}>
-                            <tr className="hover:bg-theme-card-hover/40 transition-colors">
-                              <td className="py-2 px-2.5 text-theme-muted font-mono text-[11px]">{idx + 1}</td>
+                            <tr className={`hover:bg-theme-card-hover/40 transition-colors ${isRowSelected ? 'bg-blue-500/10 dark:bg-blue-500/15' : ''}`}>
+                              <td className="py-2 px-2.5 text-center">
+                                <input
+                                  type="checkbox"
+                                  checked={isRowSelected}
+                                  onChange={() => toggleSelectRow(idx)}
+                                  className="w-4 h-4 rounded text-blue-600 focus:ring-blue-500 border-theme-border cursor-pointer"
+                                />
+                              </td>
+                              <td className="py-2 px-2 text-theme-muted font-mono text-[11px]">{idx + 1}</td>
                               
                               {/* Title + Note trigger */}
                               <td className="py-2 px-2.5">
@@ -1605,7 +2198,7 @@ Evening Workout & Recharge | P5 | 45m | Personal / Health & Fitness | | Anytime 
                             {/* Inline Expandable Drawer for Description & Notes */}
                             {isExpanded && (
                               <tr className="bg-theme-card-hover/20">
-                                <td colSpan={13} className="px-4 py-2 border-b border-theme-border">
+                                <td colSpan={14} className="px-4 py-2 border-b border-theme-border">
                                   <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs">
                                     <div>
                                       <label className="block text-[10px] font-bold text-theme-muted mb-0.5">

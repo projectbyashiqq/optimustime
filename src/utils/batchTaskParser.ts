@@ -20,9 +20,20 @@ export function addDaysToDate(dateStr: string, days: number): string {
   return toISODateString(d);
 }
 
+export type BatchDateMode = 
+  | 'same' 
+  | 'spread' 
+  | 'multi_distribute' 
+  | 'multi_replicate' 
+  | 'range_distribute' 
+  | 'range_replicate';
+
 export interface BatchDefaults {
   taskDate: string;
-  dateMode?: 'same' | 'spread';
+  selectedDates?: string[]; // Multiple specific dates e.g. ["2026-09-24", "2026-09-26", "2026-09-28"]
+  dateMode?: BatchDateMode;
+  rangeEndDate?: string;
+  rangeSkipWeekends?: boolean;
   tasksPerDay?: number;
   priority: PriorityLevel;
   category: string;
@@ -57,6 +68,93 @@ export interface BatchTaskItem {
   isMandatorySchedule?: boolean;
   planProjectId?: string;
   selectedDays?: string[];
+}
+
+/**
+ * Returns all dates between startDate and endDate (inclusive).
+ * Optionally excludes Saturdays & Sundays.
+ */
+export function getDatesBetween(startDate: string, endDate: string, skipWeekends: boolean = false): string[] {
+  if (!startDate || !endDate) return [startDate || toISODateString(new Date())];
+  const start = new Date(startDate + 'T00:00:00');
+  const end = new Date(endDate + 'T00:00:00');
+  if (isNaN(start.getTime()) || isNaN(end.getTime()) || start > end) return [startDate];
+
+  const dates: string[] = [];
+  const curr = new Date(start);
+  while (curr <= end) {
+    const day = curr.getDay(); // 0 = Sun, 6 = Sat
+    if (!skipWeekends || (day !== 0 && day !== 6)) {
+      dates.push(toISODateString(curr));
+    }
+    curr.setDate(curr.getDate() + 1);
+  }
+  return dates.length > 0 ? dates : [startDate];
+}
+
+/**
+ * Parses single or comma/semicolon-separated date strings into an array of ISO dates.
+ */
+export function normalizeDateList(raw: any, fallbackDate: string): string[] {
+  if (!raw) return [fallbackDate];
+  const s = String(raw).trim();
+  if (s.includes(',') || s.includes(';')) {
+    const parts = s.split(/[,;]/).map(p => p.trim()).filter(Boolean);
+    const parsed = parts.map(p => normalizeDate(p, fallbackDate));
+    return parsed.length > 0 ? parsed : [fallbackDate];
+  }
+  return [normalizeDate(raw, fallbackDate)];
+}
+
+/**
+ * Resolves the calendar date(s) for a given task based on line input and global batch defaults.
+ */
+export function resolveTaskDates(
+  customDatePart: string | null,
+  index: number,
+  defaults: BatchDefaults
+): string[] {
+  // If line itself explicitly specifies multiple dates
+  if (customDatePart && (customDatePart.includes(',') || customDatePart.includes(';'))) {
+    return normalizeDateList(customDatePart, defaults.taskDate);
+  }
+
+  // If line explicitly specified 1 date
+  if (customDatePart) {
+    return [normalizeDate(customDatePart, defaults.taskDate)];
+  }
+
+  // Multi-Date: Replicate across all selected dates
+  if (defaults.dateMode === 'multi_replicate' && defaults.selectedDates && defaults.selectedDates.length > 0) {
+    return defaults.selectedDates;
+  }
+
+  // Multi-Date: Distribute sequentially across selected dates
+  if (defaults.dateMode === 'multi_distribute' && defaults.selectedDates && defaults.selectedDates.length > 0) {
+    const targetDate = defaults.selectedDates[index % defaults.selectedDates.length];
+    return [targetDate];
+  }
+
+  // Date Range: Replicate across all dates in range
+  if (defaults.dateMode === 'range_replicate' && defaults.rangeEndDate) {
+    return getDatesBetween(defaults.taskDate, defaults.rangeEndDate, defaults.rangeSkipWeekends);
+  }
+
+  // Date Range: Distribute sequentially across dates in range
+  if (defaults.dateMode === 'range_distribute' && defaults.rangeEndDate) {
+    const dates = getDatesBetween(defaults.taskDate, defaults.rangeEndDate, defaults.rangeSkipWeekends);
+    const targetDate = dates[index % dates.length];
+    return [targetDate];
+  }
+
+  // Spread: N tasks per day
+  if (defaults.dateMode === 'spread') {
+    const dayOffset = Math.floor(index / Math.max(1, defaults.tasksPerDay || 1));
+    return [addDaysToDate(defaults.taskDate, dayOffset)];
+  }
+
+  // Default: Same date
+  return [defaults.taskDate];
 }
 
 /**
@@ -235,10 +333,11 @@ export function parseMultiLineText(rawText: string, defaults: BatchDefaults): Ba
     .map(l => l.trim())
     .filter(l => l.length > 0);
 
-  let currentSequenceMinutes = parse12HourToMinutes(defaults.sequenceStartTime || '09:00 AM');
-  let lastCalculatedDate = defaults.taskDate;
+  // Maintain sequence minutes separately for each distinct calendar date
+  const sequenceMinutesByDate: Record<string, number> = {};
+  const items: BatchTaskItem[] = [];
 
-  return lines.map((line, index) => {
+  lines.forEach((line, index) => {
     // Determine if line is delimited by | or tab
     const isPipeDelimited = line.includes('|');
     const isTabDelimited = line.includes('\t');
@@ -248,15 +347,10 @@ export function parseMultiLineText(rawText: string, defaults: BatchDefaults): Ba
     let appointedMinutes = defaults.appointedMinutes;
     let category = defaults.category;
     let subCategory = defaults.subCategory;
-    let taskDate = defaults.taskDate;
+    let customDateStr: string | null = null;
     let bufferMinutes = defaults.bufferMinutes ?? 0;
     let recurrence = defaults.recurrence ?? 'None';
     let isMandatorySchedule = defaults.isMandatorySchedule ?? false;
-
-    if (defaults.dateMode === 'spread') {
-      const dayOffset = Math.floor(index / Math.max(1, defaults.tasksPerDay || 1));
-      taskDate = addDaysToDate(defaults.taskDate, dayOffset);
-    }
 
     let customStartTime: string | null = null;
     let description = '';
@@ -284,17 +378,17 @@ export function parseMultiLineText(rawText: string, defaults: BatchDefaults): Ba
       // (e.g. Title | Priority | Duration | Category | SubCategory | Date | StartTime ...)
       let nextIndex = 4;
       if (parts[4]) {
-        const p4IsDate = /^\d{4}-\d{2}-\d{2}$/.test(parts[4]) || /^\d{1,2}[/.-]\d{1,2}/.test(parts[4]) || ['today', 'tomorrow'].includes(parts[4].toLowerCase());
-        const p5IsDate = parts[5] && (/^\d{4}-\d{2}-\d{2}$/.test(parts[5]) || /^\d{1,2}[/.-]\d{1,2}/.test(parts[5]) || ['today', 'tomorrow'].includes(parts[5].toLowerCase()));
+        const p4HasDate = /^\d{4}-\d{2}-\d{2}/.test(parts[4]) || /^\d{1,2}[/.-]\d{1,2}/.test(parts[4]) || ['today', 'tomorrow'].includes(parts[4].toLowerCase());
+        const p5HasDate = parts[5] && (/^\d{4}-\d{2}-\d{2}/.test(parts[5]) || /^\d{1,2}[/.-]\d{1,2}/.test(parts[5]) || ['today', 'tomorrow'].includes(parts[5].toLowerCase()));
 
-        if (!p4IsDate && p5IsDate) {
+        if (!p4HasDate && p5HasDate) {
           subCategory = parts[4];
           nextIndex = 5;
         }
       }
 
       if (parts[nextIndex]) {
-        taskDate = normalizeDate(parts[nextIndex], taskDate);
+        customDateStr = parts[nextIndex];
         nextIndex++;
       }
 
@@ -342,52 +436,54 @@ export function parseMultiLineText(rawText: string, defaults: BatchDefaults): Ba
       title = 'Untitled Task';
     }
 
-    // Reset sequence minutes if date shifted to a new day
-    if (taskDate !== lastCalculatedDate) {
-      currentSequenceMinutes = parse12HourToMinutes(defaults.sequenceStartTime || '09:00 AM');
-      lastCalculatedDate = taskDate;
-    }
+    // Resolve date(s) for this task (single or multiple dates)
+    const targetDates = resolveTaskDates(customDateStr, index, defaults);
 
-    // Determine Start & End Times
-    let startTime = '09:00 AM';
-    let endTime = '10:00 AM';
-    let hasNoTime = false;
+    targetDates.forEach(date => {
+      // Determine Start & End Times
+      let startTime = '09:00 AM';
+      let endTime = '10:00 AM';
+      let hasNoTime = false;
 
-    if (defaults.timeMode === 'anytime' || customStartTime === 'Anytime') {
-      startTime = 'Anytime';
-      endTime = 'Anytime';
-      hasNoTime = true;
-    } else if (customStartTime) {
-      startTime = normalizeTime(customStartTime, '09:00 AM');
-      endTime = addMinutesToTime(startTime, appointedMinutes);
-    } else if (defaults.timeMode === 'sequence') {
-      startTime = formatMinutesTo12Hour(currentSequenceMinutes);
-      endTime = formatMinutesTo12Hour(currentSequenceMinutes + appointedMinutes);
-      currentSequenceMinutes = (currentSequenceMinutes + appointedMinutes) % 1440;
-    } else {
-      // Fixed time
-      startTime = defaults.sequenceStartTime || '09:00 AM';
-      endTime = addMinutesToTime(startTime, appointedMinutes);
-    }
+      if (defaults.timeMode === 'anytime' || customStartTime === 'Anytime') {
+        startTime = 'Anytime';
+        endTime = 'Anytime';
+        hasNoTime = true;
+      } else if (customStartTime) {
+        startTime = normalizeTime(customStartTime, '09:00 AM');
+        endTime = addMinutesToTime(startTime, appointedMinutes);
+      } else if (defaults.timeMode === 'sequence') {
+        const curMins = sequenceMinutesByDate[date] ?? parse12HourToMinutes(defaults.sequenceStartTime || '09:00 AM');
+        startTime = formatMinutesTo12Hour(curMins);
+        endTime = formatMinutesTo12Hour(curMins + appointedMinutes);
+        sequenceMinutesByDate[date] = (curMins + appointedMinutes) % 1440;
+      } else {
+        // Fixed time
+        startTime = defaults.sequenceStartTime || '09:00 AM';
+        endTime = addMinutesToTime(startTime, appointedMinutes);
+      }
 
-    return {
-      title,
-      description,
-      priority,
-      appointedMinutes,
-      category: category || 'General',
-      subCategory,
-      taskDate,
-      startTime,
-      endTime,
-      bufferMinutes,
-      recurrence,
-      isMandatorySchedule,
-      status: defaults.status || 'Pending',
-      hasNoTime,
-      planProjectId
-    };
+      items.push({
+        title,
+        description,
+        priority,
+        appointedMinutes,
+        category: category || 'General',
+        subCategory,
+        taskDate: date,
+        startTime,
+        endTime,
+        bufferMinutes,
+        recurrence,
+        isMandatorySchedule,
+        status: defaults.status || 'Pending',
+        hasNoTime,
+        planProjectId
+      });
+    });
   });
+
+  return items;
 }
 
 /**
@@ -427,9 +523,8 @@ export function parseWorkbook(wb: XLSX.WorkBook, defaults: BatchDefaults): Batch
   const rawRows: Record<string, any>[] = XLSX.utils.sheet_to_json(sheet, { defval: '' });
   if (!rawRows || rawRows.length === 0) return [];
 
-  let currentSequenceMinutes = parse12HourToMinutes(defaults.sequenceStartTime || '09:00 AM');
-  let lastCalculatedDate = defaults.taskDate;
-
+  // Maintain sequence minutes separately for each distinct calendar date
+  const sequenceMinutesByDate: Record<string, number> = {};
   const items: BatchTaskItem[] = [];
 
   rawRows.forEach((row, rowIndex) => {
@@ -530,14 +625,9 @@ export function parseWorkbook(wb: XLSX.WorkBook, defaults: BatchDefaults): Batch
     ]);
     const isMandatorySchedule = normalizeMandatory(rawMandatory, defaults.isMandatorySchedule ?? false);
 
-    // Extract date
+    // Extract raw date (can be single or multiple)
     const rawDate = findValueByAliases(row, ['task date', 'date', 'scheduled date', 'due date', 'day']);
-    let fallbackDate = defaults.taskDate;
-    if (!rawDate && defaults.dateMode === 'spread') {
-      const dayOffset = Math.floor(rowIndex / Math.max(1, defaults.tasksPerDay || 1));
-      fallbackDate = addDaysToDate(defaults.taskDate, dayOffset);
-    }
-    const taskDate = normalizeDate(rawDate, fallbackDate);
+    const targetDates = resolveTaskDates(rawDate ? String(rawDate) : null, rowIndex, defaults);
 
     // Extract status
     const rawStatus = findValueByAliases(row, ['status', 'state']);
@@ -550,56 +640,53 @@ export function parseWorkbook(wb: XLSX.WorkBook, defaults: BatchDefaults): Batch
     const rawNotes = findValueByAliases(row, ['notes & key findings', 'notes', 'memo', 'findings']);
     const notes = rawNotes ? String(rawNotes).trim() : undefined;
 
-    // Reset sequence minutes if date shifted
-    if (taskDate !== lastCalculatedDate) {
-      currentSequenceMinutes = parse12HourToMinutes(defaults.sequenceStartTime || '09:00 AM');
-      lastCalculatedDate = taskDate;
-    }
-
     // Extract times
     const rawStartTime = findValueByAliases(row, ['start time', 'start', 'from']);
     const rawEndTime = findValueByAliases(row, ['end time', 'end', 'to']);
 
-    let startTime = '09:00 AM';
-    let endTime = '10:00 AM';
-    let hasNoTime = false;
+    targetDates.forEach(date => {
+      let startTime = '09:00 AM';
+      let endTime = '10:00 AM';
+      let hasNoTime = false;
 
-    if (
-      (rawStartTime && String(rawStartTime).toLowerCase() === 'anytime') ||
-      defaults.timeMode === 'anytime'
-    ) {
-      startTime = 'Anytime';
-      endTime = 'Anytime';
-      hasNoTime = true;
-    } else if (rawStartTime) {
-      startTime = normalizeTime(rawStartTime, '09:00 AM');
-      endTime = rawEndTime ? normalizeTime(rawEndTime, addMinutesToTime(startTime, appointedMinutes)) : addMinutesToTime(startTime, appointedMinutes);
-    } else if (defaults.timeMode === 'sequence') {
-      startTime = formatMinutesTo12Hour(currentSequenceMinutes);
-      endTime = formatMinutesTo12Hour(currentSequenceMinutes + appointedMinutes);
-      currentSequenceMinutes = (currentSequenceMinutes + appointedMinutes) % 1440;
-    } else {
-      startTime = defaults.sequenceStartTime || '09:00 AM';
-      endTime = addMinutesToTime(startTime, appointedMinutes);
-    }
+      if (
+        (rawStartTime && String(rawStartTime).toLowerCase() === 'anytime') ||
+        defaults.timeMode === 'anytime'
+      ) {
+        startTime = 'Anytime';
+        endTime = 'Anytime';
+        hasNoTime = true;
+      } else if (rawStartTime) {
+        startTime = normalizeTime(rawStartTime, '09:00 AM');
+        endTime = rawEndTime ? normalizeTime(rawEndTime, addMinutesToTime(startTime, appointedMinutes)) : addMinutesToTime(startTime, appointedMinutes);
+      } else if (defaults.timeMode === 'sequence') {
+        const curMins = sequenceMinutesByDate[date] ?? parse12HourToMinutes(defaults.sequenceStartTime || '09:00 AM');
+        startTime = formatMinutesTo12Hour(curMins);
+        endTime = formatMinutesTo12Hour(curMins + appointedMinutes);
+        sequenceMinutesByDate[date] = (curMins + appointedMinutes) % 1440;
+      } else {
+        startTime = defaults.sequenceStartTime || '09:00 AM';
+        endTime = addMinutesToTime(startTime, appointedMinutes);
+      }
 
-    items.push({
-      title,
-      description,
-      notes,
-      priority,
-      appointedMinutes,
-      category: category || 'General',
-      subCategory,
-      taskDate,
-      startTime,
-      endTime,
-      bufferMinutes,
-      recurrence,
-      isMandatorySchedule,
-      status,
-      hasNoTime,
-      planProjectId
+      items.push({
+        title,
+        description,
+        notes,
+        priority,
+        appointedMinutes,
+        category: category || 'General',
+        subCategory,
+        taskDate: date,
+        startTime,
+        endTime,
+        bufferMinutes,
+        recurrence,
+        isMandatorySchedule,
+        status,
+        hasNoTime,
+        planProjectId
+      });
     });
   });
 
