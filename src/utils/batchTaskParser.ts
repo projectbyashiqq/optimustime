@@ -26,9 +26,13 @@ export interface BatchDefaults {
   tasksPerDay?: number;
   priority: PriorityLevel;
   category: string;
+  subCategory?: string;
   appointedMinutes: number;
   timeMode: 'sequence' | 'anytime' | 'fixed';
   sequenceStartTime: string; // e.g. "09:00 AM"
+  bufferMinutes?: number;
+  recurrence?: RecurrenceType;
+  isMandatorySchedule?: boolean;
   status: TaskStatus;
   planProjectId?: string;
   planProjects?: PlanProjectFolder[];
@@ -48,9 +52,54 @@ export interface BatchTaskItem {
   subCategory?: string;
   status: TaskStatus;
   hasNoTime: boolean;
+  bufferMinutes?: number;
   recurrence?: RecurrenceType;
+  isMandatorySchedule?: boolean;
   planProjectId?: string;
   selectedDays?: string[];
+}
+
+/**
+ * Normalizes recurrence cycle (e.g. "Daily", "Weekly", "Monthly", "Yearly", "None")
+ */
+export function normalizeRecurrence(raw: any, fallback: RecurrenceType = 'None'): RecurrenceType {
+  if (!raw) return fallback;
+  const s = String(raw).trim().toLowerCase();
+  if (s === 'daily' || s === 'day' || s === 'every day' || s === 'everyday') return 'Daily';
+  if (s === 'weekly' || s === 'week' || s === 'every week') return 'Weekly';
+  if (s === 'monthly' || s === 'month' || s === 'every month') return 'Monthly';
+  if (s === 'yearly' || s === 'year' || s === 'annual' || s === 'annually') return 'Yearly';
+  if (s.includes('weekday') || s.includes('workday') || s.includes('selected')) return 'Selected Days';
+  if (s === 'none' || s === 'no' || s === 'once' || s === 'never') return 'None';
+  return fallback;
+}
+
+/**
+ * Normalizes buffer minutes from raw input (e.g. 15, "10m", "+15m")
+ */
+export function normalizeBuffer(raw: any, fallback: number = 0): number {
+  if (raw === undefined || raw === null || raw === '') return fallback;
+  if (typeof raw === 'number') return Math.max(0, Math.round(raw));
+  const s = String(raw).trim().toLowerCase().replace(/^\+/, '');
+  const match = s.match(/^(\d+)\s*(m|min|mins|minutes)?$/);
+  if (match) {
+    const val = parseInt(match[1], 10);
+    if (!isNaN(val)) return Math.max(0, val);
+  }
+  const num = parseInt(s, 10);
+  return isNaN(num) || num < 0 ? fallback : num;
+}
+
+/**
+ * Normalizes mandatory schedule lock flag
+ */
+export function normalizeMandatory(raw: any, fallback: boolean = false): boolean {
+  if (raw === undefined || raw === null || raw === '') return fallback;
+  if (typeof raw === 'boolean') return raw;
+  const s = String(raw).trim().toLowerCase();
+  if (s === 'true' || s === 'yes' || s === '1' || s === 'locked' || s === 'fixed' || s === 'mandatory') return true;
+  if (s === 'false' || s === 'no' || s === '0' || s === 'flexible' || s === 'none' || s === 'unlocked') return false;
+  return fallback;
 }
 
 /**
@@ -198,7 +247,11 @@ export function parseMultiLineText(rawText: string, defaults: BatchDefaults): Ba
     let priority = defaults.priority;
     let appointedMinutes = defaults.appointedMinutes;
     let category = defaults.category;
+    let subCategory = defaults.subCategory;
     let taskDate = defaults.taskDate;
+    let bufferMinutes = defaults.bufferMinutes ?? 0;
+    let recurrence = defaults.recurrence ?? 'None';
+    let isMandatorySchedule = defaults.isMandatorySchedule ?? false;
 
     if (defaults.dateMode === 'spread') {
       const dayOffset = Math.floor(index / Math.max(1, defaults.tasksPerDay || 1));
@@ -215,25 +268,71 @@ export function parseMultiLineText(rawText: string, defaults: BatchDefaults): Ba
       
       if (parts[1]) priority = normalizePriority(parts[1], defaults.priority);
       if (parts[2]) appointedMinutes = normalizeMinutes(parts[2], defaults.appointedMinutes);
-      if (parts[3]) category = parts[3] || defaults.category;
-      if (parts[4]) taskDate = normalizeDate(parts[4], taskDate);
-      if (parts[5]) customStartTime = parts[5];
       
-      // Check if parts[6] matches a Plan/Project code or title
-      if (parts[6]) {
-        const pTerm = parts[6].toLowerCase();
-        const matchedPlan = defaults.planProjects?.find(p => 
-          p.code.toLowerCase() === pTerm ||
-          p.title.toLowerCase() === pTerm ||
-          p.id === parts[6]
-        );
-        if (matchedPlan) {
-          planProjectId = matchedPlan.id;
-          if (!parts[3]) category = matchedPlan.category;
-          if (parts[7]) description = parts.slice(7).join(' | ');
+      // Category & SubCategory smart handling
+      if (parts[3]) {
+        if (parts[3].includes('/') || parts[3].includes(':')) {
+          const catSplit = parts[3].split(/[/:]/).map(s => s.trim());
+          category = catSplit[0] || defaults.category;
+          subCategory = catSplit[1] || subCategory;
         } else {
-          description = parts.slice(6).join(' | ');
+          category = parts[3];
         }
+      }
+
+      // Check if parts[4] is a subcategory rather than a date
+      // (e.g. Title | Priority | Duration | Category | SubCategory | Date | StartTime ...)
+      let nextIndex = 4;
+      if (parts[4]) {
+        const p4IsDate = /^\d{4}-\d{2}-\d{2}$/.test(parts[4]) || /^\d{1,2}[/.-]\d{1,2}/.test(parts[4]) || ['today', 'tomorrow'].includes(parts[4].toLowerCase());
+        const p5IsDate = parts[5] && (/^\d{4}-\d{2}-\d{2}$/.test(parts[5]) || /^\d{1,2}[/.-]\d{1,2}/.test(parts[5]) || ['today', 'tomorrow'].includes(parts[5].toLowerCase()));
+
+        if (!p4IsDate && p5IsDate) {
+          subCategory = parts[4];
+          nextIndex = 5;
+        }
+      }
+
+      if (parts[nextIndex]) {
+        taskDate = normalizeDate(parts[nextIndex], taskDate);
+        nextIndex++;
+      }
+
+      if (parts[nextIndex]) {
+        customStartTime = parts[nextIndex];
+        nextIndex++;
+      }
+
+      // Process remaining parts (could be Buffer, Recurrence, Project, Lock, Description)
+      while (nextIndex < parts.length) {
+        const item = parts[nextIndex];
+        const lower = item.toLowerCase();
+
+        // Buffer check e.g. "+15m", "10m buffer", "+5"
+        if (/^\+?\d+\s*(m|min|mins|minutes)?$/i.test(item) && (item.startsWith('+') || lower.includes('min') || lower.includes('m'))) {
+          bufferMinutes = normalizeBuffer(item, bufferMinutes);
+        } else if (['daily', 'weekly', 'monthly', 'yearly', 'selected days'].includes(lower)) {
+          recurrence = normalizeRecurrence(item, recurrence);
+        } else if (['locked', 'mandatory', 'fixed'].includes(lower)) {
+          isMandatorySchedule = true;
+        } else if (defaults.planProjects) {
+          const matchedPlan = defaults.planProjects.find(p => 
+            p.code.toLowerCase() === lower ||
+            p.title.toLowerCase() === lower ||
+            p.id === item
+          );
+          if (matchedPlan) {
+            planProjectId = matchedPlan.id;
+            if (!parts[3]) category = matchedPlan.category;
+          } else {
+            description = parts.slice(nextIndex).join(' | ');
+            break;
+          }
+        } else {
+          description = parts.slice(nextIndex).join(' | ');
+          break;
+        }
+        nextIndex++;
       }
     } else {
       title = cleanBullet(line);
@@ -277,9 +376,13 @@ export function parseMultiLineText(rawText: string, defaults: BatchDefaults): Ba
       priority,
       appointedMinutes,
       category: category || 'General',
+      subCategory,
       taskDate,
       startTime,
       endTime,
+      bufferMinutes,
+      recurrence,
+      isMandatorySchedule,
       status: defaults.status || 'Pending',
       hasNoTime,
       planProjectId
@@ -377,8 +480,8 @@ export function parseWorkbook(wb: XLSX.WorkBook, defaults: BatchDefaults): Batch
       : (matchedCategoryFromProject || defaults.category);
 
     // Extract subcategory
-    const rawSubCategory = findValueByAliases(row, ['sub category', 'subcategory', 'sub-category']);
-    const subCategory = rawSubCategory ? String(rawSubCategory).trim() : undefined;
+    const rawSubCategory = findValueByAliases(row, ['sub category', 'subcategory', 'sub-category', 'subcat', 'sub']);
+    const subCategory = rawSubCategory ? String(rawSubCategory).trim() : defaults.subCategory;
 
     // Extract appointed minutes
     const rawMinutes = findValueByAliases(row, [
@@ -391,6 +494,41 @@ export function parseWorkbook(wb: XLSX.WorkBook, defaults: BatchDefaults): Batch
       'appointed (hours)'
     ]);
     const appointedMinutes = normalizeMinutes(rawMinutes, defaults.appointedMinutes);
+
+    // Extract buffer minutes
+    const rawBuffer = findValueByAliases(row, [
+      'buffer (min)',
+      'buffer minutes',
+      'buffer min',
+      'buffer',
+      'buffer duration',
+      'cushion (min)',
+      'cushion'
+    ]);
+    const bufferMinutes = normalizeBuffer(rawBuffer, defaults.bufferMinutes ?? 0);
+
+    // Extract recurrence
+    const rawRecurrence = findValueByAliases(row, [
+      'recurrence',
+      'repeat',
+      'recurring',
+      'frequency',
+      'repeat cycle',
+      'recur'
+    ]);
+    const recurrence = normalizeRecurrence(rawRecurrence, defaults.recurrence ?? 'None');
+
+    // Extract schedule lock / mandatory
+    const rawMandatory = findValueByAliases(row, [
+      'lock schedule',
+      'lock schedule (yes/no)',
+      'locked',
+      'mandatory',
+      'is mandatory',
+      'fixed schedule',
+      'protect'
+    ]);
+    const isMandatorySchedule = normalizeMandatory(rawMandatory, defaults.isMandatorySchedule ?? false);
 
     // Extract date
     const rawDate = findValueByAliases(row, ['task date', 'date', 'scheduled date', 'due date', 'day']);
@@ -456,6 +594,9 @@ export function parseWorkbook(wb: XLSX.WorkBook, defaults: BatchDefaults): Batch
       taskDate,
       startTime,
       endTime,
+      bufferMinutes,
+      recurrence,
+      isMandatorySchedule,
       status,
       hasNoTime,
       planProjectId
@@ -485,10 +626,14 @@ export function downloadBatchTemplate(format: 'csv' | 'xlsx', defaultDate?: stri
       'Title': 'Deep Work: Core Engine Architecture Review',
       'Priority': 'P1',
       'Category': 'Engineering',
+      'Sub-Category': 'Core Engine',
       'Associated Plan / Project': 'PRJ-VRTX',
       'Task Date': todayStr,
       'Start Time': '09:00 AM',
       'Appointed (Min)': 90,
+      'Buffer (Min)': 15,
+      'Recurrence': 'None',
+      'Lock Schedule': 'Yes',
       'Status': 'Pending',
       'Description': 'Deep focus session on data flow and state synchronization.',
       'Notes': 'Avoid notifications during this block.'
@@ -497,10 +642,14 @@ export function downloadBatchTemplate(format: 'csv' | 'xlsx', defaultDate?: stri
       'Title': 'Team Sprint Alignment & Sync',
       'Priority': 'P2',
       'Category': 'Meetings',
+      'Sub-Category': 'Client Relations',
       'Associated Plan / Project': 'PLN-2026-01',
       'Task Date': todayStr,
       'Start Time': '11:00 AM',
       'Appointed (Min)': 45,
+      'Buffer (Min)': 10,
+      'Recurrence': 'Weekly',
+      'Lock Schedule': 'No',
       'Status': 'Pending',
       'Description': 'Review blockers and weekly milestones.',
       'Notes': 'Share progress slides beforehand.'
@@ -509,10 +658,14 @@ export function downloadBatchTemplate(format: 'csv' | 'xlsx', defaultDate?: stri
       'Title': 'Code Review & Pull Requests',
       'Priority': 'P3',
       'Category': 'Engineering',
+      'Sub-Category': 'Infrastructure',
       'Associated Plan / Project': 'PRJ-VRTX',
       'Task Date': todayStr,
       'Start Time': '02:00 PM',
       'Appointed (Min)': 60,
+      'Buffer (Min)': 5,
+      'Recurrence': 'None',
+      'Lock Schedule': 'No',
       'Status': 'Pending',
       'Description': 'Check performance and type safety in new PRs.',
       'Notes': ''
@@ -521,10 +674,14 @@ export function downloadBatchTemplate(format: 'csv' | 'xlsx', defaultDate?: stri
       'Title': 'Inbox Zero & Communication Catch-up',
       'Priority': 'P4',
       'Category': 'Operations',
+      'Sub-Category': 'Finance',
       'Associated Plan / Project': '',
       'Task Date': todayStr,
       'Start Time': '04:30 PM',
       'Appointed (Min)': 30,
+      'Buffer (Min)': 0,
+      'Recurrence': 'Daily',
+      'Lock Schedule': 'No',
       'Status': 'Pending',
       'Description': 'Process client emails and team messages.',
       'Notes': ''
@@ -533,10 +690,14 @@ export function downloadBatchTemplate(format: 'csv' | 'xlsx', defaultDate?: stri
       'Title': 'Evening Walk & Reflection',
       'Priority': 'P5',
       'Category': 'Personal',
+      'Sub-Category': 'Health & Fitness',
       'Associated Plan / Project': '',
       'Task Date': todayStr,
       'Start Time': 'Anytime',
       'Appointed (Min)': 45,
+      'Buffer (Min)': 0,
+      'Recurrence': 'Daily',
+      'Lock Schedule': 'No',
       'Status': 'Pending',
       'Description': 'Non-work recharge session.',
       'Notes': ''
@@ -550,10 +711,14 @@ export function downloadBatchTemplate(format: 'csv' | 'xlsx', defaultDate?: stri
     { wch: 42 }, // Title
     { wch: 10 }, // Priority
     { wch: 16 }, // Category
+    { wch: 18 }, // Sub-Category
     { wch: 26 }, // Associated Plan / Project
     { wch: 14 }, // Task Date
     { wch: 12 }, // Start Time
     { wch: 16 }, // Appointed (Min)
+    { wch: 14 }, // Buffer (Min)
+    { wch: 14 }, // Recurrence
+    { wch: 14 }, // Lock Schedule
     { wch: 12 }, // Status
     { wch: 40 }, // Description
     { wch: 30 }, // Notes

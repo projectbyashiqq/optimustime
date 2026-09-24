@@ -20,9 +20,17 @@ import {
   ArrowRight,
   RefreshCw,
   LayoutList,
-  Table as TableIcon
+  Table as TableIcon,
+  Lock,
+  Unlock,
+  Repeat,
+  Shield,
+  SlidersHorizontal,
+  ChevronDown,
+  ChevronUp,
+  Tag
 } from 'lucide-react';
-import { PriorityLevel, TaskStatus } from '../types';
+import { PriorityLevel, TaskStatus, RecurrenceType } from '../types';
 import { 
   parseMultiLineText, 
   parseSpreadsheetFile, 
@@ -34,7 +42,9 @@ import {
 import { 
   toISODateString, 
   formatDurationHuman, 
-  addMinutesToTime 
+  addMinutesToTime,
+  parse12HourToMinutes,
+  formatMinutesTo12Hour
 } from '../utils/timeUtils';
 
 interface BatchTaskModalProps {
@@ -54,7 +64,7 @@ export const BatchTaskModal: React.FC<BatchTaskModalProps> = ({
 }) => {
   const { 
     categories, 
-    planProjects,
+    planProjects, 
     addBatchTasks, 
     prioritySettings,
     defaultTaskSettings
@@ -68,13 +78,13 @@ export const BatchTaskModal: React.FC<BatchTaskModalProps> = ({
   // Preview Layout on Mobile: 'cards' or 'table'
   const [previewViewMode, setPreviewViewMode] = useState<'cards' | 'table'>('cards');
 
-  // Multi-line raw text placeholder demonstrating Date and Plan/Project options
+  // Multi-line raw text placeholder demonstrating full task options
   const [rawText, setRawText] = useState<string>(
-`Project Kickoff & Architecture | P1 | 45m | Engineering | | 09:00 AM | PRJ-VRTX
-Draft Database Schema & Models | P2 | 90m | Engineering | | 10:00 AM | PRJ-VRTX
-Review Sprint Milestone Goals | P2 | 30m | Strategy | | 02:00 PM | PLN-2026-01
-Customer Feedback & Bug Fixes | P3 | 60m | Operations | | 03:00 PM
-Evening Workout & Recharge | P5 | 45m | Personal | | Anytime`
+`Project Kickoff & Architecture | P1 | 45m | Engineering / Core Engine | | 09:00 AM | PRJ-VRTX | +15m
+Draft Database Schema & Models | P2 | 90m | Engineering / Infrastructure | | 10:00 AM | PRJ-VRTX | +10m
+Review Sprint Milestone Goals | P2 | 30m | Operations / Strategy | | 02:00 PM | PLN-2026-01 | Weekly
+Customer Feedback & Bug Fixes | P3 | 60m | Operations / Client Relations | | 03:00 PM | +10m
+Evening Workout & Recharge | P5 | 45m | Personal / Health & Fitness | | Anytime | Daily`
   );
 
   // File Upload State
@@ -90,12 +100,19 @@ Evening Workout & Recharge | P5 | 45m | Personal | | Anytime`
   // Batch Defaults: Plan / Project Option
   const [defaultPlanProjectId, setDefaultPlanProjectId] = useState<string>(() => initialPlanProjectId || '');
 
-  // Batch Defaults: Other Task Attributes
+  // Batch Defaults: Core Task Attributes
   const [defaultPriority, setDefaultPriority] = useState<PriorityLevel>('P3');
   const [defaultCategory, setDefaultCategory] = useState<string>(() => initialCategory || (categories[0]?.name || 'General'));
+  const [defaultSubCategory, setDefaultSubCategory] = useState<string>('');
   const [defaultDuration, setDefaultDuration] = useState<number>(() => defaultTaskSettings?.defaultAppointedMinutes || 60);
+  const [defaultBufferMinutes, setDefaultBufferMinutes] = useState<number>(() => defaultTaskSettings?.defaultBufferMinutes ?? 0);
+  const [defaultRecurrence, setDefaultRecurrence] = useState<RecurrenceType>('None');
+  const [defaultIsMandatory, setDefaultIsMandatory] = useState<boolean>(false);
   const [timeMode, setTimeMode] = useState<'sequence' | 'anytime' | 'fixed'>('sequence');
   const [sequenceStartTime, setSequenceStartTime] = useState<string>('09:00 AM');
+
+  // Inline notes drawer in table view
+  const [expandedNotesRowIndex, setExpandedNotesRowIndex] = useState<number | null>(null);
 
   // Parsed Tasks preview
   const [parsedTasks, setParsedTasks] = useState<BatchTaskItem[]>([]);
@@ -103,10 +120,32 @@ Evening Workout & Recharge | P5 | 45m | Personal | | Anytime`
   const [showSyntaxGuide, setShowSyntaxGuide] = useState<boolean>(false);
   const [statusBanner, setStatusBanner] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
+  // Active Category Object & Subcategories
+  const currentCategoryObj = useMemo(() => {
+    return categories.find(c => c.name.toLowerCase() === defaultCategory.toLowerCase());
+  }, [categories, defaultCategory]);
+
+  const availableSubCategories = useMemo(() => {
+    return currentCategoryObj?.subCategories || [];
+  }, [currentCategoryObj]);
+
+  // Sync default subcategory when category changes
+  const handleSelectDefaultCategory = (catName: string) => {
+    setDefaultCategory(catName);
+    const cat = categories.find(c => c.name.toLowerCase() === catName.toLowerCase());
+    if (cat && cat.subCategories && cat.subCategories.length > 0) {
+      setDefaultSubCategory(cat.subCategories[0]);
+    } else {
+      setDefaultSubCategory('');
+    }
+  };
+
   // Update initial defaults if props change
   useEffect(() => {
     if (initialDate) setDefaultDate(initialDate);
-    if (initialCategory) setDefaultCategory(initialCategory);
+    if (initialCategory) {
+      handleSelectDefaultCategory(initialCategory);
+    }
     if (initialPlanProjectId) setDefaultPlanProjectId(initialPlanProjectId);
   }, [initialDate, initialCategory, initialPlanProjectId, isOpen]);
 
@@ -117,13 +156,32 @@ Evening Workout & Recharge | P5 | 45m | Personal | | Anytime`
     tasksPerDay,
     priority: defaultPriority,
     category: defaultCategory,
+    subCategory: defaultSubCategory || undefined,
     appointedMinutes: defaultDuration,
     timeMode,
     sequenceStartTime,
+    bufferMinutes: defaultBufferMinutes,
+    recurrence: defaultRecurrence,
+    isMandatorySchedule: defaultIsMandatory,
     status: 'Pending' as TaskStatus,
     planProjectId: defaultPlanProjectId || undefined,
     planProjects
-  }), [defaultDate, dateMode, tasksPerDay, defaultPriority, defaultCategory, defaultDuration, timeMode, sequenceStartTime, defaultPlanProjectId, planProjects]);
+  }), [
+    defaultDate, 
+    dateMode, 
+    tasksPerDay, 
+    defaultPriority, 
+    defaultCategory, 
+    defaultSubCategory, 
+    defaultDuration, 
+    timeMode, 
+    sequenceStartTime, 
+    defaultBufferMinutes, 
+    defaultRecurrence, 
+    defaultIsMandatory, 
+    defaultPlanProjectId, 
+    planProjects
+  ]);
 
   // Parse text whenever text or defaults change in 'text' tab
   useEffect(() => {
@@ -202,7 +260,7 @@ Evening Workout & Recharge | P5 | 45m | Personal | | Anytime`
     setDefaultPlanProjectId(projId);
     const matched = planProjects.find(p => p.id === projId);
     if (matched) {
-      setDefaultCategory(matched.category);
+      handleSelectDefaultCategory(matched.category);
     }
   };
 
@@ -215,11 +273,102 @@ Evening Workout & Recharge | P5 | 45m | Personal | | Anytime`
     })));
   };
 
+  const applyCategoryAndSubToAllRows = () => {
+    setParsedTasks(prev => prev.map(t => ({
+      ...t,
+      category: defaultCategory,
+      subCategory: defaultSubCategory || undefined
+    })));
+  };
+
+  const applyBufferToAllRows = () => {
+    setParsedTasks(prev => prev.map(t => ({
+      ...t,
+      bufferMinutes: defaultBufferMinutes
+    })));
+  };
+
+  const applyRecurrenceToAllRows = () => {
+    setParsedTasks(prev => prev.map(t => ({
+      ...t,
+      recurrence: defaultRecurrence
+    })));
+  };
+
+  const applyLockToAllRows = () => {
+    setParsedTasks(prev => prev.map(t => ({
+      ...t,
+      isMandatorySchedule: defaultIsMandatory
+    })));
+  };
+
+  const applyAllDefaultsToAllRows = () => {
+    let currentSequenceMinutes = parse12HourToMinutes(sequenceStartTime || '09:00 AM');
+    let lastCalculatedDate = defaultDate;
+
+    setParsedTasks(prev => prev.map((t, idx) => {
+      let taskDate = defaultDate;
+      if (dateMode === 'spread') {
+        const offset = Math.floor(idx / Math.max(1, tasksPerDay));
+        taskDate = addDaysToDate(defaultDate, offset);
+      }
+
+      if (taskDate !== lastCalculatedDate) {
+        currentSequenceMinutes = parse12HourToMinutes(sequenceStartTime || '09:00 AM');
+        lastCalculatedDate = taskDate;
+      }
+
+      let startTime = '09:00 AM';
+      let endTime = '10:00 AM';
+      let hasNoTime = false;
+
+      if (timeMode === 'anytime') {
+        startTime = 'Anytime';
+        endTime = 'Anytime';
+        hasNoTime = true;
+      } else if (timeMode === 'sequence') {
+        startTime = formatMinutesTo12Hour(currentSequenceMinutes);
+        endTime = formatMinutesTo12Hour(currentSequenceMinutes + defaultDuration);
+        currentSequenceMinutes = (currentSequenceMinutes + defaultDuration) % 1440;
+      } else {
+        startTime = sequenceStartTime || '09:00 AM';
+        endTime = addMinutesToTime(startTime, defaultDuration);
+      }
+
+      return {
+        ...t,
+        taskDate,
+        startTime,
+        endTime,
+        hasNoTime,
+        appointedMinutes: defaultDuration,
+        priority: defaultPriority,
+        category: defaultCategory,
+        subCategory: defaultSubCategory || undefined,
+        bufferMinutes: defaultBufferMinutes,
+        recurrence: defaultRecurrence,
+        isMandatorySchedule: defaultIsMandatory,
+        planProjectId: defaultPlanProjectId || undefined
+      };
+    }));
+  };
+
   // Inline editing in preview table
   const handleUpdateTaskField = (index: number, field: keyof BatchTaskItem, value: any) => {
     setParsedTasks(prev => {
       const updated = [...prev];
       const target = { ...updated[index], [field]: value };
+
+      if (field === 'category') {
+        const catObj = categories.find(c => c.name.toLowerCase() === String(value).toLowerCase());
+        if (catObj && catObj.subCategories && catObj.subCategories.length > 0) {
+          if (!catObj.subCategories.includes(target.subCategory || '')) {
+            target.subCategory = catObj.subCategories[0];
+          }
+        } else {
+          target.subCategory = '';
+        }
+      }
 
       if (field === 'appointedMinutes' && !target.hasNoTime && target.startTime !== 'Anytime') {
         target.endTime = addMinutesToTime(target.startTime, Number(value) || 30);
@@ -235,6 +384,9 @@ Evening Workout & Recharge | P5 | 45m | Personal | | Anytime`
 
   const handleRemoveTask = (index: number) => {
     setParsedTasks(prev => prev.filter((_, i) => i !== index));
+    if (expandedNotesRowIndex === index) {
+      setExpandedNotesRowIndex(null);
+    }
   };
 
   const handleAddEmptyRow = () => {
@@ -245,12 +397,17 @@ Evening Workout & Recharge | P5 | 45m | Personal | | Anytime`
     const newTask: BatchTaskItem = {
       title: 'New Task',
       description: '',
+      notes: '',
       priority: defaultPriority,
       appointedMinutes: defaultDuration,
       category: defaultCategory,
+      subCategory: defaultSubCategory || undefined,
       taskDate: defaultDate,
       startTime: timeMode === 'anytime' ? 'Anytime' : nextStart,
       endTime: timeMode === 'anytime' ? 'Anytime' : addMinutesToTime(nextStart, defaultDuration),
+      bufferMinutes: defaultBufferMinutes,
+      recurrence: defaultRecurrence,
+      isMandatorySchedule: defaultIsMandatory,
       status: 'Pending',
       hasNoTime: timeMode === 'anytime',
       planProjectId: defaultPlanProjectId || undefined
@@ -280,7 +437,9 @@ Evening Workout & Recharge | P5 | 45m | Personal | | Anytime`
         endTime: t.endTime,
         status: t.status || 'Pending',
         hasNoTime: t.hasNoTime,
-        recurrence: t.recurrence || 'None',
+        bufferMinutes: t.bufferMinutes !== undefined ? t.bufferMinutes : defaultBufferMinutes,
+        recurrence: t.recurrence || defaultRecurrence || 'None',
+        isMandatorySchedule: t.isMandatorySchedule !== undefined ? t.isMandatorySchedule : defaultIsMandatory,
         planProjectId: t.planProjectId || undefined
       }));
 
@@ -410,16 +569,16 @@ Evening Workout & Recharge | P5 | 45m | Personal | | Anytime`
           </div>
         </div>
 
-        {/* Global Batch Defaults Bar: Structured in 2 Clean Apple Panels */}
-        <div className="px-4 sm:px-6 py-2.5 bg-theme-card-hover/40 border-b border-theme-border space-y-2 text-xs shrink-0 max-h-48 sm:max-h-none overflow-y-auto sm:overflow-visible">
+        {/* Global Batch Defaults Bar: Structured in 2 High-Density Apple/SaaS Panels */}
+        <div className="px-4 sm:px-6 py-2.5 bg-theme-card-hover/40 border-b border-theme-border space-y-2 text-xs shrink-0 max-h-56 sm:max-h-none overflow-y-auto sm:overflow-visible">
           
-          {/* Row 1: Date Scheduling & Plan/Project Options */}
-          <div className="grid grid-cols-1 md:grid-cols-12 gap-2 sm:gap-2.5 items-center">
+          {/* Row 1: Date Scheduling & Plan/Project/Category Hierarchy */}
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-2 sm:gap-2.5 items-stretch">
             
             {/* Date Configuration Block */}
-            <div className="md:col-span-6 bg-theme-card p-2 sm:p-2.5 rounded-2xl border border-theme-border/80 shadow-2xs space-y-1.5">
+            <div className="lg:col-span-5 bg-theme-card p-2 sm:p-2.5 rounded-2xl border border-theme-border/80 shadow-2xs space-y-1.5 flex flex-col justify-between">
               <div className="flex items-center justify-between">
-                <label className="text-[10px] font-black text-theme-muted uppercase tracking-wider flex items-center gap-1">
+                <label className="text-[10px] font-black text-theme-muted uppercase tracking-wider flex items-center gap-1 font-display">
                   <Calendar className="w-3 h-3 text-blue-500" />
                   <span>Date Scheduling</span>
                 </label>
@@ -470,7 +629,7 @@ Evening Workout & Recharge | P5 | 45m | Personal | | Anytime`
                         setTasksPerDay(parseInt(val.replace('spread-', ''), 10) || 1);
                       }
                     }}
-                    className="flex-1 px-2.5 py-1.5 rounded-xl bg-theme-bg border border-theme-border text-theme-text text-xs focus:ring-1 focus:ring-blue-500"
+                    className="flex-1 px-2.5 py-1.5 rounded-xl bg-theme-bg border border-theme-border text-theme-text text-xs focus:ring-1 focus:ring-blue-500 font-semibold"
                   >
                     <option value="same">All on Same Date</option>
                     <option value="spread-1">Daily (1 task / day)</option>
@@ -490,63 +649,134 @@ Evening Workout & Recharge | P5 | 45m | Personal | | Anytime`
               </div>
             </div>
 
-            {/* Plan / Project Association Block */}
-            <div className="md:col-span-6 bg-theme-card p-2 sm:p-2.5 rounded-2xl border border-theme-border/80 shadow-2xs space-y-1.5">
+            {/* Plan / Project & Category Hierarchy Block */}
+            <div className="lg:col-span-7 bg-theme-card p-2 sm:p-2.5 rounded-2xl border border-theme-border/80 shadow-2xs space-y-1.5">
               <div className="flex items-center justify-between">
-                <label className="text-[10px] font-black text-theme-muted uppercase tracking-wider flex items-center gap-1">
+                <label className="text-[10px] font-black text-theme-muted uppercase tracking-wider flex items-center gap-1 font-display">
                   <Folder className="w-3 h-3 text-indigo-500" />
-                  <span>Plan / Project Option</span>
+                  <span>Hierarchy: Plan / Project & Categories</span>
                 </label>
 
-                {defaultPlanProjectId && (
+                <div className="flex items-center gap-2">
+                  {defaultPlanProjectId && (
+                    <button
+                      type="button"
+                      onClick={applyPlanProjectToAllRows}
+                      className="text-[10px] font-bold text-indigo-600 dark:text-indigo-400 hover:underline cursor-pointer"
+                      title="Apply this Plan / Project to all rows"
+                    >
+                      Sync Project
+                    </button>
+                  )}
                   <button
                     type="button"
-                    onClick={applyPlanProjectToAllRows}
-                    className="text-[10px] font-bold text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-1 cursor-pointer"
-                    title="Apply this Plan / Project to all parsed task rows"
+                    onClick={applyCategoryAndSubToAllRows}
+                    className="text-[10px] font-bold text-blue-600 dark:text-blue-400 hover:underline cursor-pointer"
+                    title="Apply Category & Sub-Category to all rows"
                   >
-                    <span>Apply to All Rows</span>
+                    Sync Cat & Sub
                   </button>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-1.5">
+                {/* Project Select */}
+                <select
+                  value={defaultPlanProjectId}
+                  onChange={(e) => handleSelectDefaultProject(e.target.value)}
+                  className={`w-full px-2 py-1.5 rounded-xl border text-xs focus:ring-1 focus:ring-indigo-500 font-semibold transition-all ${
+                    defaultPlanProjectId
+                      ? 'bg-indigo-500/10 border-indigo-500/30 text-indigo-700 dark:text-indigo-300 font-bold'
+                      : 'bg-theme-bg border-theme-border text-theme-text'
+                  }`}
+                >
+                  <option value="">No Plan / Project</option>
+                  {projectsList.length > 0 && (
+                    <optgroup label="📂 Projects">
+                      {projectsList.map(p => (
+                        <option key={p.id} value={p.id}>
+                          {p.code} • {p.title}
+                        </option>
+                      ))}
+                    </optgroup>
+                  )}
+                  {plansList.length > 0 && (
+                    <optgroup label="📋 Plans">
+                      {plansList.map(p => (
+                        <option key={p.id} value={p.id}>
+                          {p.code} • {p.title}
+                        </option>
+                      ))}
+                    </optgroup>
+                  )}
+                </select>
+
+                {/* Category Select */}
+                <select
+                  value={defaultCategory}
+                  onChange={(e) => handleSelectDefaultCategory(e.target.value)}
+                  className="w-full px-2 py-1.5 rounded-xl bg-theme-bg border border-theme-border text-theme-text text-xs focus:ring-1 focus:ring-blue-500 font-bold"
+                >
+                  {categories.map(c => (
+                    <option key={c.id} value={c.name}>{c.name}</option>
+                  ))}
+                  <option value="General">General</option>
+                </select>
+
+                {/* Sub-Category Select or Input */}
+                {availableSubCategories.length > 0 ? (
+                  <select
+                    value={defaultSubCategory}
+                    onChange={(e) => setDefaultSubCategory(e.target.value)}
+                    className="w-full px-2 py-1.5 rounded-xl bg-theme-bg border border-theme-border text-theme-text text-xs focus:ring-1 focus:ring-blue-500 font-semibold"
+                  >
+                    <option value="">No Sub-Category</option>
+                    {availableSubCategories.map((sub, sIdx) => (
+                      <option key={sIdx} value={sub}>{sub}</option>
+                    ))}
+                  </select>
+                ) : (
+                  <input
+                    type="text"
+                    value={defaultSubCategory}
+                    onChange={(e) => setDefaultSubCategory(e.target.value)}
+                    placeholder="Sub-Category (Optional)"
+                    className="w-full px-2.5 py-1.5 rounded-xl bg-theme-bg border border-theme-border text-theme-text text-xs focus:ring-1 focus:ring-blue-500 placeholder-theme-muted"
+                  />
                 )}
               </div>
 
-              <select
-                value={defaultPlanProjectId}
-                onChange={(e) => handleSelectDefaultProject(e.target.value)}
-                className={`w-full px-2.5 py-1.5 rounded-xl border text-xs focus:ring-1 focus:ring-indigo-500 font-semibold transition-all ${
-                  defaultPlanProjectId
-                    ? 'bg-indigo-500/10 border-indigo-500/30 text-indigo-700 dark:text-indigo-300 font-bold'
-                    : 'bg-theme-bg border-theme-border text-theme-text'
-                }`}
-              >
-                <option value="">None (Standalone Tasks)</option>
-                {projectsList.length > 0 && (
-                  <optgroup label="📂 Projects">
-                    {projectsList.map(p => (
-                      <option key={p.id} value={p.id}>
-                        {p.code} • {p.title} ({p.category})
-                      </option>
-                    ))}
-                  </optgroup>
-                )}
-                {plansList.length > 0 && (
-                  <optgroup label="📋 Plans & Goals">
-                    {plansList.map(p => (
-                      <option key={p.id} value={p.id}>
-                        {p.code} • {p.title} ({p.category})
-                      </option>
-                    ))}
-                  </optgroup>
-                )}
-              </select>
+              {/* Quick Sub-Category Pills */}
+              {availableSubCategories.length > 0 && (
+                <div className="flex items-center gap-1 overflow-x-auto no-scrollbar pt-0.5">
+                  <span className="text-[9px] text-theme-muted font-bold shrink-0">Sub:</span>
+                  {availableSubCategories.map((sub, sIdx) => {
+                    const isSelected = defaultSubCategory === sub;
+                    return (
+                      <button
+                        key={sIdx}
+                        type="button"
+                        onClick={() => setDefaultSubCategory(isSelected ? '' : sub)}
+                        className={`px-1.5 py-0.5 rounded-md text-[9px] font-bold transition-all border shrink-0 cursor-pointer ${
+                          isSelected
+                            ? 'bg-blue-600 text-white border-blue-600 shadow-2xs'
+                            : 'bg-theme-bg text-theme-muted border-theme-border hover:text-theme-text'
+                        }`}
+                      >
+                        {sub}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
             </div>
 
           </div>
 
-          {/* Row 2: Priority, Category, Duration, Time Mode, Slot */}
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-1.5 sm:gap-2 items-center">
+          {/* Row 2: Priority, Duration, Buffer, Recurrence, Time Mode & Slot, Lock Schedule */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-1.5 sm:gap-2 items-end">
             
-            {/* Default Priority */}
+            {/* Priority */}
             <div>
               <label className="block text-[10px] font-bold text-theme-muted uppercase tracking-wider mb-0.5">
                 Priority
@@ -554,7 +784,7 @@ Evening Workout & Recharge | P5 | 45m | Personal | | Anytime`
               <select
                 value={defaultPriority}
                 onChange={(e) => setDefaultPriority(e.target.value as PriorityLevel)}
-                className="w-full px-2 py-1 sm:py-1.5 rounded-xl bg-theme-card border border-theme-border text-theme-text text-xs focus:ring-1 focus:ring-blue-500 font-bold"
+                className="w-full px-2 py-1.5 rounded-xl bg-theme-card border border-theme-border text-theme-text text-xs focus:ring-1 focus:ring-blue-500 font-bold"
               >
                 <option value="P1">P1 - Critical</option>
                 <option value="P2">P2 - High</option>
@@ -564,24 +794,7 @@ Evening Workout & Recharge | P5 | 45m | Personal | | Anytime`
               </select>
             </div>
 
-            {/* Default Category */}
-            <div>
-              <label className="block text-[10px] font-bold text-theme-muted uppercase tracking-wider mb-0.5">
-                Category
-              </label>
-              <select
-                value={defaultCategory}
-                onChange={(e) => setDefaultCategory(e.target.value)}
-                className="w-full px-2 py-1 sm:py-1.5 rounded-xl bg-theme-card border border-theme-border text-theme-text text-xs focus:ring-1 focus:ring-blue-500"
-              >
-                {categories.map(c => (
-                  <option key={c.id} value={c.name}>{c.name}</option>
-                ))}
-                <option value="General">General</option>
-              </select>
-            </div>
-
-            {/* Default Duration */}
+            {/* Duration */}
             <div>
               <label className="block text-[10px] font-bold text-theme-muted uppercase tracking-wider mb-0.5">
                 Duration
@@ -589,7 +802,7 @@ Evening Workout & Recharge | P5 | 45m | Personal | | Anytime`
               <select
                 value={defaultDuration}
                 onChange={(e) => setDefaultDuration(Number(e.target.value))}
-                className="w-full px-2 py-1 sm:py-1.5 rounded-xl bg-theme-card border border-theme-border text-theme-text text-xs focus:ring-1 focus:ring-blue-500"
+                className="w-full px-2 py-1.5 rounded-xl bg-theme-card border border-theme-border text-theme-text text-xs focus:ring-1 focus:ring-blue-500"
               >
                 <option value={15}>15m</option>
                 <option value={30}>30m</option>
@@ -597,6 +810,64 @@ Evening Workout & Recharge | P5 | 45m | Personal | | Anytime`
                 <option value={60}>60m (1h)</option>
                 <option value={90}>90m (1.5h)</option>
                 <option value={120}>120m (2h)</option>
+              </select>
+            </div>
+
+            {/* Buffer Cushion */}
+            <div>
+              <div className="flex items-center justify-between mb-0.5">
+                <label className="block text-[10px] font-bold text-theme-muted uppercase tracking-wider">
+                  Buffer
+                </label>
+                <button
+                  type="button"
+                  onClick={applyBufferToAllRows}
+                  className="text-[9px] font-bold text-blue-500 hover:underline cursor-pointer"
+                  title="Apply buffer to all rows"
+                >
+                  All
+                </button>
+              </div>
+              <select
+                value={defaultBufferMinutes}
+                onChange={(e) => setDefaultBufferMinutes(Number(e.target.value))}
+                className="w-full px-2 py-1.5 rounded-xl bg-theme-card border border-theme-border text-theme-text text-xs focus:ring-1 focus:ring-blue-500 font-medium"
+              >
+                <option value={0}>0m (None)</option>
+                <option value={5}>+5m Buffer</option>
+                <option value={10}>+10m Buffer</option>
+                <option value={15}>+15m Buffer</option>
+                <option value={20}>+20m Buffer</option>
+                <option value={30}>+30m Buffer</option>
+              </select>
+            </div>
+
+            {/* Recurrence Engine */}
+            <div>
+              <div className="flex items-center justify-between mb-0.5">
+                <label className="block text-[10px] font-bold text-theme-muted uppercase tracking-wider">
+                  Repeat
+                </label>
+                <button
+                  type="button"
+                  onClick={applyRecurrenceToAllRows}
+                  className="text-[9px] font-bold text-blue-500 hover:underline cursor-pointer"
+                  title="Apply recurrence to all rows"
+                >
+                  All
+                </button>
+              </div>
+              <select
+                value={defaultRecurrence}
+                onChange={(e) => setDefaultRecurrence(e.target.value as RecurrenceType)}
+                className="w-full px-2 py-1.5 rounded-xl bg-theme-card border border-theme-border text-theme-text text-xs focus:ring-1 focus:ring-blue-500 font-semibold"
+              >
+                <option value="None">None</option>
+                <option value="Daily">Daily</option>
+                <option value="Selected Days">Weekdays</option>
+                <option value="Weekly">Weekly</option>
+                <option value="Monthly">Monthly</option>
+                <option value="Yearly">Yearly</option>
               </select>
             </div>
 
@@ -608,7 +879,7 @@ Evening Workout & Recharge | P5 | 45m | Personal | | Anytime`
               <select
                 value={timeMode}
                 onChange={(e) => setTimeMode(e.target.value as any)}
-                className="w-full px-2 py-1 sm:py-1.5 rounded-xl bg-theme-card border border-theme-border text-theme-text text-xs focus:ring-1 focus:ring-blue-500"
+                className="w-full px-2 py-1.5 rounded-xl bg-theme-card border border-theme-border text-theme-text text-xs focus:ring-1 focus:ring-blue-500"
               >
                 <option value="sequence">Auto-Sequence</option>
                 <option value="anytime">Anytime / Floating</option>
@@ -616,8 +887,8 @@ Evening Workout & Recharge | P5 | 45m | Personal | | Anytime`
               </select>
             </div>
 
-            {/* Start Slot */}
-            <div className="col-span-2 sm:col-span-1">
+            {/* Slot Time */}
+            <div>
               <label className="block text-[10px] font-bold text-theme-muted uppercase tracking-wider mb-0.5">
                 {timeMode === 'sequence' ? 'Sequence Start' : 'Slot Time'}
               </label>
@@ -627,8 +898,34 @@ Evening Workout & Recharge | P5 | 45m | Personal | | Anytime`
                 value={timeMode === 'anytime' ? 'Anytime' : sequenceStartTime}
                 onChange={(e) => setSequenceStartTime(e.target.value)}
                 placeholder="09:00 AM"
-                className="w-full px-2 py-1 sm:py-1.5 rounded-xl bg-theme-card border border-theme-border text-theme-text text-xs focus:ring-1 focus:ring-blue-500 disabled:opacity-50 font-mono"
+                className="w-full px-2 py-1.5 rounded-xl bg-theme-card border border-theme-border text-theme-text text-xs focus:ring-1 focus:ring-blue-500 disabled:opacity-50 font-mono"
               />
+            </div>
+
+            {/* Lock Schedule & Master Sync */}
+            <div className="flex items-center gap-1.5 col-span-2 sm:col-span-2 lg:col-span-1">
+              <button
+                type="button"
+                onClick={() => setDefaultIsMandatory(!defaultIsMandatory)}
+                title="Lock Schedule: Protected from auto-shifts and auto-rescheduling"
+                className={`flex-1 flex items-center justify-center gap-1 py-1.5 px-2 rounded-xl text-xs font-bold transition-all border cursor-pointer ${
+                  defaultIsMandatory
+                    ? 'bg-amber-500/15 border-amber-500/40 text-amber-600 dark:text-amber-400 shadow-2xs'
+                    : 'bg-theme-card border-theme-border text-theme-muted hover:text-theme-text'
+                }`}
+              >
+                {defaultIsMandatory ? <Lock className="w-3.5 h-3.5" /> : <Unlock className="w-3.5 h-3.5" />}
+                <span className="truncate">{defaultIsMandatory ? 'Locked' : 'Flex'}</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={applyAllDefaultsToAllRows}
+                title="Apply all default settings above to all current parsed rows"
+                className="p-1.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white transition-all shadow-xs cursor-pointer shrink-0"
+              >
+                <RefreshCw className="w-4 h-4" />
+              </button>
             </div>
 
           </div>
@@ -681,10 +978,12 @@ Evening Workout & Recharge | P5 | 45m | Personal | | Anytime`
 
               {showSyntaxGuide && (
                 <div className="p-3 rounded-2xl bg-blue-50/60 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-900/60 text-xs space-y-1.5 text-theme-text animate-fade-in">
-                  <div className="font-bold text-blue-700 dark:text-blue-300">Supported Formats:</div>
+                  <div className="font-bold text-blue-700 dark:text-blue-300">Industry-Standard Supported Formats:</div>
                   <ul className="list-disc list-inside space-y-1 text-theme-muted font-mono text-[11px]">
-                    <li><strong className="text-theme-text font-sans">Plain Lines:</strong> Just write titles. All defaults chosen above apply.</li>
-                    <li><strong className="text-theme-text font-sans">Delimited:</strong> <code>Title | Priority | Duration | Category | Date | StartTime | ProjectCode</code></li>
+                    <li><strong className="text-theme-text font-sans">Plain Lines:</strong> Write task titles line-by-line. All batch defaults configured above apply automatically.</li>
+                    <li><strong className="text-theme-text font-sans">Delimited:</strong> <code>Title | Priority | Duration | Category / SubCategory | Date | StartTime | Buffer | Recurrence | ProjectCode</code></li>
+                    <li><strong className="text-theme-text font-sans">Category / Sub:</strong> E.g. <code>Engineering / Core Engine</code> or <code>Personal / Health</code> sets both category and subcategory seamlessly.</li>
+                    <li><strong className="text-theme-text font-sans">Buffer & Recurrence:</strong> Add <code>+15m</code> or <code>Daily</code> / <code>Weekly</code> anywhere in delimited line.</li>
                     <li><strong className="text-theme-text font-sans">Bullets:</strong> <code>- [ ] Task Title</code> or <code>1. Task Title</code> strip bullets automatically.</li>
                   </ul>
                 </div>
@@ -694,7 +993,7 @@ Evening Workout & Recharge | P5 | 45m | Personal | | Anytime`
                 value={rawText}
                 onChange={(e) => setRawText(e.target.value)}
                 rows={4}
-                placeholder={`Build Login UI | P1 | 60m | Engineering | 2026-09-06 | 10:00 AM | PRJ-VRTX\nTeam Sync | P2 | 30m | Meetings\nDraft Report`}
+                placeholder={`Build Login UI | P1 | 60m | Engineering / Core Engine | 2026-09-24 | 10:00 AM | PRJ-VRTX | +15m\nTeam Sync | P2 | 30m | Meetings | | 02:00 PM | Weekly\nDraft Report`}
                 className="w-full p-3 rounded-2xl bg-theme-bg border border-theme-border font-mono text-xs text-theme-text placeholder-theme-muted focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all resize-y shadow-inner"
               />
             </div>
@@ -724,7 +1023,7 @@ Evening Workout & Recharge | P5 | 45m | Personal | | Anytime`
                   {uploadedFile ? uploadedFile.name : 'Tap to select or drag & drop Excel / CSV file'}
                 </div>
                 <div className="text-[11px] text-theme-muted mt-0.5">
-                  Supports Microsoft Excel (.xlsx, .xls) and CSV. Includes Plan / Project code auto-detection.
+                  Supports Excel (.xlsx, .xls) and CSV. Includes Sub-Category, Buffer, Recurrence & Plan / Project auto-detection.
                 </div>
                 {uploadedFile && (
                   <div className="mt-2.5 inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-blue-500/10 text-blue-600 dark:text-blue-400 font-bold text-xs">
@@ -747,7 +1046,7 @@ Evening Workout & Recharge | P5 | 45m | Personal | | Anytime`
           <div className="pt-2 border-t border-theme-border">
             <div className="flex items-center justify-between mb-2 flex-wrap gap-2">
               <div className="flex items-center gap-2">
-                <h3 className="text-xs sm:text-sm font-black text-theme-text uppercase tracking-wider flex items-center gap-1.5">
+                <h3 className="text-xs sm:text-sm font-black text-theme-text uppercase tracking-wider flex items-center gap-1.5 font-display">
                   <span>Tasks Preview</span>
                   <span className="px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-600 dark:text-blue-400 text-xs font-mono font-bold">
                     {parsedTasks.length}
@@ -762,6 +1061,16 @@ Evening Workout & Recharge | P5 | 45m | Personal | | Anytime`
               </div>
 
               <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={applyAllDefaultsToAllRows}
+                  className="flex items-center gap-1 px-2.5 py-1 rounded-xl bg-blue-500/10 hover:bg-blue-500/20 text-blue-600 dark:text-blue-400 border border-blue-500/20 text-xs font-bold transition-all cursor-pointer"
+                  title="Apply current batch defaults to all rows"
+                >
+                  <RefreshCw className="w-3 h-3" />
+                  <span>Sync Defaults</span>
+                </button>
+
                 {/* Mobile View Toggle (Cards vs Table) */}
                 <div className="flex items-center bg-theme-card-hover p-0.5 rounded-xl border border-theme-border">
                   <button
@@ -809,130 +1118,245 @@ Evening Workout & Recharge | P5 | 45m | Personal | | Anytime`
             ) : previewViewMode === 'cards' ? (
               
               /* --- MOBILE TASK CARDS VIEW --- */
-              <div className="space-y-2 max-h-72 overflow-y-auto no-scrollbar pr-0.5">
-                {parsedTasks.map((t, idx) => (
-                  <div 
-                    key={idx}
-                    className="p-3 rounded-2xl bg-theme-card border border-theme-border shadow-2xs space-y-2 hover:border-blue-500/40 transition-all"
-                  >
-                    {/* Card Top: Index, Priority, Delete */}
-                    <div className="flex items-center justify-between gap-2">
-                      <div className="flex items-center gap-2">
-                        <span className="w-5 h-5 rounded-full bg-theme-card-hover text-theme-muted font-mono font-bold text-[10px] flex items-center justify-center">
-                          {idx + 1}
-                        </span>
+              <div className="space-y-2.5 max-h-72 overflow-y-auto no-scrollbar pr-0.5">
+                {parsedTasks.map((t, idx) => {
+                  const cardCatObj = categories.find(c => c.name.toLowerCase() === (t.category || '').toLowerCase());
+                  const cardSubCats = cardCatObj?.subCategories || [];
+                  const isExpanded = expandedNotesRowIndex === idx;
 
-                        {/* Priority Selector */}
-                        <select
-                          value={t.priority}
-                          onChange={(e) => handleUpdateTaskField(idx, 'priority', e.target.value as PriorityLevel)}
-                          className={`px-2 py-0.5 rounded-lg border text-[11px] font-bold focus:outline-none ${
-                            t.priority === 'P1'
-                              ? 'bg-red-500/15 border-red-500/30 text-red-600 dark:text-red-400'
-                              : t.priority === 'P2'
-                              ? 'bg-orange-500/15 border-orange-500/30 text-orange-600 dark:text-orange-400'
-                              : t.priority === 'P3'
-                              ? 'bg-blue-500/15 border-blue-500/30 text-blue-600 dark:text-blue-400'
-                              : t.priority === 'P4'
-                              ? 'bg-emerald-500/15 border-emerald-500/30 text-emerald-600 dark:text-emerald-400'
-                              : 'bg-slate-500/15 border-slate-500/30 text-slate-600 dark:text-slate-400'
-                          }`}
-                        >
-                          <option value="P1">P1 Critical</option>
-                          <option value="P2">P2 High</option>
-                          <option value="P3">P3 Medium</option>
-                          <option value="P4">P4 Low</option>
-                          <option value="P5">P5 Noise</option>
-                        </select>
+                  return (
+                    <div 
+                      key={idx}
+                      className="p-3 rounded-2xl bg-theme-card border border-theme-border shadow-2xs space-y-2 hover:border-blue-500/40 transition-all"
+                    >
+                      {/* Card Top: Index, Priority, Schedule Lock, Delete */}
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2">
+                          <span className="w-5 h-5 rounded-full bg-theme-card-hover text-theme-muted font-mono font-bold text-[10px] flex items-center justify-center">
+                            {idx + 1}
+                          </span>
+
+                          {/* Priority Selector */}
+                          <select
+                            value={t.priority}
+                            onChange={(e) => handleUpdateTaskField(idx, 'priority', e.target.value as PriorityLevel)}
+                            className={`px-2 py-0.5 rounded-lg border text-[11px] font-bold focus:outline-none ${
+                              t.priority === 'P1'
+                                ? 'bg-red-500/15 border-red-500/30 text-red-600 dark:text-red-400'
+                                : t.priority === 'P2'
+                                ? 'bg-orange-500/15 border-orange-500/30 text-orange-600 dark:text-orange-400'
+                                : t.priority === 'P3'
+                                ? 'bg-blue-500/15 border-blue-500/30 text-blue-600 dark:text-blue-400'
+                                : t.priority === 'P4'
+                                ? 'bg-emerald-500/15 border-emerald-500/30 text-emerald-600 dark:text-emerald-400'
+                                : 'bg-slate-500/15 border-slate-500/30 text-slate-600 dark:text-slate-400'
+                            }`}
+                          >
+                            <option value="P1">P1 Critical</option>
+                            <option value="P2">P2 High</option>
+                            <option value="P3">P3 Medium</option>
+                            <option value="P4">P4 Low</option>
+                            <option value="P5">P5 Noise</option>
+                          </select>
+
+                          {/* Lock Schedule Toggle */}
+                          <button
+                            type="button"
+                            onClick={() => handleUpdateTaskField(idx, 'isMandatorySchedule', !t.isMandatorySchedule)}
+                            title={t.isMandatorySchedule ? 'Schedule Locked' : 'Schedule Flexible'}
+                            className={`p-1 rounded-lg border transition-colors ${
+                              t.isMandatorySchedule
+                                ? 'bg-amber-500/15 border-amber-500/30 text-amber-600 dark:text-amber-400'
+                                : 'bg-theme-bg/60 border-theme-border text-theme-muted hover:text-theme-text'
+                            }`}
+                          >
+                            {t.isMandatorySchedule ? <Lock className="w-3 h-3" /> : <Unlock className="w-3 h-3" />}
+                          </button>
+                        </div>
+
+                        <div className="flex items-center gap-1">
+                          <button
+                            type="button"
+                            onClick={() => setExpandedNotesRowIndex(isExpanded ? null : idx)}
+                            className={`p-1 rounded-lg border text-xs transition-colors ${
+                              isExpanded || t.notes || t.description
+                                ? 'bg-blue-500/10 border-blue-500/30 text-blue-600 dark:text-blue-400'
+                                : 'bg-theme-bg/60 border-theme-border text-theme-muted hover:text-theme-text'
+                            }`}
+                            title="Edit Description & Notes"
+                          >
+                            <FileText className="w-3 h-3" />
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveTask(idx)}
+                            className="p-1 rounded-lg text-theme-muted hover:text-red-500 hover:bg-red-500/10 transition-colors"
+                            title="Delete task"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
                       </div>
 
-                      <button
-                        type="button"
-                        onClick={() => handleRemoveTask(idx)}
-                        className="p-1 rounded-lg text-theme-muted hover:text-red-500 hover:bg-red-500/10 transition-colors"
-                        title="Delete task"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-
-                    {/* Card Title Input */}
-                    <input
-                      type="text"
-                      value={t.title}
-                      onChange={(e) => handleUpdateTaskField(idx, 'title', e.target.value)}
-                      placeholder="Task Title..."
-                      className="w-full px-2.5 py-1.5 rounded-xl bg-theme-bg/80 border border-theme-border text-xs text-theme-text font-bold focus:outline-none focus:ring-1 focus:ring-blue-500"
-                    />
-
-                    {/* Card Attributes Grid */}
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 text-xs">
-                      {/* Plan / Project */}
-                      <select
-                        value={t.planProjectId || ''}
-                        onChange={(e) => {
-                          const selectedId = e.target.value;
-                          const matched = planProjects.find(p => p.id === selectedId);
-                          handleUpdateTaskField(idx, 'planProjectId', selectedId || undefined);
-                          if (matched && (!t.category || t.category === 'General')) {
-                            handleUpdateTaskField(idx, 'category', matched.category);
-                          }
-                        }}
-                        className={`px-2 py-1 rounded-xl border text-[11px] transition-colors focus:outline-none ${
-                          t.planProjectId
-                            ? 'bg-indigo-500/10 border-indigo-500/30 text-indigo-600 dark:text-indigo-400 font-bold'
-                            : 'bg-theme-bg/80 border-theme-border text-theme-muted'
-                        }`}
-                      >
-                        <option value="">No Project</option>
-                        {projectsList.map(p => (
-                          <option key={p.id} value={p.id}>{p.code} • {p.title}</option>
-                        ))}
-                        {plansList.map(p => (
-                          <option key={p.id} value={p.id}>{p.code} • {p.title}</option>
-                        ))}
-                      </select>
-
-                      {/* Category */}
+                      {/* Card Title Input */}
                       <input
                         type="text"
-                        value={t.category}
-                        onChange={(e) => handleUpdateTaskField(idx, 'category', e.target.value)}
-                        placeholder="Category"
-                        className="px-2 py-1 rounded-xl bg-theme-bg/80 border border-theme-border text-[11px] text-theme-text focus:outline-none"
+                        value={t.title}
+                        onChange={(e) => handleUpdateTaskField(idx, 'title', e.target.value)}
+                        placeholder="Task Title..."
+                        className="w-full px-2.5 py-1.5 rounded-xl bg-theme-bg/80 border border-theme-border text-xs text-theme-text font-bold focus:outline-none focus:ring-1 focus:ring-blue-500"
                       />
 
-                      {/* Date */}
-                      <input
-                        type="date"
-                        value={t.taskDate}
-                        onChange={(e) => handleUpdateTaskField(idx, 'taskDate', e.target.value)}
-                        className="px-2 py-1 rounded-xl bg-theme-bg/80 border border-theme-border text-[11px] text-theme-text focus:outline-none font-medium"
-                      />
+                      {/* Card Row 1: Plan/Project & Category & SubCategory */}
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-1.5 text-xs">
+                        {/* Plan / Project */}
+                        <select
+                          value={t.planProjectId || ''}
+                          onChange={(e) => {
+                            const selectedId = e.target.value;
+                            const matched = planProjects.find(p => p.id === selectedId);
+                            handleUpdateTaskField(idx, 'planProjectId', selectedId || undefined);
+                            if (matched && (!t.category || t.category === 'General')) {
+                              handleUpdateTaskField(idx, 'category', matched.category);
+                            }
+                          }}
+                          className={`px-2 py-1 rounded-xl border text-[11px] transition-colors focus:outline-none ${
+                            t.planProjectId
+                              ? 'bg-indigo-500/10 border-indigo-500/30 text-indigo-600 dark:text-indigo-400 font-bold'
+                              : 'bg-theme-bg/80 border-theme-border text-theme-muted'
+                          }`}
+                        >
+                          <option value="">No Project</option>
+                          {projectsList.map(p => (
+                            <option key={p.id} value={p.id}>{p.code} • {p.title}</option>
+                          ))}
+                          {plansList.map(p => (
+                            <option key={p.id} value={p.id}>{p.code} • {p.title}</option>
+                          ))}
+                        </select>
 
-                      {/* Time & Duration */}
-                      <div className="flex items-center gap-1">
+                        {/* Category */}
+                        <select
+                          value={t.category}
+                          onChange={(e) => handleUpdateTaskField(idx, 'category', e.target.value)}
+                          className="px-2 py-1 rounded-xl bg-theme-bg/80 border border-theme-border text-[11px] text-theme-text focus:outline-none font-bold"
+                        >
+                          {categories.map(c => (
+                            <option key={c.id} value={c.name}>{c.name}</option>
+                          ))}
+                          <option value="General">General</option>
+                        </select>
+
+                        {/* SubCategory */}
+                        {cardSubCats.length > 0 ? (
+                          <select
+                            value={t.subCategory || ''}
+                            onChange={(e) => handleUpdateTaskField(idx, 'subCategory', e.target.value)}
+                            className="px-2 py-1 rounded-xl bg-theme-bg/80 border border-theme-border text-[11px] text-theme-text focus:outline-none font-medium"
+                          >
+                            <option value="">No Sub-Category</option>
+                            {cardSubCats.map((sub, sIdx) => (
+                              <option key={sIdx} value={sub}>{sub}</option>
+                            ))}
+                          </select>
+                        ) : (
+                          <input
+                            type="text"
+                            value={t.subCategory || ''}
+                            onChange={(e) => handleUpdateTaskField(idx, 'subCategory', e.target.value)}
+                            placeholder="Sub-Category"
+                            className="px-2 py-1 rounded-xl bg-theme-bg/80 border border-theme-border text-[11px] text-theme-text focus:outline-none"
+                          />
+                        )}
+                      </div>
+
+                      {/* Card Row 2: Date, Time, Duration, Buffer, Recurrence */}
+                      <div className="grid grid-cols-2 sm:grid-cols-5 gap-1.5 text-xs">
+                        {/* Date */}
+                        <input
+                          type="date"
+                          value={t.taskDate}
+                          onChange={(e) => handleUpdateTaskField(idx, 'taskDate', e.target.value)}
+                          className="px-2 py-1 rounded-xl bg-theme-bg/80 border border-theme-border text-[11px] text-theme-text focus:outline-none font-medium"
+                        />
+
+                        {/* Start Time */}
                         <input
                           type="text"
                           value={t.startTime}
                           onChange={(e) => handleUpdateTaskField(idx, 'startTime', e.target.value)}
                           placeholder="09:00 AM"
-                          className="w-20 px-1.5 py-1 rounded-xl bg-theme-bg/80 border border-theme-border text-[11px] text-theme-text font-mono focus:outline-none"
+                          className="px-1.5 py-1 rounded-xl bg-theme-bg/80 border border-theme-border text-[11px] text-theme-text font-mono focus:outline-none"
                         />
-                        <input
-                          type="number"
-                          min={5}
-                          step={5}
-                          value={t.appointedMinutes}
-                          onChange={(e) => handleUpdateTaskField(idx, 'appointedMinutes', Number(e.target.value))}
-                          className="w-14 px-1 py-1 rounded-xl bg-theme-bg/80 border border-theme-border text-[11px] text-theme-text font-mono text-center focus:outline-none"
-                          title="Minutes"
-                        />
-                        <span className="text-[10px] text-theme-muted">m</span>
+
+                        {/* Duration */}
+                        <div className="flex items-center gap-1">
+                          <input
+                            type="number"
+                            min={5}
+                            step={5}
+                            value={t.appointedMinutes}
+                            onChange={(e) => handleUpdateTaskField(idx, 'appointedMinutes', Number(e.target.value))}
+                            className="w-full px-1.5 py-1 rounded-xl bg-theme-bg/80 border border-theme-border text-[11px] text-theme-text font-mono text-center focus:outline-none"
+                            title="Duration in minutes"
+                          />
+                          <span className="text-[10px] text-theme-muted">m</span>
+                        </div>
+
+                        {/* Buffer */}
+                        <select
+                          value={t.bufferMinutes ?? 0}
+                          onChange={(e) => handleUpdateTaskField(idx, 'bufferMinutes', Number(e.target.value))}
+                          className="px-1.5 py-1 rounded-xl bg-theme-bg/80 border border-theme-border text-[11px] text-theme-text focus:outline-none font-medium"
+                          title="Buffer cushion"
+                        >
+                          <option value={0}>0m Buf</option>
+                          <option value={5}>+5m Buf</option>
+                          <option value={10}>+10m Buf</option>
+                          <option value={15}>+15m Buf</option>
+                          <option value={20}>+20m Buf</option>
+                          <option value={30}>+30m Buf</option>
+                        </select>
+
+                        {/* Recurrence */}
+                        <select
+                          value={t.recurrence || 'None'}
+                          onChange={(e) => handleUpdateTaskField(idx, 'recurrence', e.target.value as RecurrenceType)}
+                          className="px-1.5 py-1 rounded-xl bg-theme-bg/80 border border-theme-border text-[11px] text-theme-text focus:outline-none font-medium"
+                          title="Recurrence frequency"
+                        >
+                          <option value="None">None</option>
+                          <option value="Daily">Daily</option>
+                          <option value="Selected Days">Weekdays</option>
+                          <option value="Weekly">Weekly</option>
+                          <option value="Monthly">Monthly</option>
+                          <option value="Yearly">Yearly</option>
+                        </select>
                       </div>
+
+                      {/* Expandable Notes & Description drawer */}
+                      {isExpanded && (
+                        <div className="p-2.5 rounded-xl bg-theme-bg/90 border border-theme-border/80 space-y-1.5 animate-fade-in">
+                          <input
+                            type="text"
+                            value={t.description || ''}
+                            onChange={(e) => handleUpdateTaskField(idx, 'description', e.target.value)}
+                            placeholder="Detailed task description..."
+                            className="w-full px-2 py-1 rounded-lg bg-theme-card border border-theme-border text-xs text-theme-text focus:outline-none"
+                          />
+                          <input
+                            type="text"
+                            value={t.notes || ''}
+                            onChange={(e) => handleUpdateTaskField(idx, 'notes', e.target.value)}
+                            placeholder="Execution notes or key findings..."
+                            className="w-full px-2 py-1 rounded-lg bg-theme-card border border-theme-border text-xs text-theme-text focus:outline-none"
+                          />
+                        </div>
+                      )}
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
 
             ) : (
@@ -941,127 +1365,279 @@ Evening Workout & Recharge | P5 | 45m | Personal | | Anytime`
               <div className="rounded-2xl border border-theme-border overflow-hidden bg-theme-card shadow-xs">
                 <div className="overflow-x-auto max-h-72 no-scrollbar">
                   <table className="w-full text-left text-xs border-collapse">
-                    <thead className="sticky top-0 bg-theme-card-hover/95 backdrop-blur-xs text-theme-muted uppercase text-[10px] font-black tracking-wider border-b border-theme-border z-10">
+                    <thead className="sticky top-0 bg-theme-card-hover/95 backdrop-blur-xs text-theme-muted uppercase text-[10px] font-black tracking-wider border-b border-theme-border z-10 font-display">
                       <tr>
-                        <th className="py-2.5 px-3 w-8">#</th>
-                        <th className="py-2.5 px-3 min-w-[180px]">Task Title</th>
+                        <th className="py-2.5 px-2.5 w-8">#</th>
+                        <th className="py-2.5 px-2.5 min-w-[180px]">Task Title & Notes</th>
                         <th className="py-2.5 px-2 w-20">Priority</th>
-                        <th className="py-2.5 px-2 min-w-[140px]">Plan / Project</th>
+                        <th className="py-2.5 px-2 min-w-[130px]">Plan / Project</th>
                         <th className="py-2.5 px-2 w-24">Category</th>
+                        <th className="py-2.5 px-2 w-28">Sub-Category</th>
                         <th className="py-2.5 px-2 w-28">Date</th>
-                        <th className="py-2.5 px-2 w-24">Start Time</th>
-                        <th className="py-2.5 px-2 w-16">Duration</th>
-                        <th className="py-2.5 px-2 text-center w-10">Del</th>
+                        <th className="py-2.5 px-2 w-22">Time</th>
+                        <th className="py-2.5 px-1.5 w-16">Min</th>
+                        <th className="py-2.5 px-1.5 w-18">Buffer</th>
+                        <th className="py-2.5 px-2 w-22">Repeat</th>
+                        <th className="py-2.5 px-1.5 text-center w-10">Lock</th>
+                        <th className="py-2.5 px-1.5 text-center w-10">Del</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-theme-border">
-                      {parsedTasks.map((t, idx) => (
-                        <tr key={idx} className="hover:bg-theme-card-hover/40 transition-colors">
-                          <td className="py-2 px-3 text-theme-muted font-mono text-[11px]">{idx + 1}</td>
-                          <td className="py-2 px-3">
-                            <input
-                              type="text"
-                              value={t.title}
-                              onChange={(e) => handleUpdateTaskField(idx, 'title', e.target.value)}
-                              className="w-full px-2 py-1 rounded-lg bg-theme-bg/80 border border-theme-border text-xs text-theme-text font-semibold focus:outline-none focus:ring-1 focus:ring-blue-500"
-                            />
-                          </td>
-                          <td className="py-2 px-2">
-                            <select
-                              value={t.priority}
-                              onChange={(e) => handleUpdateTaskField(idx, 'priority', e.target.value as PriorityLevel)}
-                              className={`w-full px-1.5 py-1 rounded-lg border text-xs font-bold focus:outline-none ${
-                                t.priority === 'P1'
-                                  ? 'bg-red-500/15 border-red-500/30 text-red-600 dark:text-red-400'
-                                  : t.priority === 'P2'
-                                  ? 'bg-orange-500/15 border-orange-500/30 text-orange-600 dark:text-orange-400'
-                                  : t.priority === 'P3'
-                                  ? 'bg-blue-500/15 border-blue-500/30 text-blue-600 dark:text-blue-400'
-                                  : t.priority === 'P4'
-                                  ? 'bg-emerald-500/15 border-emerald-500/30 text-emerald-600 dark:text-emerald-400'
-                                  : 'bg-slate-500/15 border-slate-500/30 text-slate-600 dark:text-slate-400'
-                              }`}
-                            >
-                              <option value="P1">P1</option>
-                              <option value="P2">P2</option>
-                              <option value="P3">P3</option>
-                              <option value="P4">P4</option>
-                              <option value="P5">P5</option>
-                            </select>
-                          </td>
-                          <td className="py-2 px-2">
-                            <select
-                              value={t.planProjectId || ''}
-                              onChange={(e) => {
-                                const selectedId = e.target.value;
-                                const matched = planProjects.find(p => p.id === selectedId);
-                                handleUpdateTaskField(idx, 'planProjectId', selectedId || undefined);
-                                if (matched && (!t.category || t.category === 'General')) {
-                                  handleUpdateTaskField(idx, 'category', matched.category);
-                                }
-                              }}
-                              className={`w-full px-2 py-1 rounded-lg border text-xs transition-colors focus:outline-none ${
-                                t.planProjectId
-                                  ? 'bg-indigo-500/10 border-indigo-500/30 text-indigo-600 dark:text-indigo-400 font-bold'
-                                  : 'bg-theme-bg/80 border-theme-border text-theme-muted'
-                              }`}
-                            >
-                              <option value="">None</option>
-                              {projectsList.map(p => (
-                                <option key={p.id} value={p.id}>{p.code} • {p.title}</option>
-                              ))}
-                              {plansList.map(p => (
-                                <option key={p.id} value={p.id}>{p.code} • {p.title}</option>
-                              ))}
-                            </select>
-                          </td>
-                          <td className="py-2 px-2">
-                            <input
-                              type="text"
-                              value={t.category}
-                              onChange={(e) => handleUpdateTaskField(idx, 'category', e.target.value)}
-                              className="w-full px-2 py-1 rounded-lg bg-theme-bg/80 border border-theme-border text-xs text-theme-text focus:outline-none"
-                            />
-                          </td>
-                          <td className="py-2 px-2">
-                            <input
-                              type="date"
-                              value={t.taskDate}
-                              onChange={(e) => handleUpdateTaskField(idx, 'taskDate', e.target.value)}
-                              className="w-full px-2 py-1 rounded-lg bg-theme-bg/80 border border-theme-border text-xs text-theme-text focus:outline-none font-medium"
-                            />
-                          </td>
-                          <td className="py-2 px-2">
-                            <input
-                              type="text"
-                              value={t.startTime}
-                              onChange={(e) => handleUpdateTaskField(idx, 'startTime', e.target.value)}
-                              placeholder="09:00 AM"
-                              className="w-full px-2 py-1 rounded-lg bg-theme-bg/80 border border-theme-border text-xs text-theme-text font-mono focus:outline-none"
-                            />
-                          </td>
-                          <td className="py-2 px-2">
-                            <input
-                              type="number"
-                              min={5}
-                              step={5}
-                              value={t.appointedMinutes}
-                              onChange={(e) => handleUpdateTaskField(idx, 'appointedMinutes', Number(e.target.value))}
-                              className="w-full px-1 py-1 rounded-lg bg-theme-bg/80 border border-theme-border text-xs text-theme-text font-mono text-center focus:outline-none"
-                            />
-                          </td>
-                          <td className="py-2 px-2 text-center">
-                            <button
-                              type="button"
-                              onClick={() => handleRemoveTask(idx)}
-                              className="p-1 rounded-lg hover:bg-red-500/10 text-theme-muted hover:text-red-500 transition-colors cursor-pointer"
-                              title="Delete row"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
+                      {parsedTasks.map((t, idx) => {
+                        const rowCatObj = categories.find(c => c.name.toLowerCase() === (t.category || '').toLowerCase());
+                        const rowSubCats = rowCatObj?.subCategories || [];
+                        const isExpanded = expandedNotesRowIndex === idx;
+
+                        return (
+                          <React.Fragment key={idx}>
+                            <tr className="hover:bg-theme-card-hover/40 transition-colors">
+                              <td className="py-2 px-2.5 text-theme-muted font-mono text-[11px]">{idx + 1}</td>
+                              
+                              {/* Title + Note trigger */}
+                              <td className="py-2 px-2.5">
+                                <div className="flex items-center gap-1.5">
+                                  <input
+                                    type="text"
+                                    value={t.title}
+                                    onChange={(e) => handleUpdateTaskField(idx, 'title', e.target.value)}
+                                    className="w-full px-2 py-1 rounded-lg bg-theme-bg/80 border border-theme-border text-xs text-theme-text font-semibold focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                  />
+                                  <button
+                                    type="button"
+                                    onClick={() => setExpandedNotesRowIndex(isExpanded ? null : idx)}
+                                    className={`p-1 rounded-lg border transition-colors shrink-0 ${
+                                      isExpanded || t.notes || t.description
+                                        ? 'bg-blue-500/15 border-blue-500/40 text-blue-600 dark:text-blue-400'
+                                        : 'bg-theme-bg border-theme-border text-theme-muted hover:text-theme-text'
+                                    }`}
+                                    title="Toggle Description & Notes"
+                                  >
+                                    <FileText className="w-3 h-3" />
+                                  </button>
+                                </div>
+                              </td>
+
+                              {/* Priority */}
+                              <td className="py-2 px-2">
+                                <select
+                                  value={t.priority}
+                                  onChange={(e) => handleUpdateTaskField(idx, 'priority', e.target.value as PriorityLevel)}
+                                  className={`w-full px-1.5 py-1 rounded-lg border text-xs font-bold focus:outline-none ${
+                                    t.priority === 'P1'
+                                      ? 'bg-red-500/15 border-red-500/30 text-red-600 dark:text-red-400'
+                                      : t.priority === 'P2'
+                                      ? 'bg-orange-500/15 border-orange-500/30 text-orange-600 dark:text-orange-400'
+                                      : t.priority === 'P3'
+                                      ? 'bg-blue-500/15 border-blue-500/30 text-blue-600 dark:text-blue-400'
+                                      : t.priority === 'P4'
+                                      ? 'bg-emerald-500/15 border-emerald-500/30 text-emerald-600 dark:text-emerald-400'
+                                      : 'bg-slate-500/15 border-slate-500/30 text-slate-600 dark:text-slate-400'
+                                  }`}
+                                >
+                                  <option value="P1">P1</option>
+                                  <option value="P2">P2</option>
+                                  <option value="P3">P3</option>
+                                  <option value="P4">P4</option>
+                                  <option value="P5">P5</option>
+                                </select>
+                              </td>
+
+                              {/* Plan / Project */}
+                              <td className="py-2 px-2">
+                                <select
+                                  value={t.planProjectId || ''}
+                                  onChange={(e) => {
+                                    const selectedId = e.target.value;
+                                    const matched = planProjects.find(p => p.id === selectedId);
+                                    handleUpdateTaskField(idx, 'planProjectId', selectedId || undefined);
+                                    if (matched && (!t.category || t.category === 'General')) {
+                                      handleUpdateTaskField(idx, 'category', matched.category);
+                                    }
+                                  }}
+                                  className={`w-full px-2 py-1 rounded-lg border text-xs transition-colors focus:outline-none ${
+                                    t.planProjectId
+                                      ? 'bg-indigo-500/10 border-indigo-500/30 text-indigo-600 dark:text-indigo-400 font-bold'
+                                      : 'bg-theme-bg/80 border-theme-border text-theme-muted'
+                                  }`}
+                                >
+                                  <option value="">None</option>
+                                  {projectsList.map(p => (
+                                    <option key={p.id} value={p.id}>{p.code} • {p.title}</option>
+                                  ))}
+                                  {plansList.map(p => (
+                                    <option key={p.id} value={p.id}>{p.code} • {p.title}</option>
+                                  ))}
+                                </select>
+                              </td>
+
+                              {/* Category */}
+                              <td className="py-2 px-2">
+                                <select
+                                  value={t.category}
+                                  onChange={(e) => handleUpdateTaskField(idx, 'category', e.target.value)}
+                                  className="w-full px-1.5 py-1 rounded-lg bg-theme-bg/80 border border-theme-border text-xs text-theme-text font-bold focus:outline-none"
+                                >
+                                  {categories.map(c => (
+                                    <option key={c.id} value={c.name}>{c.name}</option>
+                                  ))}
+                                  <option value="General">General</option>
+                                </select>
+                              </td>
+
+                              {/* Sub-Category */}
+                              <td className="py-2 px-2">
+                                {rowSubCats.length > 0 ? (
+                                  <select
+                                    value={t.subCategory || ''}
+                                    onChange={(e) => handleUpdateTaskField(idx, 'subCategory', e.target.value)}
+                                    className="w-full px-1.5 py-1 rounded-lg bg-theme-bg/80 border border-theme-border text-xs text-theme-text focus:outline-none"
+                                  >
+                                    <option value="">None</option>
+                                    {rowSubCats.map((sub, sIdx) => (
+                                      <option key={sIdx} value={sub}>{sub}</option>
+                                    ))}
+                                  </select>
+                                ) : (
+                                  <input
+                                    type="text"
+                                    value={t.subCategory || ''}
+                                    onChange={(e) => handleUpdateTaskField(idx, 'subCategory', e.target.value)}
+                                    placeholder="None"
+                                    className="w-full px-1.5 py-1 rounded-lg bg-theme-bg/80 border border-theme-border text-xs text-theme-text focus:outline-none"
+                                  />
+                                )}
+                              </td>
+
+                              {/* Date */}
+                              <td className="py-2 px-2">
+                                <input
+                                  type="date"
+                                  value={t.taskDate}
+                                  onChange={(e) => handleUpdateTaskField(idx, 'taskDate', e.target.value)}
+                                  className="w-full px-1.5 py-1 rounded-lg bg-theme-bg/80 border border-theme-border text-xs text-theme-text focus:outline-none font-medium"
+                                />
+                              </td>
+
+                              {/* Start Time */}
+                              <td className="py-2 px-2">
+                                <input
+                                  type="text"
+                                  value={t.startTime}
+                                  onChange={(e) => handleUpdateTaskField(idx, 'startTime', e.target.value)}
+                                  placeholder="09:00 AM"
+                                  className="w-full px-1.5 py-1 rounded-lg bg-theme-bg/80 border border-theme-border text-xs text-theme-text font-mono focus:outline-none"
+                                />
+                              </td>
+
+                              {/* Appointed Minutes */}
+                              <td className="py-2 px-1.5">
+                                <input
+                                  type="number"
+                                  min={5}
+                                  step={5}
+                                  value={t.appointedMinutes}
+                                  onChange={(e) => handleUpdateTaskField(idx, 'appointedMinutes', Number(e.target.value))}
+                                  className="w-full px-1 py-1 rounded-lg bg-theme-bg/80 border border-theme-border text-xs text-theme-text font-mono text-center focus:outline-none"
+                                />
+                              </td>
+
+                              {/* Buffer Minutes */}
+                              <td className="py-2 px-1.5">
+                                <select
+                                  value={t.bufferMinutes ?? 0}
+                                  onChange={(e) => handleUpdateTaskField(idx, 'bufferMinutes', Number(e.target.value))}
+                                  className="w-full px-1 py-1 rounded-lg bg-theme-bg/80 border border-theme-border text-xs text-theme-text font-medium focus:outline-none"
+                                >
+                                  <option value={0}>0m</option>
+                                  <option value={5}>+5m</option>
+                                  <option value={10}>+10m</option>
+                                  <option value={15}>+15m</option>
+                                  <option value={20}>+20m</option>
+                                  <option value={30}>+30m</option>
+                                </select>
+                              </td>
+
+                              {/* Recurrence */}
+                              <td className="py-2 px-2">
+                                <select
+                                  value={t.recurrence || 'None'}
+                                  onChange={(e) => handleUpdateTaskField(idx, 'recurrence', e.target.value as RecurrenceType)}
+                                  className="w-full px-1 py-1 rounded-lg bg-theme-bg/80 border border-theme-border text-xs text-theme-text font-medium focus:outline-none"
+                                >
+                                  <option value="None">None</option>
+                                  <option value="Daily">Daily</option>
+                                  <option value="Selected Days">Wkday</option>
+                                  <option value="Weekly">Weekly</option>
+                                  <option value="Monthly">Monthly</option>
+                                  <option value="Yearly">Yearly</option>
+                                </select>
+                              </td>
+
+                              {/* Lock Schedule */}
+                              <td className="py-2 px-1.5 text-center">
+                                <button
+                                  type="button"
+                                  onClick={() => handleUpdateTaskField(idx, 'isMandatorySchedule', !t.isMandatorySchedule)}
+                                  title={t.isMandatorySchedule ? 'Schedule Locked: Irreplaceable & protected' : 'Schedule Flexible'}
+                                  className={`p-1 rounded-lg border transition-colors cursor-pointer ${
+                                    t.isMandatorySchedule
+                                      ? 'bg-amber-500/15 border-amber-500/30 text-amber-600 dark:text-amber-400'
+                                      : 'bg-theme-bg border-theme-border text-theme-muted hover:text-theme-text'
+                                  }`}
+                                >
+                                  {t.isMandatorySchedule ? <Lock className="w-3.5 h-3.5" /> : <Unlock className="w-3.5 h-3.5" />}
+                                </button>
+                              </td>
+
+                              {/* Delete */}
+                              <td className="py-2 px-1.5 text-center">
+                                <button
+                                  type="button"
+                                  onClick={() => handleRemoveTask(idx)}
+                                  className="p-1 rounded-lg hover:bg-red-500/10 text-theme-muted hover:text-red-500 transition-colors cursor-pointer"
+                                  title="Delete row"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </td>
+                            </tr>
+
+                            {/* Inline Expandable Drawer for Description & Notes */}
+                            {isExpanded && (
+                              <tr className="bg-theme-card-hover/20">
+                                <td colSpan={13} className="px-4 py-2 border-b border-theme-border">
+                                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs">
+                                    <div>
+                                      <label className="block text-[10px] font-bold text-theme-muted mb-0.5">
+                                        Description
+                                      </label>
+                                      <input
+                                        type="text"
+                                        value={t.description || ''}
+                                        onChange={(e) => handleUpdateTaskField(idx, 'description', e.target.value)}
+                                        placeholder="Add task description..."
+                                        className="w-full px-2.5 py-1 rounded-lg bg-theme-bg border border-theme-border text-xs text-theme-text focus:outline-none"
+                                      />
+                                    </div>
+                                    <div>
+                                      <label className="block text-[10px] font-bold text-theme-muted mb-0.5">
+                                        Notes & Findings
+                                      </label>
+                                      <input
+                                        type="text"
+                                        value={t.notes || ''}
+                                        onChange={(e) => handleUpdateTaskField(idx, 'notes', e.target.value)}
+                                        placeholder="Add notes, reminders, or findings..."
+                                        className="w-full px-2.5 py-1 rounded-lg bg-theme-bg border border-theme-border text-xs text-theme-text focus:outline-none"
+                                      />
+                                    </div>
+                                  </div>
+                                </td>
+                              </tr>
+                            )}
+                          </React.Fragment>
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>
