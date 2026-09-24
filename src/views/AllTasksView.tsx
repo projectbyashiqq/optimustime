@@ -442,7 +442,7 @@ export const AllTasksView: React.FC<AllTasksViewProps> = ({ onOpenTaskModal, onO
             <span
               onClick={() => onOpenTaskModal(task)}
               title={task.title}
-              className={`font-bold text-xs truncate cursor-pointer hover:text-blue-600 transition-colors ${
+              className={`font-bold text-sm font-display truncate cursor-pointer hover:text-blue-600 transition-colors ${
                 task.status === 'Done'
                   ? 'line-through text-theme-muted'
                   : isInSleep

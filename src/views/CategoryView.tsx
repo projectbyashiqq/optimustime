@@ -68,6 +68,8 @@ import {
 } from 'lucide-react';
 import { RescheduleModal } from '../components/RescheduleModal';
 import { CategoryBadge, RecurrenceBadge } from '../components/TaskCategoryBadge';
+import { QuickPrioritySelector } from '../components/QuickPrioritySelector';
+import { QuickTimeSelector } from '../components/QuickTimeSelector';
 
 interface CategoryViewProps {
   onOpenTaskModal: (task?: Task, date?: string, startTime?: string, projectCode?: string, category?: string) => void;
@@ -661,10 +663,12 @@ export const CategoryView: React.FC<CategoryViewProps> = ({ onOpenTaskModal }) =
                 className="p-3.5 rounded-xl border bg-theme-card shadow-2xs space-y-2 border-red-300 dark:border-red-900/60"
               >
                 <div className="flex items-center justify-between gap-2 flex-wrap">
-                  <div className="flex items-center gap-1.5 flex-wrap">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <QuickPrioritySelector task={t} size="sm" />
                     <span className="font-mono text-xs font-bold text-blue-600 dark:text-blue-400">
                       {t.projectCode}
                     </span>
+                    <QuickTimeSelector task={t} />
                     <CategoryBadge 
                       categoryName={t.category || currentCategory.name} 
                       subCategory={t.subCategory} 
@@ -677,11 +681,26 @@ export const CategoryView: React.FC<CategoryViewProps> = ({ onOpenTaskModal }) =
                       size="sm" 
                     />
                   </div>
-                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-red-600 text-white">
-                    {t.status}
-                  </span>
+                  <select
+                    value={t.status}
+                    onChange={(e) => handleStatusChange(t, e.target.value as TaskStatus)}
+                    className="text-[10px] font-bold px-2 py-0.5 rounded-lg bg-red-600 text-white cursor-pointer focus:outline-none"
+                  >
+                    <option value="Pending">● Pending</option>
+                    <option value="Working">⚡ Working</option>
+                    <option value="Done">✓ Done</option>
+                    <option value="Hold">⏸ Hold</option>
+                    <option value="Incomplete">⚠️ Incomplete</option>
+                    <option value="Reschedule">↻ Reschedule</option>
+                    <option value="Terminated">✕ Terminated</option>
+                  </select>
                 </div>
-                <h4 className="text-sm font-bold text-theme-text line-clamp-1">{t.title}</h4>
+                <h4 
+                  onClick={() => onOpenTaskModal(t)}
+                  className="text-base font-bold text-theme-text line-clamp-1 cursor-pointer hover:text-blue-600 transition-colors font-display"
+                >
+                  {t.title}
+                </h4>
                 <div className="flex items-center justify-between pt-1 border-t border-theme-border text-xs">
                   <span className="font-mono text-theme-muted font-semibold text-[11px]">
                     {formatDisplayDate(t.taskDate)} • {t.appointedMinutes}m
@@ -697,9 +716,17 @@ export const CategoryView: React.FC<CategoryViewProps> = ({ onOpenTaskModal }) =
                     </button>
                     <button
                       onClick={() => onOpenTaskModal(t)}
-                      className="p-1 rounded hover:bg-theme-card-hover text-theme-muted hover:text-theme-text"
+                      className="p-1 rounded hover:bg-theme-card-hover text-theme-muted hover:text-theme-text cursor-pointer"
+                      title="Edit Task"
                     >
                       <Edit2 className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      onClick={() => requestDeleteTask(t, t.taskDate)}
+                      className="p-1 rounded hover:bg-red-50 dark:hover:bg-red-950/40 text-theme-muted hover:text-red-500 cursor-pointer"
+                      title="Delete Task"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
                     </button>
                   </div>
                 </div>
@@ -803,29 +830,18 @@ export const CategoryView: React.FC<CategoryViewProps> = ({ onOpenTaskModal }) =
                                     : 'bg-theme-card border-theme-border hover:border-blue-300 dark:hover:border-blue-700 hover:shadow-md'
                           }`}
                         >
+                          {/* Pulsing Left Accent Bar when Working */}
+                          {isWorking && (
+                            <div className="glow-accent-bar animate-pulse" />
+                          )}
+
                           <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 relative z-10">
                             
                             {/* Left: Priority + Title + Times */}
                             <div className="flex items-start gap-3 flex-1 min-w-0">
                               
-                              {/* Priority Badge */}
-                              <div
-                                className={`px-2.5 py-1.5 rounded-xl text-center font-black text-xs sm:text-sm min-w-[46px] shrink-0 flex items-center justify-center transition-all ${
-                                  task.priority === 'P1'
-                                    ? 'bg-gradient-to-tr from-rose-600 via-red-500 to-amber-400 text-white shadow-md shadow-red-500/30 ring-1 ring-red-400/80 border border-red-300 animate-pulse font-display'
-                                    : 'font-mono border border-theme-border/60 shadow-2xs'
-                                }`}
-                                style={task.priority === 'P1' ? undefined : { backgroundColor: priorityMeta.bgColor, color: priorityMeta.color }}
-                              >
-                                {task.priority === 'P1' ? (
-                                  <span className="flex items-center gap-0.5 tracking-tight font-black">
-                                    <Sparkles className="w-3 h-3 text-yellow-200 fill-yellow-200" />
-                                    <span>P1</span>
-                                  </span>
-                                ) : (
-                                  <span className="font-bold">{task.priority}</span>
-                                )}
-                              </div>
+                              {/* Quick Priority Selector (Interactive 1-Click) */}
+                              <QuickPrioritySelector task={task} size="sm" />
 
                               <div className="space-y-1.5 flex-1 min-w-0">
                                 
@@ -845,9 +861,7 @@ export const CategoryView: React.FC<CategoryViewProps> = ({ onOpenTaskModal }) =
 
                                 {/* Time Window & Badges */}
                                 <div className="flex items-center gap-2 flex-wrap">
-                                  <span className="font-mono text-xs font-bold px-2 py-0.5 rounded border text-theme-text bg-theme-card-hover border-theme-border">
-                                    {task.startTime} – {task.endTime}
-                                  </span>
+                                  <QuickTimeSelector task={task} isInSleep={isInSleep} />
 
                                   {period && (
                                     <span className="text-[10px] font-bold px-2 py-0.5 rounded-full border flex items-center gap-1 bg-amber-500/10 text-amber-900 dark:text-amber-200 border-amber-300 dark:border-amber-800 shrink-0">
@@ -893,7 +907,7 @@ export const CategoryView: React.FC<CategoryViewProps> = ({ onOpenTaskModal }) =
                                     </span>
                                   )}
 
-                                  {/* Live Status Badge (inline in metadata row) */}
+                                  {/* Live Status Badge + Countdown Pill (inline in metadata row matching Dashboard) */}
                                   <select
                                     value={task.status}
                                     onChange={(e) => handleStatusChange(task, e.target.value as TaskStatus)}
@@ -915,6 +929,45 @@ export const CategoryView: React.FC<CategoryViewProps> = ({ onOpenTaskModal }) =
                                     <option value="Reschedule" className="bg-slate-900 text-white">↻ Reschedule</option>
                                     <option value="Terminated" className="bg-slate-900 text-white">✕ Terminated</option>
                                   </select>
+
+                                  {/* Inline Live Countdown */}
+                                  {isWorking && (() => {
+                                    const lastLog = task.executionLogs?.[task.executionLogs.length - 1];
+                                    const startMs = lastLog ? new Date(lastLog.startedAt).getTime() : nowTime.getTime();
+                                    const elapsedSec = Math.max(0, Math.floor((nowTime.getTime() - startMs) / 1000));
+                                    const totalAppointedSec = task.appointedMinutes * 60;
+                                    const remainingSec = totalAppointedSec - elapsedSec;
+                                    const isOvertime = remainingSec < 0;
+                                    const absSec = Math.abs(remainingSec);
+                                    const m = Math.floor(absSec / 60);
+                                    const s = absSec % 60;
+                                    const timeFormatted = `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+                                    return (
+                                      <span className={`text-[11px] font-mono font-bold px-2.5 py-0.5 rounded-lg flex items-center gap-1 shadow-sm ${
+                                        isOvertime ? 'bg-amber-400 text-amber-950 animate-pulse font-black' : 'bg-blue-600 text-white'
+                                      }`}>
+                                        <Hourglass className="w-3 h-3 animate-spin" />
+                                        <span>{isOvertime ? `Overtime: +${timeFormatted}` : `Countdown: ${timeFormatted} left`}</span>
+                                      </span>
+                                    );
+                                  })()}
+
+                                  {task.status === 'Pending' && task.taskDate === toISODateString(nowTime) && (() => {
+                                    const startMin = parse12HourToMinutes(task.startTime);
+                                    const curMin = nowTime.getHours() * 60 + nowTime.getMinutes();
+                                    const diffMin = startMin - curMin;
+                                    if (diffMin > 0) {
+                                      const h = Math.floor(diffMin / 60);
+                                      const m = diffMin % 60;
+                                      return (
+                                        <span className="text-[11px] font-mono font-semibold px-2 py-0.5 rounded-lg border flex items-center gap-1 text-blue-700 dark:text-blue-300 bg-blue-50 dark:bg-blue-950/60 border-blue-200 dark:border-blue-800">
+                                          <Timer className="w-3 h-3 text-blue-500" />
+                                          <span>Starts in {h > 0 ? `${h}h ` : ''}{m}m</span>
+                                        </span>
+                                      );
+                                    }
+                                    return null;
+                                  })()}
                                 </div>
 
                                 {task.description && (
@@ -925,30 +978,8 @@ export const CategoryView: React.FC<CategoryViewProps> = ({ onOpenTaskModal }) =
                               </div>
                             </div>
 
-                            {/* Right Actions: Live Timer + Play/Pause + Reschedule + Edit */}
-                            <div className="flex items-center gap-2 w-full sm:w-auto justify-end pt-2 sm:pt-0 border-t sm:border-t-0 border-theme-border relative z-10 flex-wrap">
-                              
-                              {/* Live Countdown Stopwatch */}
-                              {isWorking && (() => {
-                                const lastLog = task.executionLogs?.[task.executionLogs.length - 1];
-                                const startMs = lastLog ? new Date(lastLog.startedAt).getTime() : nowTime.getTime();
-                                const elapsedSec = Math.max(0, Math.floor((nowTime.getTime() - startMs) / 1000));
-                                const totalAppointedSec = task.appointedMinutes * 60;
-                                const remainingSec = totalAppointedSec - elapsedSec;
-                                const isOvertime = remainingSec < 0;
-                                const absSec = Math.abs(remainingSec);
-                                const m = Math.floor(absSec / 60);
-                                const s = absSec % 60;
-                                const timeFormatted = `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
-                                return (
-                                  <span className={`text-[11px] font-mono font-bold px-2 py-1 rounded-lg flex items-center gap-1 shadow-2xs ${
-                                    isOvertime ? 'bg-amber-400 text-amber-950 animate-pulse font-black' : 'bg-blue-600 text-white'
-                                  }`}>
-                                    <Hourglass className="w-3 h-3 animate-spin" />
-                                    <span>{isOvertime ? `+${timeFormatted}` : timeFormatted}</span>
-                                  </span>
-                                );
-                              })()}
+                            {/* Right Actions: Play/Pause + Done + Reschedule + Edit + Delete */}
+                            <div className="flex items-center gap-1.5 w-full sm:w-auto justify-end pt-2 sm:pt-0 border-t sm:border-t-0 border-theme-border relative z-10">
 
                               {/* Play / Pause / Done */}
                               {isWorking ? (
@@ -1037,40 +1068,99 @@ export const CategoryView: React.FC<CategoryViewProps> = ({ onOpenTaskModal }) =
                   </div>
 
                   {showCompletedSection && (
-                    <div className="space-y-2 opacity-75">
+                    <div className="space-y-2.5 opacity-90">
                       {categoryDateTasks
                         .filter(t => t.status === 'Done' || t.status === 'Terminated')
-                        .map((task) => (
-                          <div
-                            key={task.id}
-                            className="p-3 rounded-xl bg-theme-card border border-theme-border flex items-center justify-between gap-2"
-                          >
-                            <div className="flex items-center gap-2 min-w-0 flex-wrap">
-                              <span className="font-mono text-xs text-theme-muted">{task.startTime}</span>
-                              <CategoryBadge 
-                                categoryName={task.category || currentCategory.name} 
-                                subCategory={task.subCategory} 
-                                categories={categories}
-                                size="sm"
-                              />
-                              <RecurrenceBadge 
-                                recurrence={task.recurrence} 
-                                selectedDays={task.selectedDays} 
-                                size="sm" 
-                              />
-                              <span className="text-xs font-bold text-theme-text line-through truncate">{task.title}</span>
+                        .map((task) => {
+                          const isDone = task.status === 'Done';
+                          return (
+                            <div
+                              key={task.id}
+                              className={`px-3.5 py-2 sm:py-2.5 rounded-xl border transition-all ${
+                                isDone 
+                                  ? 'bg-emerald-50/50 dark:bg-emerald-950/25 border-emerald-300 dark:border-emerald-800/80 shadow-2xs'
+                                  : 'bg-red-50/50 dark:bg-red-950/25 border-red-300 dark:border-red-800/80 shadow-2xs'
+                              }`}
+                            >
+                              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2.5 sm:gap-3">
+                                <div className="flex items-start gap-2 sm:gap-2.5 flex-1 min-w-0">
+                                  <QuickPrioritySelector task={task} size="sm" />
+
+                                  <div className="space-y-1 flex-1 min-w-0">
+                                    <div className="flex items-center gap-1.5 flex-wrap">
+                                      <QuickTimeSelector task={task} />
+                                      <span className="text-[10px] sm:text-[11px] font-mono text-theme-muted font-bold">
+                                        {task.projectCode}
+                                      </span>
+                                      <CategoryBadge 
+                                        categoryName={task.category || currentCategory.name} 
+                                        subCategory={task.subCategory} 
+                                        categories={categories}
+                                        size="sm"
+                                      />
+                                      <RecurrenceBadge 
+                                        recurrence={task.recurrence} 
+                                        selectedDays={task.selectedDays} 
+                                        size="sm" 
+                                      />
+                                      <span className={`text-[10px] font-black px-2 py-0.2 rounded-full flex items-center gap-1 shadow-2xs ${
+                                        isDone ? 'bg-emerald-600 text-white' : 'bg-red-600 text-white'
+                                      }`}>
+                                        {isDone ? <Check className="w-2.5 h-2.5 stroke-[3]" /> : <X className="w-2.5 h-2.5 stroke-[3]" />}
+                                        <span>{isDone ? 'Done' : 'Terminated'}</span>
+                                      </span>
+                                    </div>
+
+                                    <div className="flex items-baseline gap-2 flex-wrap">
+                                      <h4 className="text-sm font-bold text-theme-muted line-through font-display leading-tight truncate">
+                                        {task.title}
+                                      </h4>
+                                      <span className="font-mono text-[10px] sm:text-[11px] font-semibold text-theme-muted bg-theme-card-hover px-1.5 py-0.2 rounded border border-theme-border">
+                                        ~{task.appointedMinutes}m
+                                      </span>
+                                    </div>
+
+                                    {isDone ? (
+                                      <div className="text-[11px] font-mono text-emerald-600 dark:text-emerald-400 font-semibold flex items-center gap-1">
+                                        <Check className="w-3.5 h-3.5 text-emerald-500" />
+                                        <span>Execution Completed & Done • {task.totalActualMinutes || task.appointedMinutes}m (+{task.bufferMinutes ?? (capacitySettings.defaultBufferMinutes ?? 0)}m buffer applied)</span>
+                                      </div>
+                                    ) : (
+                                      <div className="text-[11px] font-mono text-red-600 dark:text-red-400 font-semibold flex items-center gap-1">
+                                        <X className="w-3.5 h-3.5 text-red-500" />
+                                        <span>Terminated & Closed • {task.totalActualMinutes || task.appointedMinutes}m</span>
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+
+                                <div className="flex items-center gap-2 w-full sm:w-auto justify-end pt-2 sm:pt-0 border-t sm:border-t-0 border-theme-border">
+                                  <button
+                                    onClick={() => updateTask({ ...task, status: 'Pending' })}
+                                    className="px-2.5 py-1 text-xs font-bold rounded-lg bg-theme-card-hover hover:bg-theme-border text-theme-text transition-colors cursor-pointer"
+                                    title="Reopen Task"
+                                  >
+                                    Reopen
+                                  </button>
+                                  <button
+                                    onClick={() => onOpenTaskModal(task)}
+                                    className="p-1.5 rounded-lg hover:bg-theme-card-hover text-theme-muted hover:text-theme-text cursor-pointer"
+                                    title="Edit Task"
+                                  >
+                                    <Edit2 className="w-3.5 h-3.5" />
+                                  </button>
+                                  <button
+                                    onClick={() => requestDeleteTask(task, selectedDate)}
+                                    className="p-1.5 rounded-lg hover:bg-red-50 dark:hover:bg-red-950/40 text-theme-muted hover:text-red-500 cursor-pointer"
+                                    title="Delete Task / Occurrence"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </button>
+                                </div>
+                              </div>
                             </div>
-                            <div className="flex items-center gap-2 shrink-0 text-xs">
-                              <span className="text-emerald-600 font-bold text-[11px]">✓ Done</span>
-                              <button
-                                onClick={() => updateTask({ ...task, status: 'Pending' })}
-                                className="text-[11px] text-blue-600 hover:underline"
-                              >
-                                Reopen
-                              </button>
-                            </div>
-                          </div>
-                        ))}
+                          );
+                        })}
                     </div>
                   )}
                 </div>
