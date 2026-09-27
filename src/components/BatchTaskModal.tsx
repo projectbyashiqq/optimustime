@@ -85,14 +85,18 @@ export const BatchTaskModal: React.FC<BatchTaskModalProps> = ({
   // Preview Layout on Mobile: 'cards' or 'table'
   const [previewViewMode, setPreviewViewMode] = useState<'cards' | 'table'>('cards');
 
-  // Multi-line raw text placeholder demonstrating full task options
-  const [rawText, setRawText] = useState<string>(
-`Project Kickoff & Architecture | P1 | 45m | Engineering / Core Engine | | 09:00 AM | PRJ-VRTX | +15m
-Draft Database Schema & Models | P2 | 90m | Engineering / Infrastructure | | 10:00 AM | PRJ-VRTX | +10m
-Review Sprint Milestone Goals | P2 | 30m | Operations / Strategy | | 02:00 PM | PLN-2026-01 | Weekly
-Customer Feedback & Bug Fixes | P3 | 60m | Operations / Client Relations | | 03:00 PM | +10m
-Evening Workout & Recharge | P5 | 45m | Personal / Health & Fitness | | Anytime | Daily`
-  );
+  // Multi-line raw text placeholder demonstrating full task options with future days & relative offsets
+  const [rawText, setRawText] = useState<string>(() => {
+    const today = initialDate || toISODateString(new Date());
+    const tomorrow = addDaysToDate(today, 1);
+    const dayAfter = addDaysToDate(today, 2);
+    const nextWeek = addDaysToDate(today, 7);
+    return `Project Kickoff & Architecture | P1 | 45m | Engineering / Core Engine | ${today} | 09:00 AM | PRJ-VRTX | +15m
+Draft Database Schema & Models | P2 | 90m | Engineering / Infrastructure | tomorrow | 10:00 AM | PRJ-VRTX | +10m
+Review Sprint Milestone Goals | P2 | 30m | Operations / Strategy | +2d | 02:00 PM | PLN-2026-01 | Weekly
+Customer Feedback & Bug Fixes | P3 | 60m | Operations / Client Relations | ${dayAfter} | 03:00 PM | +10m
+Evening Workout & Recharge | P5 | 45m | Personal / Health & Fitness | +7d | Anytime | Daily`;
+  });
 
   // File Upload State
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
@@ -273,8 +277,8 @@ Evening Workout & Recharge | P5 | 45m | Personal / Health & Fitness | | Anytime 
     setSelectedDates(prev => prev.filter(d => d !== dateVal));
   };
 
-  // Quick Date & Multi-Date Presets
-  const setQuickDate = (type: 'today' | 'tomorrow' | 'nextMon' | 'next3Days' | 'next7Days' | 'weekend' | 'monWedFri') => {
+  // Quick Date & Multi-Date Presets (Includes Future Days & Custom Spans)
+  const setQuickDate = (type: 'today' | 'tomorrow' | 'nextMon' | 'next3Days' | 'next7Days' | 'weekend' | 'monWedFri' | 'nextWeek' | 'next14Days' | 'nextMonth') => {
     const now = new Date();
     const todayStr = toISODateString(now);
 
@@ -343,6 +347,24 @@ Evening Workout & Recharge | P5 | 45m | Personal / Health & Fitness | | Anytime 
       setDefaultDate(monStr);
       setSelectedDates([monStr, wedStr, friStr]);
       setBatchDateMode('multi_replicate');
+    } else if (type === 'nextWeek') {
+      const nw = addDaysToDate(todayStr, 7);
+      setDefaultDate(nw);
+      setSelectedDates([nw]);
+      setBatchDateMode('same');
+      setBatchUpdateDate(nw);
+    } else if (type === 'next14Days') {
+      const n14 = addDaysToDate(todayStr, 14);
+      setDefaultDate(n14);
+      setSelectedDates([n14]);
+      setBatchDateMode('same');
+      setBatchUpdateDate(n14);
+    } else if (type === 'nextMonth') {
+      const nm = addDaysToDate(todayStr, 30);
+      setDefaultDate(nm);
+      setSelectedDates([nm]);
+      setBatchDateMode('same');
+      setBatchUpdateDate(nm);
     }
   };
 
@@ -427,6 +449,23 @@ Evening Workout & Recharge | P5 | 45m | Personal / Health & Fitness | | Anytime 
     setStatusBanner({
       type: 'success',
       message: `Shifted date by ${dayOffset > 0 ? `+${dayOffset}` : dayOffset} days on ${selectedRowIndices.length} tasks.`
+    });
+  };
+
+  const handleBatchDistributeConsecutive = (startDate: string) => {
+    if (selectedRowIndices.length === 0 || !startDate) return;
+    let offset = 0;
+    setParsedTasks(prev => prev.map((t, idx) => {
+      if (selectedRowIndices.includes(idx)) {
+        const assigned = addDaysToDate(startDate, offset);
+        offset++;
+        return { ...t, taskDate: assigned };
+      }
+      return t;
+    }));
+    setStatusBanner({
+      type: 'success',
+      message: `Distributed ${selectedRowIndices.length} tasks consecutively starting ${startDate}.`
     });
   };
 
@@ -876,6 +915,30 @@ Evening Workout & Recharge | P5 | 45m | Personal / Health & Fitness | | Anytime 
                     title="Select next 7 days (Replicate)"
                   >
                     Next 7d
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setQuickDate('nextWeek')}
+                    className="px-1.5 py-0.5 rounded-md bg-theme-card-hover hover:bg-blue-500/10 hover:text-blue-500 text-[10px] font-bold transition-colors cursor-pointer"
+                    title="Jump date to +7 days in the future"
+                  >
+                    +1w
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setQuickDate('next14Days')}
+                    className="px-1.5 py-0.5 rounded-md bg-theme-card-hover hover:bg-blue-500/10 hover:text-blue-500 text-[10px] font-bold transition-colors cursor-pointer"
+                    title="Jump date to +14 days in the future"
+                  >
+                    +2w
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setQuickDate('nextMonth')}
+                    className="px-1.5 py-0.5 rounded-md bg-theme-card-hover hover:bg-blue-500/10 hover:text-blue-500 text-[10px] font-bold transition-colors cursor-pointer"
+                    title="Jump date to +30 days in the future"
+                  >
+                    +1m
                   </button>
                   <button
                     type="button"
@@ -1383,6 +1446,7 @@ Evening Workout & Recharge | P5 | 45m | Personal / Health & Fitness | | Anytime 
                   <ul className="list-disc list-inside space-y-1 text-theme-muted font-mono text-[11px]">
                     <li><strong className="text-theme-text font-sans">Plain Lines:</strong> Write task titles line-by-line. All batch defaults configured above apply automatically.</li>
                     <li><strong className="text-theme-text font-sans">Delimited:</strong> <code>Title | Priority | Duration | Category / SubCategory | Date | StartTime | Buffer | Recurrence | ProjectCode</code></li>
+                    <li><strong className="text-theme-text font-sans">Date Options:</strong> Supports exact dates (<code>2026-09-28</code>, <code>28/09/2026</code>), relative future days (<code>tomorrow</code>, <code>+1d</code>, <code>+2d</code>, <code>+7d</code>, <code>+14d</code>, <code>+30d</code>, <code>next monday</code>), multi-dates (<code>tomorrow, +2d</code>), or leave empty (<code>||</code>) to use the batch default date.</li>
                     <li><strong className="text-theme-text font-sans">Category / Sub:</strong> E.g. <code>Engineering / Core Engine</code> or <code>Personal / Health</code> sets both category and subcategory seamlessly.</li>
                     <li><strong className="text-theme-text font-sans">Buffer & Recurrence:</strong> Add <code>+15m</code> or <code>Daily</code> / <code>Weekly</code> anywhere in delimited line.</li>
                     <li><strong className="text-theme-text font-sans">Bullets:</strong> <code>- [ ] Task Title</code> or <code>1. Task Title</code> strip bullets automatically.</li>
@@ -1394,7 +1458,7 @@ Evening Workout & Recharge | P5 | 45m | Personal / Health & Fitness | | Anytime 
                 value={rawText}
                 onChange={(e) => setRawText(e.target.value)}
                 rows={4}
-                placeholder={`Build Login UI | P1 | 60m | Engineering / Core Engine | 2026-09-24 | 10:00 AM | PRJ-VRTX | +15m\nTeam Sync | P2 | 30m | Meetings | | 02:00 PM | Weekly\nDraft Report`}
+                placeholder={`Build Login UI | P1 | 60m | Engineering / Core Engine | tomorrow | 10:00 AM | PRJ-VRTX | +15m\nTeam Sync | P2 | 30m | Meetings | +2d | 02:00 PM | Weekly\nDatabase Migration | P1 | 90m | Engineering | 2026-10-05 | 09:00 AM | +10m`}
                 className="w-full p-3 rounded-2xl bg-theme-bg border border-theme-border font-mono text-xs text-theme-text placeholder-theme-muted focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all resize-y shadow-inner"
               />
             </div>
@@ -1462,6 +1526,16 @@ Evening Workout & Recharge | P5 | 45m | Personal / Health & Fitness | | Anytime 
               </div>
 
               <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={toggleSelectAll}
+                  className="flex items-center gap-1 px-2.5 py-1 rounded-xl bg-theme-card hover:bg-theme-card-hover border border-theme-border text-xs font-bold text-theme-text transition-all cursor-pointer"
+                  title={isAllSelected ? "Deselect All Rows" : "Select All Rows for Batch Update"}
+                >
+                  {isAllSelected ? <CheckSquare className="w-3.5 h-3.5 text-blue-500" /> : <Square className="w-3.5 h-3.5 text-theme-muted" />}
+                  <span className="hidden sm:inline">{isAllSelected ? 'Deselect All' : `Select All (${parsedTasks.length})`}</span>
+                </button>
+
                 <button
                   type="button"
                   onClick={applyAllDefaultsToAllRows}
@@ -1564,11 +1638,51 @@ Evening Workout & Recharge | P5 | 45m | Personal / Health & Fitness | | Anytime 
                     </button>
                     <button
                       type="button"
+                      onClick={() => handleBatchShiftDate(2)}
+                      className="px-1.5 py-0.5 rounded-lg bg-white/20 hover:bg-white/30 text-[11px] font-bold transition-colors cursor-pointer"
+                      title="Shift selected forward +2 days"
+                    >
+                      +2d
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleBatchShiftDate(3)}
+                      className="px-1.5 py-0.5 rounded-lg bg-white/20 hover:bg-white/30 text-[11px] font-bold transition-colors cursor-pointer"
+                      title="Shift selected forward +3 days"
+                    >
+                      +3d
+                    </button>
+                    <button
+                      type="button"
                       onClick={() => handleBatchShiftDate(7)}
                       className="px-1.5 py-0.5 rounded-lg bg-white/20 hover:bg-white/30 text-[11px] font-bold transition-colors cursor-pointer"
-                      title="Shift selected forward +7 days"
+                      title="Shift selected forward +7 days (+1 week)"
                     >
                       +7d
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleBatchShiftDate(14)}
+                      className="px-1.5 py-0.5 rounded-lg bg-white/20 hover:bg-white/30 text-[11px] font-bold transition-colors cursor-pointer"
+                      title="Shift selected forward +14 days (+2 weeks)"
+                    >
+                      +14d
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleBatchShiftDate(-1)}
+                      className="px-1.5 py-0.5 rounded-lg bg-white/20 hover:bg-white/30 text-[11px] font-bold transition-colors cursor-pointer"
+                      title="Shift selected back -1 day"
+                    >
+                      -1d
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleBatchDistributeConsecutive(batchUpdateDate)}
+                      className="px-2 py-0.5 rounded-lg bg-emerald-500/80 hover:bg-emerald-500 text-white text-[11px] font-bold transition-colors cursor-pointer shadow-2xs"
+                      title="Spread selected tasks across consecutive future days starting from the selected date"
+                    >
+                      Spread Days
                     </button>
                     {selectedDates.length > 1 && (
                       <button

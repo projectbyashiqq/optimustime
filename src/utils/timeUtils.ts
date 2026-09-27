@@ -868,13 +868,13 @@ export function calculateFirstRecurringDate(params: {
   };
 
   // Chronological Search Strategy:
-  // The first occurrence of any recurring task MUST be the earliest valid date on or after TODAY
+  // The first occurrence of any recurring task MUST be the earliest valid date on or after TODAY (or baseDate if baseDate is in the future)
   // whose slot has not elapsed.
-  // We scan from TODAY (offset 0) forward up to 450 days.
-  const [tY, tM, tD] = todayStr.split('-').map(Number);
+  const startDateStr = (baseDate && baseDate > todayStr) ? baseDate : todayStr;
+  const [sY, sM, sD] = startDateStr.split('-').map(Number);
 
   for (let offset = 0; offset <= 450; offset++) {
-    const candidate = new Date(tY, tM - 1, tD + offset);
+    const candidate = new Date(sY, sM - 1, sD + offset);
     const candidateStr = toISODateString(candidate);
 
     if (matchesPattern(candidate) && !isSlotInPast(candidateStr)) {
@@ -882,7 +882,7 @@ export function calculateFirstRecurringDate(params: {
     }
   }
 
-  return todayStr;
+  return startDateStr;
 }
 
 /**

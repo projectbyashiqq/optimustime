@@ -230,7 +230,93 @@ export function normalizeStatus(raw: any, fallback: TaskStatus = 'Pending'): Tas
 }
 
 /**
- * Converts Excel serial numbers or standard date strings into YYYY-MM-DD
+ * Helper to test if a raw string token represents a Date (explicit, relative, or future)
+ */
+export function isDateString(raw: any): boolean {
+  if (!raw || typeof raw !== 'string') return false;
+  const s = raw.trim().toLowerCase();
+  if (!s) return false;
+
+  // Keywords
+  if (['today', 'tomorrow', 'yesterday'].includes(s)) return true;
+
+  // Relative future offsets: e.g. "+1d", "+2d", "+3d", "+7d", "+14d", "+30d", "1d", "3 days", "in 2 days"
+  if (/^(?:\+)?\d+\s*(?:d|days?|day)$/i.test(s)) return true;
+  if (/^in\s+\d+\s*(?:d|days?|day)$/i.test(s)) return true;
+
+  // Weekdays: e.g. "next monday", "monday", "friday", "next week"
+  if (/^(?:next\s+)?(mon(?:day)?|tue(?:sday)?|wed(?:nesday)?|thu(?:rsday)?|fri(?:day)?|sat(?:urday)?|sun(?:day)?)$/i.test(s)) return true;
+  if (s === 'next week' || s === 'weekend') return true;
+
+  // ISO: YYYY-MM-DD
+  if (/^\d{4}-\d{1,2}-\d{1,2}$/.test(s)) return true;
+
+  // DD/MM/YYYY, DD-MM-YYYY, MM/DD/YYYY, DD.MM.YYYY
+  if (/^\d{1,2}[/.-]\d{1,2}([/.-]\d{2,4})?$/.test(s)) return true;
+
+  // Month names: e.g. "27 Sep", "Sep 27", "28 September 2026"
+  if (/^(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\s+\d{1,2}(?:st|nd|rd|th)?(?:\s*,?\s*\d{2,4})?$/i.test(s)) return true;
+  if (/^\d{1,2}(?:st|nd|rd|th)?\s+(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*(?:\s*,?\s*\d{2,4})?$/i.test(s)) return true;
+
+  // Comma or semicolon list of dates
+  if (s.includes(',') || s.includes(';')) {
+    const pieces = s.split(/[,;]/).map(p => p.trim()).filter(Boolean);
+    if (pieces.length > 0 && pieces.every(p => isDateString(p))) return true;
+  }
+
+  return false;
+}
+
+/**
+ * Helper to test if a raw string token represents a Time
+ */
+export function isTimeString(raw: any): boolean {
+  if (!raw || typeof raw !== 'string') return false;
+  const s = raw.trim().toLowerCase();
+  if (['anytime', 'free time', 'no time', 'all day', 'floating'].includes(s)) return true;
+  if (/^\d{1,2}:\d{2}(:\d{2})?(\s*(am|pm))?$/i.test(s)) return true;
+  if (/^\d{1,2}\s*(am|pm)$/i.test(s)) return true;
+  return false;
+}
+
+/**
+ * Helper to test if a token is a buffer specifier
+ */
+export function isBufferString(raw: any): boolean {
+  if (!raw) return false;
+  const s = String(raw).trim().toLowerCase();
+  if (/^\+\d+\s*(?:m|min|mins|minutes)?$/i.test(s)) return true;
+  if (/^\d+\s*(?:m|min|mins|minutes)?\s*buf(?:fer)?$/i.test(s)) return true;
+  return false;
+}
+
+/**
+ * Helper to test if a token is a recurrence keyword
+ */
+export function isRecurrenceString(raw: any): boolean {
+  if (!raw) return false;
+  const s = String(raw).trim().toLowerCase();
+  return [
+    'none', 'no', 'daily', 'day', 'everyday', 'every day',
+    'weekly', 'week', 'every week',
+    'monthly', 'month', 'every month',
+    'yearly', 'year', 'annually', 'annual',
+    'weekday', 'weekdays', 'selected days', 'workday', 'workdays'
+  ].includes(s);
+}
+
+/**
+ * Helper to test if a token is a lock schedule keyword
+ */
+export function isLockString(raw: any): boolean {
+  if (!raw) return false;
+  const s = String(raw).trim().toLowerCase();
+  return ['locked', 'mandatory', 'fixed', 'protect', 'protected', 'flex', 'flexible'].includes(s);
+}
+
+/**
+ * Converts Excel serial numbers, relative date indicators (+1d, tomorrow, next mon),
+ * or standard date strings into ISO YYYY-MM-DD format.
  */
 export function normalizeDate(raw: any, fallbackDate: string): string {
   if (!raw) return fallbackDate;
@@ -241,21 +327,89 @@ export function normalizeDate(raw: any, fallbackDate: string): string {
       return toISODateString(date);
     }
   }
-  const s = String(raw).trim();
-  // YYYY-MM-DD
-  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
 
-  // DD/MM/YYYY or MM/DD/YYYY or DD-MM-YYYY
-  const parts = s.split(/[/.-]/);
-  if (parts.length === 3) {
-    if (parts[0].length === 4) {
+  const s = String(raw).trim();
+  const lower = s.toLowerCase();
+  const base = fallbackDate || toISODateString(new Date());
+
+  // Today
+  if (lower === 'today') {
+    return toISODateString(new Date());
+  }
+
+  // Tomorrow
+  if (lower === 'tomorrow') {
+    return addDaysToDate(toISODateString(new Date()), 1);
+  }
+
+  // Yesterday
+  if (lower === 'yesterday') {
+    return addDaysToDate(toISODateString(new Date()), -1);
+  }
+
+  // Relative future day offset: "+1d", "+2d", "+3", "+7d", "+14d", "+30d", "in 3 days"
+  const relMatch = lower.match(/^(?:\+)?(\d+)\s*(?:d|days?|day)?$/) || lower.match(/^in\s+(\d+)\s*(?:d|days?|day)?$/);
+  if (relMatch) {
+    const days = parseInt(relMatch[1], 10);
+    if (!isNaN(days)) {
+      return addDaysToDate(base, days);
+    }
+  }
+
+  // Weekday names e.g. "next monday", "monday", "tue", "friday", etc.
+  const weekdayMap: Record<string, number> = {
+    sun: 0, sunday: 0,
+    mon: 1, monday: 1,
+    tue: 2, tues: 2, tuesday: 2,
+    wed: 3, wednesday: 3,
+    thu: 4, thur: 4, thurs: 4, thursday: 4,
+    fri: 5, friday: 5,
+    sat: 6, saturday: 6
+  };
+
+  const cleanWeekday = lower.replace(/^next\s+/, '').trim();
+  if (weekdayMap[cleanWeekday] !== undefined) {
+    const targetDay = weekdayMap[cleanWeekday];
+    const parts = base.split('-').map(Number);
+    const currDate = new Date(parts[0], parts[1] - 1, parts[2]);
+    const currDay = currDate.getDay();
+    let diff = targetDay - currDay;
+    if (diff <= 0) diff += 7;
+    return addDaysToDate(base, diff);
+  }
+
+  if (lower === 'next week') {
+    return addDaysToDate(base, 7);
+  }
+
+  // ISO: YYYY-MM-DD
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+  if (/^\d{4}-\d{1,2}-\d{1,2}$/.test(s)) {
+    const p = s.split('-');
+    return `${p[0]}-${p[1].padStart(2, '0')}-${p[2].padStart(2, '0')}`;
+  }
+
+  // DD/MM/YYYY or DD-MM-YYYY or MM/DD/YYYY or DD.MM.YYYY
+  const dateParts = s.split(/[/.-]/);
+  if (dateParts.length === 3) {
+    if (dateParts[0].length === 4) {
       // YYYY-M-D
-      return `${parts[0]}-${parts[1].padStart(2, '0')}-${parts[2].padStart(2, '0')}`;
+      return `${dateParts[0]}-${dateParts[1].padStart(2, '0')}-${dateParts[2].padStart(2, '0')}`;
     }
-    if (parts[2].length === 4) {
+    let yr = dateParts[2];
+    if (yr.length === 2) {
+      yr = `20${yr}`;
+    }
+    if (yr.length === 4) {
       // DD-MM-YYYY
-      return `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
+      return `${yr}-${dateParts[1].padStart(2, '0')}-${dateParts[0].padStart(2, '0')}`;
     }
+  }
+
+  // DD/MM (current year)
+  if (dateParts.length === 2 && /^\d{1,2}$/.test(dateParts[0]) && /^\d{1,2}$/.test(dateParts[1])) {
+    const currentYear = new Date().getFullYear();
+    return `${currentYear}-${dateParts[1].padStart(2, '0')}-${dateParts[0].padStart(2, '0')}`;
   }
 
   const parsed = new Date(s);
@@ -323,7 +477,8 @@ function cleanBullet(line: string): string {
  * Parses multi-line pasted text into an array of BatchTaskItems.
  * Supports:
  * - Simple line-by-line task titles
- * - Delimited lines: Title | Priority | AppointedMinutes | Category | Date | StartTime | PlanOrProject | Description
+ * - Delimited lines: Title | Priority | AppointedMinutes | Category | Date | StartTime | PlanOrProject | Buffer | Recurrence | Lock | Description
+ * - Intelligent recognition of Date vs Time, empty slots (||), relative future dates (tomorrow, +2d, +7d), and plan codes.
  */
 export function parseMultiLineText(rawText: string, defaults: BatchDefaults): BatchTaskItem[] {
   if (!rawText || !rawText.trim()) return [];
@@ -374,42 +529,75 @@ export function parseMultiLineText(rawText: string, defaults: BatchDefaults): Ba
         }
       }
 
-      // Check if parts[4] is a subcategory rather than a date
-      // (e.g. Title | Priority | Duration | Category | SubCategory | Date | StartTime ...)
+      let dateFound = false;
+      let timeFound = false;
       let nextIndex = 4;
-      if (parts[4]) {
-        const p4HasDate = /^\d{4}-\d{2}-\d{2}/.test(parts[4]) || /^\d{1,2}[/.-]\d{1,2}/.test(parts[4]) || ['today', 'tomorrow'].includes(parts[4].toLowerCase());
-        const p5HasDate = parts[5] && (/^\d{4}-\d{2}-\d{2}/.test(parts[5]) || /^\d{1,2}[/.-]\d{1,2}/.test(parts[5]) || ['today', 'tomorrow'].includes(parts[5].toLowerCase()));
 
-        if (!p4HasDate && p5HasDate) {
+      // Smart check: did the user provide Subcategory as a separate 5th column?
+      // (e.g. Title | Priority | Duration | Category | SubCategory | Date | StartTime ...)
+      if (parts[4] && !isDateString(parts[4]) && !isTimeString(parts[4])) {
+        const p4Lower = parts[4].toLowerCase();
+        const isP4Special = isBufferString(parts[4]) || 
+                            isRecurrenceString(p4Lower) || 
+                            isLockString(p4Lower) ||
+                            Boolean(defaults.planProjects && defaults.planProjects.some(p => p.code.toLowerCase() === p4Lower || p.id === parts[4]));
+        
+        if (!isP4Special && parts.length > 5) {
           subCategory = parts[4];
           nextIndex = 5;
         }
       }
 
-      if (parts[nextIndex]) {
-        customDateStr = parts[nextIndex];
-        nextIndex++;
-      }
-
-      if (parts[nextIndex]) {
-        customStartTime = parts[nextIndex];
-        nextIndex++;
-      }
-
-      // Process remaining parts (could be Buffer, Recurrence, Project, Lock, Description)
+      // Process remaining tokens
       while (nextIndex < parts.length) {
         const item = parts[nextIndex];
         const lower = item.toLowerCase();
 
+        // Empty pipe slot e.g. "||" or "| |" - gracefully skip and advance!
+        if (!item) {
+          nextIndex++;
+          continue;
+        }
+
+        // Date detection (e.g. "2026-09-28", "tomorrow", "+2d", "next monday")
+        if (!dateFound && isDateString(item)) {
+          customDateStr = item;
+          dateFound = true;
+          nextIndex++;
+          continue;
+        }
+
+        // Time detection (e.g. "09:00 AM", "Anytime", "14:30")
+        if (!timeFound && isTimeString(item)) {
+          customStartTime = item;
+          timeFound = true;
+          nextIndex++;
+          continue;
+        }
+
         // Buffer check e.g. "+15m", "10m buffer", "+5"
-        if (/^\+?\d+\s*(m|min|mins|minutes)?$/i.test(item) && (item.startsWith('+') || lower.includes('min') || lower.includes('m'))) {
+        if (isBufferString(item) || (/^\+?\d+\s*(m|min|mins|minutes)?$/i.test(item) && (item.startsWith('+') || lower.includes('min') || lower.includes('m')))) {
           bufferMinutes = normalizeBuffer(item, bufferMinutes);
-        } else if (['daily', 'weekly', 'monthly', 'yearly', 'selected days'].includes(lower)) {
+          nextIndex++;
+          continue;
+        }
+
+        // Recurrence check
+        if (isRecurrenceString(lower)) {
           recurrence = normalizeRecurrence(item, recurrence);
-        } else if (['locked', 'mandatory', 'fixed'].includes(lower)) {
-          isMandatorySchedule = true;
-        } else if (defaults.planProjects) {
+          nextIndex++;
+          continue;
+        }
+
+        // Lock schedule
+        if (isLockString(lower)) {
+          isMandatorySchedule = lower !== 'flex' && lower !== 'flexible';
+          nextIndex++;
+          continue;
+        }
+
+        // Plan / Project check
+        if (defaults.planProjects) {
           const matchedPlan = defaults.planProjects.find(p => 
             p.code.toLowerCase() === lower ||
             p.title.toLowerCase() === lower ||
@@ -418,15 +606,26 @@ export function parseMultiLineText(rawText: string, defaults: BatchDefaults): Ba
           if (matchedPlan) {
             planProjectId = matchedPlan.id;
             if (!parts[3]) category = matchedPlan.category;
-          } else {
-            description = parts.slice(nextIndex).join(' | ');
-            break;
+            nextIndex++;
+            continue;
           }
-        } else {
-          description = parts.slice(nextIndex).join(' | ');
-          break;
         }
-        nextIndex++;
+
+        if (/^(prj|pln)-/i.test(item)) {
+          const matchedPlan = defaults.planProjects?.find(p => p.code.toLowerCase() === lower);
+          if (matchedPlan) {
+            planProjectId = matchedPlan.id;
+          } else {
+            description = description ? `${description} [${item}]` : `[${item}]`;
+          }
+          nextIndex++;
+          continue;
+        }
+
+        // Remaining tokens constitute the description
+        const remaining = parts.slice(nextIndex).filter(Boolean).join(' | ');
+        description = description ? `${description} | ${remaining}` : remaining;
+        break;
       }
     } else {
       title = cleanBullet(line);
